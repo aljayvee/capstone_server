@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Production output
+dist/
+
+# Environment files & secrets
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+.agents/
+
+# OSRM routing graph + downloaded OSM extracts (rebuilt via gis/build-graph.ps1)
+gis/data/
+gis/verified-places.geojson

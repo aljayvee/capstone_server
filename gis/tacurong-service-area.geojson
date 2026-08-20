@@ -1,0 +1,27 @@
+{
+  "type": "FeatureCollection",
+  "note": "Operating boundary for the Pabili service. This is the initial bounding-box-derived envelope matching the Places search bounds already used in the dispatcher console (SW 6.62,124.60 - NE 6.74,124.73). Replace the coordinates below with the actual Tacurong City boundary digitised in QGIS - the loader and every consumer already handle an arbitrary polygon, so no code changes are needed when you do.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Tacurong City Service Area",
+        "city": "Tacurong",
+        "province": "Sultan Kudarat",
+        "source": "bbox envelope pending QGIS-digitised boundary"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [124.60, 6.62],
+            [124.73, 6.62],
+            [124.73, 6.74],
+            [124.60, 6.74],
+            [124.60, 6.62]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+# Self-hosted OSRM routing engine.
+#
+# Deployment target for this project is a separate machine / VPS; the API server
+# reaches it via OSRM_BASE_URL in server/.env (e.g. http://10.0.0.5:5001).
+#
+# Run build-graph.ps1 FIRST — osrm-routed only serves a pre-processed graph, and
+# will exit immediately if ./data/tacurong.osrm is missing.
+services:
+  osrm:
+    image: osrm/osrm-backend:v5.27.1
+    container_name: capstone-osrm
+    restart: unless-stopped
+    # SECURITY: osrm-routed has NO authentication or rate limiting whatsoever.
+    # Anyone who can reach this port can use your routing server and read your
+    # road graph. It must never be published to the open internet.
+    #
+    # Default binds to loopback only. On a VPS separate from the API server,
+    # set OSRM_BIND to the private/VPN interface address (e.g. 10.0.0.5) and
+    # firewall the port to the API server's IP — do NOT use 0.0.0.0.
+    ports:
+      - "${OSRM_BIND:-127.0.0.1}:5001:5000"
+    volumes:
+      - ./data:/data:ro
+    # MLD is the algorithm the build script prepares (partition + customize).
+    # max-matching-size raises the default 100-coordinate cap on /match so a
+    # rider flushing a long offline backlog needs fewer chunked requests; the
+    # adapter chunks regardless (see OSRM_MAX_MATCH_POINTS).
+    command: >
+      osrm-routed
+      --algorithm mld
+      --max-matching-size 500
+      --max-table-size 1000
+      /data/tacurong.osrm
+    healthcheck:
+      # Nearest is the cheapest service that still proves the graph is loaded.
+      test: ["CMD-SHELL", "wget -qO- 'http://localhost:5000/nearest/v1/driving/124.6752,6.6873' | grep -q '\"code\":\"Ok\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

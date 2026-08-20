@@ -1,0 +1,685 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RoleType {
+  OWNER
+  DISPATCHER
+  RIDER
+}
+
+enum ErrandStatus {
+  AVAILABLE
+  PENDING
+  ASSIGNED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+// 1. User Table (3NF: Atomic Names, Foreign Keys for Role & Addresses)
+// Operational staff only (Owner/Dispatcher/Rider) — customer accounts live in
+// CustomerAccount/CustomerInformation/CustomerTransaction below.
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         RoleType
+  firstName    String
+  middleName   String?
+  lastName     String
+  email        String   @unique
+  phone        String
+  avatar       String?
+  status       String   @default("Active")
+  version      Int      @default(1)
+  updatedBy    Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expoPushToken String?
+
+  errandsAsRider          Errand[]                 @relation("RiderErrands")
+  trackPoints             ErrandTrackPoint[]       @relation("RiderTrackPoints")
+  dispatchLogs            DispatchLog[]            @relation("DispatcherLogs")
+  ratingsReceived         Rating[]
+  notifications           Notification[]
+  paymentEnabledErrands   Errand[]                 @relation("PaymentEnabledBy")
+  connectivityIncidents   ConnectivityIncident[]
+  settlements             SettlementRecord[]
+  updatedByUser           User?                    @relation("UserUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  updatedRecords          User[]                   @relation("UserUpdatedBy")
+  riderLoginSessions      RiderLoginSession[]
+  riderStatusLogs         RiderStatusLog[]
+  accountModificationLogs AccountModificationLog[]
+
+  @@map("users")
+}
+
+// 1b. Customer Account Table (3NF: auth/identity only, split from operational `users`)
+model CustomerAccount {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  passwordHash  String
+  email         String   @unique
+  status        String   @default("Active")
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  information             CustomerInformation?
+  profilePhoto            CustomerProfilePhoto?
+  transactions            CustomerTransaction[]
+  errands                 Errand[]                 @relation("CustomerErrands")
+  savedDeliveryLocations  SavedDeliveryLocation[]
+  notifications           Notification[]
+  verificationCodes       EmailVerificationCode[]
+  accountModificationLogs AccountModificationLog[]
+
+  @@map("customer_accounts")
+}
+
+// 1c. Customer Information Table (3NF: profile/contact details)
+model CustomerInformation {
+  id         Int             @id @default(autoincrement())
+  customerId Int             @unique
+  customer   CustomerAccount @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  firstName  String
+  middleName String?
+  lastName   String
+  birthdate  DateTime?       @db.Date
+  phone      String
+  avatar     String?         @db.LongText
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@map("customer_information")
+}
+
+// 1d. Customer Profile Photos Table (Dedicated 3NF storage for customer avatar photo)
+model CustomerProfilePhoto {
+  id         Int             @id @default(autoincrement())
+  customerId Int             @unique
+  customer   CustomerAccount @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  photoData  String          @db.LongText
+  mimeType   String          @db.VarChar(50)
+  fileSize   Int
+  fileName   String?         @db.VarChar(255)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@map("customer_profile_photos")
+}
+
+// 1d. Customer Transaction Table (3NF: order/payment history, one row per errand)
+model CustomerTransaction {
+  id            Int             @id @default(autoincrement())
+  customerId    Int
+  customer      CustomerAccount @relation(fields: [customerId], references: [id])
+  errandId      String          @unique
+  errand        Errand          @relation(fields: [errandId], references: [id])
+  amount        Float
+  paymentMethod String          @default("COD")
+  status        String          @default("PENDING")
+  paidAt        DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("customer_transactions")
+}
+
+// 3. Merchant Categories Table (3NF)
+model MerchantCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  status      String   @default("Active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Service time ("dwell") for a stop of this kind - how long the rider is
+  // actually inside the store, as opposed to travelling. This is the single
+  // biggest difference between an errand ETA and a food-delivery ETA: a
+  // supermarket run is mostly standing in an aisle and a queue.
+  //
+  // Seeded with sensible defaults, then replaced by real percentiles computed
+  // from DwellObservation rows by jobs/dwellLearning.ts. P50 drives the low end
+  // of the quoted ETA range and P80 the high end, because queue time has a long
+  // right tail and a mean would under-promise most of the time.
+  dwellP50Seconds  Int       @default(600)
+  dwellP80Seconds  Int       @default(1200)
+  dwellSampleCount Int       @default(0)
+  dwellUpdatedAt   DateTime?
+
+  places            VerifiedPlace[]
+  pinpoints         ErrandPinpoint[]
+  dwellObservations DwellObservation[]
+
+  @@map("merchant_categories")
+}
+
+// 4. Payment Modes Table (3NF)
+model PaymentMode {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  status      String   @default("Active")
+  createdAt   DateTime @default(now())
+
+  errands           Errand[]
+  paymentSelections PaymentSelection[]
+
+  @@map("payment_modes")
+}
+
+// 5. Errand Table (3NF: Foreign Key references to Customer, Rider, PaymentMode, Addresses)
+model Errand {
+  id                String       @id @default(uuid())
+  category          String
+  description       String
+  pickupAddress     String
+  deliveryAddress   String
+  deliveryLatitude  Float?
+  deliveryLongitude Float?
+  estimatedCost     Float        @default(0)
+  deliveryFee       Float        @default(50)
+  tip               Float        @default(0)
+  totalCost         Float        @default(50)
+  status            ErrandStatus @default(PENDING)
+
+  // Number of store categories selected at creation time (1-3). Deliberately
+  // decoupled from pabiliDetails.length/pabiliItemRequests.length — those hold
+  // the real item list, whose size has nothing to do with how many stores the
+  // rider must visit. Persisted so later repricing passes (savePinpoints,
+  // confirmPaymentSelection) keep using the original store count even after a
+  // dispatcher edits item names/quantities.
+  storeCount Int @default(1)
+
+  customerId Int
+  customer   CustomerAccount @relation("CustomerErrands", fields: [customerId], references: [id])
+
+  riderId Int?
+  rider   User? @relation("RiderErrands", fields: [riderId], references: [id])
+
+  paymentModeId Int?
+  paymentMode   PaymentMode? @relation(fields: [paymentModeId], references: [id])
+
+  // Dispatcher-side gate for the chat-embedded payment-selection flow: the
+  // customer cannot POST /errands/:id/payment-selection until this is set —
+  // see paymentSelectionService.confirmPaymentSelection's guard.
+  paymentEnabledAt             DateTime?
+  paymentEnabledByDispatcherId Int?
+  paymentEnabledByDispatcher   User?     @relation("PaymentEnabledBy", fields: [paymentEnabledByDispatcherId], references: [id])
+
+  // Set once the assigned rider taps "Mark Items Purchased" (see
+  // errandService.markItemsPurchased) — the customer-facing progress stepper
+  // uses this to distinguish "traveling to store" from "in route to you".
+  // Mirrors paymentEnabledAt's nullable-timestamp-as-gate pattern.
+  itemsPurchasedAt DateTime?
+
+  // Lifecycle timestamps. Before these existed the only way to measure how long
+  // a delivery took was `updatedAt - createdAt`, which is wrong the moment
+  // anything touches the row after delivery. Dwell learning and on-time
+  // reporting both read these.
+  assignedAt  DateTime?
+  acceptedAt  DateTime?
+  deliveredAt DateTime?
+  completedAt DateTime?
+
+  // Road-network route as last computed (see services/routingService.ts).
+  // distanceKm is what pricing actually bills on — persisted rather than
+  // recomputed-and-discarded, closing the gap in docs/errand_pricing_formula.md
+  // section 4.3. routeProvider/`degraded` record which engine produced it so a
+  // fallback estimate is never mistaken for a measurement.
+  distanceKm           Float?
+  routeDistanceMeters  Int?
+  routeDurationSeconds Int?
+  routeGeometry        String?   @db.Text
+  routeProvider        String?   @db.VarChar(20)
+  routedAt             DateTime?
+
+  // ETA is stored as a range, never a single number: an errand includes time
+  // standing in a queue, which is inherently uncertain. See services/etaService.ts.
+  etaLowAt      DateTime?
+  etaHighAt     DateTime?
+  etaComputedAt DateTime?
+  etaIsDegraded Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pabiliDetails         PabiliDetail[]
+  pabiliItemRequests    PabiliItemRequest[]
+  dispatchLogs          DispatchLog[]
+  pinpoints             ErrandPinpoint[]
+  transaction           CustomerTransaction?
+  paymentSelection      PaymentSelection?
+  rating                Rating?
+  connectivityIncidents ConnectivityIncident[]
+  settlement            SettlementRecord?
+  trackPoints           ErrandTrackPoint[]
+  dwellObservations     DwellObservation[]
+
+  @@map("errands")
+}
+
+// 6. Pabili Details Table (3NF: Separated itemized list)
+model PabiliDetail {
+  id                Int      @id @default(autoincrement())
+  errandId          String
+  errand            Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  itemName          String
+  // Which of the errand's selected store categories this item was requested
+  // from (e.g. "Pharmacy", "Bakery") — nullable because dispatcher-added items
+  // (via the items-edit endpoint) aren't necessarily tied to one of the
+  // customer's original category picks.
+  storeCategory     String?
+  quantity          Int      @default(1)
+  unitPrice         Float    @default(0)
+  estimatedSubtotal Float    @default(0)
+  createdAt         DateTime @default(now())
+
+  @@map("pabili_details_tbl")
+}
+
+// 6a. Pabili Item Requests Table (3NF: customer's ORIGINAL, immutable item ask —
+// an audit-trail record distinct from PabiliDetail, which is the mutable working
+// copy a dispatcher may later correct. Never updated/deleted after creation
+// except via the Errand's own cascade.)
+model PabiliItemRequest {
+  id            Int      @id @default(autoincrement())
+  errandId      String
+  errand        Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  itemName      String
+  storeCategory String?
+  quantity      Int      @default(1)
+  createdAt     DateTime @default(now())
+
+  @@map("pabili_item_requests_tbl")
+}
+
+// 6b. Errand Pinpoints Table (3NF: dispatcher-committed store waypoints, max 3 per errand)
+model ErrandPinpoint {
+  id        Int      @id @default(autoincrement())
+  errandId  String
+  errand    Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  sequence  Int      @default(0)
+  storeName String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now())
+
+  // What kind of store this stop is, which is what decides how long the rider
+  // is expected to be inside it (see MerchantCategory dwell fields). Resolved
+  // from the matched VerifiedPlace where there is one; nullable because a
+  // dispatcher can drop a pin on a store that isn't in the catalogue.
+  categoryId Int?
+  category   MerchantCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  placeId    String?           @db.VarChar(36)
+  place      VerifiedPlace?    @relation(fields: [placeId], references: [id], onDelete: SetNull)
+
+  // Set by geofence entry/exit derived from the rider's breadcrumb. The gap
+  // between them is one dwell observation.
+  arrivedAt  DateTime?
+  departedAt DateTime?
+
+  // Routing result for the leg ENDING at this stop.
+  legDistanceMeters  Int?
+  legDurationSeconds Int?
+
+  // Blocks the route optimizer from reordering this stop. Real errands have
+  // ordering constraints the optimizer can't know - buy the hot food last.
+  sequenceLocked Boolean @default(false)
+
+  dwellObservations DwellObservation[]
+
+  @@index([errandId])
+  @@map("errand_pinpoints_tbl")
+}
+
+// 7. Dispatch Logs Table (3NF: Dispatcher assignment logs)
+model DispatchLog {
+  id           Int      @id @default(autoincrement())
+  errandId     String
+  errand       Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  dispatcherId Int
+  dispatcher   User     @relation("DispatcherLogs", fields: [dispatcherId], references: [id])
+  notes        String?
+  dispatchedAt DateTime @default(now())
+
+  @@map("dispatch_logs")
+}
+
+// 10. Service Rates Configuration Table (3NF)
+model RateConfig {
+  id        Int   @id @default(1)
+  baseFee   Float @default(50)
+  perKmRate Float @default(10)
+
+  // Multi-store surcharge: charged per store beyond the first, capped at
+  // maxAdditionalStores (ErrandFormScreen.tsx caps a customer at 3 store
+  // categories total = 1 base + up to 2 additional).
+  multiStoreFeePerStore Float @default(30)
+  maxAdditionalStores   Int   @default(2)
+
+  // Grocery fee tier: a flat cap above the threshold protects large orders
+  // from paying a straight percentage; a percentage below it keeps small
+  // orders proportional instead of overpaying a flat fee.
+  groceryFeeThreshold Float @default(3000)
+  groceryFeePercent   Float @default(10)
+  groceryFeeFlat      Float @default(50)
+
+  // Non-COD handling fee: only applies once a confirmed payment mode isn't
+  // COD — currently unreachable in practice (see paymentMethodStrategy.ts's
+  // UnavailableStrategy) but modeled now so a future GCash/Bank/Card
+  // integration needs no further pricing change.
+  nonCodThreshold Float @default(3000)
+  nonCodFeeHigh   Float @default(50)
+  nonCodFeeLow    Float @default(15)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("rate_configs")
+}
+
+// 11. Saved Delivery Locations (Customer GPS pinpoints, max 5 per customer)
+model SavedDeliveryLocation {
+  id         Int             @id @default(autoincrement())
+  customerId Int
+  customer   CustomerAccount @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String
+  address    String
+  latitude   Float
+  longitude  Float
+  isDefault  Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+
+  @@map("saved_delivery_locations")
+}
+
+// 12. Token Blocklist Table (Server-Side Session Revocation)
+model TokenBlocklist {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique @db.VarChar(500)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("token_blocklist")
+}
+
+// 13. Payment Selection Table (3NF: dispatcher-prompted, customer-confirmed
+// payment mode per errand — a distinct record from CustomerTransaction, which
+// tracks the money/settlement side; this tracks the verification-only choice
+// itself, one confirmed row per errand, never overwritten once written).
+model PaymentSelection {
+  id            String      @id @default(uuid())
+  errandId      String      @unique
+  errand        Errand      @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  paymentModeId Int
+  paymentMode   PaymentMode @relation(fields: [paymentModeId], references: [id])
+  confirmedAt   DateTime    @default(now())
+
+  @@map("payment_selections")
+}
+
+// 14. Ratings Table (3NF: one customer rating per errand, tied to the rider
+// who handled it)
+model Rating {
+  id        Int      @id @default(autoincrement())
+  errandId  String   @unique
+  errand    Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  riderId   Int
+  rider     User     @relation(fields: [riderId], references: [id])
+  stars     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@map("ratings")
+}
+
+// 14b. Email Verification Codes Table (3NF: one row per code issued —
+// re-sends create a NEW row rather than overwriting, so failed/expired
+// attempts stay in the trail rather than being silently lost)
+model EmailVerificationCode {
+  id         Int              @id @default(autoincrement())
+  customerId Int?
+  email      String?
+  phone      String?
+  customer   CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int              @default(0)
+  createdAt  DateTime         @default(now())
+
+  @@index([customerId])
+  @@index([email])
+  @@index([phone])
+  @@map("email_verification_codes")
+}
+
+// 14c. Connectivity Incidents Table (3NF: audit trail of rider device
+// connectivity loss — one row per incident, opened on disconnect,
+// `reconnectedAt` filled in when the device comes back online)
+model ConnectivityIncident {
+  id             Int       @id @default(autoincrement())
+  riderId        Int
+  rider          User      @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  errandId       String?
+  errand         Errand?   @relation(fields: [errandId], references: [id], onDelete: SetNull)
+  disconnectedAt DateTime  @default(now())
+  reconnectedAt  DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([riderId])
+  @@map("connectivity_incidents")
+}
+
+// 14d. Settlement Records Table (3NF: one row per COD errand's cash
+// reconciliation — expectedAmount is the calculated Errand.totalCost at the
+// moment of settlement, collectedAmount is what the rider actually turned
+// in, variance/status capture the reconciliation outcome)
+model SettlementRecord {
+  id              Int      @id @default(autoincrement())
+  errandId        String   @unique
+  errand          Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  riderId         Int
+  rider           User     @relation(fields: [riderId], references: [id])
+  expectedAmount  Float
+  collectedAmount Float
+  variance        Float
+  status          String
+  settledAt       DateTime @default(now())
+
+  @@index([riderId])
+  @@map("settlement_records")
+}
+
+enum RiderPresenceStatus {
+  ONLINE
+  OFFLINE
+}
+
+// 14e. Rider Login Sessions Table (3NF: one row per rider login, closed on
+// explicit logout or by the periodic presence sweep if abandoned — archival
+// record of when riders were active and for how long)
+model RiderLoginSession {
+  id              Int       @id @default(autoincrement())
+  riderId         Int
+  rider           User      @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  loginAt         DateTime  @default(now())
+  logoutAt        DateTime?
+  durationSeconds Int?
+  createdAt       DateTime  @default(now())
+
+  @@index([riderId])
+  @@index([riderId, logoutAt])
+  @@map("rider_login_sessions")
+}
+
+// 14f. Rider Status Logs Table (3NF: fixed-cadence archive — one row per
+// rider every 2 minutes, not a change-log — of online/offline presence,
+// written by jobs/riderStatusSnapshot.ts)
+model RiderStatusLog {
+  id         Int                 @id @default(autoincrement())
+  riderId    Int
+  rider      User                @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  status     RiderPresenceStatus
+  recordedAt DateTime            @default(now())
+
+  @@index([riderId, recordedAt])
+  @@map("rider_status_logs")
+}
+
+// 15. Notifications Table (3NF: recipient is EITHER an operational User
+// (owner/dispatcher/rider) OR a CustomerAccount, never both — enforced in
+// notificationService.ts since MySQL has no clean "exactly one of two
+// nullable FKs" constraint. Two nullable FKs (rather than one untyped
+// recipientId + a type discriminator) so both sides keep real referential
+// integrity, matching every other relation in this schema.)
+model Notification {
+  id         Int              @id @default(autoincrement())
+  userId     Int?
+  user       User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId Int?
+  customer   CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type       String
+  title      String
+  body       String
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  @@index([userId])
+  @@index([customerId])
+  @@map("notifications")
+}
+
+// 16. Account Modification Logs Table (3NF: unified audit trail of profile
+// and account edits across all roles: Customer, Rider, Dispatcher, and Owner.
+// Records field-level diffs, IP address, user-agent, and verification type.)
+model AccountModificationLog {
+  id            Int              @id @default(autoincrement())
+  role          String // "CUSTOMER", "RIDER", "DISPATCHER", "OWNER"
+  userId        Int?
+  user          User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId    Int?
+  customer      CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fieldModified String
+  oldValue      String?          @db.Text
+  newValue      String?          @db.Text
+  ipAddress     String?
+  userAgent     String?
+  verifiedVia   String           @default("RECAPTCHA")
+  createdAt     DateTime         @default(now())
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([role])
+  @@index([createdAt])
+  @@map("account_modification_logs")
+}
+
+// 17. Verified Places Table (Pre-recorded GPS coordinates of establishments in Tacurong City)
+model VerifiedPlace {
+  id         String           @id @default(uuid()) @db.VarChar(36)
+  name       String           @db.VarChar(150)
+  categoryId Int
+  category   MerchantCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  address    String           @db.VarChar(255)
+  barangay   String?          @db.VarChar(80)
+  latitude   Float
+  longitude  Float
+  keywords   String?          @db.Text
+  isActive   Boolean          @default(true)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  pinpoints         ErrandPinpoint[]
+  dwellObservations DwellObservation[]
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([barangay])
+  @@map("verified_places")
+}
+
+// 17. Errand Track Points (rider breadcrumb, 3NF: one row per accepted GPS fix)
+//
+// This is deliberately NOT the live-tracking channel. High-frequency live pins
+// stay in Firebase RTDB (`riders/{id}`) exactly as before — see AGENTS.md
+// section 7. What lands here is a low-rate, map-matched archive flushed from the
+// rider device roughly once a minute, including everything it buffered while
+// offline. It exists for three things the live channel cannot provide: learning
+// real dwell times, replaying a route when a delivery is disputed, and giving
+// dispatch a server-side position to rank riders by.
+model ErrandTrackPoint {
+  id       Int    @id @default(autoincrement())
+  errandId String
+  errand   Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  riderId  Int
+  rider    User   @relation("RiderTrackPoints", fields: [riderId], references: [id], onDelete: Cascade)
+
+  latitude  Float
+  longitude Float
+
+  accuracyMeters Float?
+  speedMps       Float?
+  headingDeg     Float?
+
+  // recordedAt is the device clock at the moment of the fix; receivedAt is the
+  // server clock when it arrived. They diverge by minutes or hours for points
+  // buffered through a signal blackout, which is exactly why both are kept —
+  // ordering the trail uses recordedAt, auditing the flush uses receivedAt.
+  recordedAt DateTime
+  receivedAt DateTime @default(now())
+
+  // True once the point has been snapped to the road network. False means the
+  // raw GPS was kept because matching was unavailable or untrustworthy.
+  isMapMatched Boolean @default(false)
+  // True when this fix was buffered on the device during a connectivity gap.
+  wasOffline   Boolean @default(false)
+
+  // Device-generated UUID. Paired with the unique index below it makes a
+  // retried batch idempotent — a flush that times out after the server already
+  // committed must not duplicate the trail on retry.
+  clientPointId String @db.VarChar(36)
+
+  @@unique([errandId, clientPointId])
+  @@index([errandId, recordedAt])
+  @@index([riderId, recordedAt])
+  @@map("errand_track_points")
+}
+
+// 18. Dwell Observations (3NF: one row per completed stop)
+//
+// The training set behind MerchantCategory's dwell percentiles. Keeping the raw
+// observations rather than only a running aggregate means the percentiles can be
+// recomputed, audited, or corrected after the fact.
+model DwellObservation {
+  id         Int            @id @default(autoincrement())
+  errandId   String
+  errand     Errand         @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  pinpointId Int
+  pinpoint   ErrandPinpoint @relation(fields: [pinpointId], references: [id], onDelete: Cascade)
+
+  categoryId Int?
+  category   MerchantCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  placeId    String?           @db.VarChar(36)
+  place      VerifiedPlace?    @relation(fields: [placeId], references: [id], onDelete: SetNull)
+
+  dwellSeconds Int
+  arrivedAt    DateTime
+  departedAt   DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([categoryId, createdAt])
+  @@index([placeId, createdAt])
+  @@map("dwell_observations")
+}
