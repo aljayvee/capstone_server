@@ -8,6 +8,14 @@ import type { AuthenticatedRequest } from "../middleware/auth.js";
 import * as riderPresenceService from "../services/riderPresenceService.js";
 
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// A dashboard served from a different origin than the API (e.g. the Vite dev
+// server on :5173 against the tunnelled backend) is a cross-site context, and
+// browsers refuse to send a SameSite=Lax cookie there — the refresh token never
+// arrives and /auth/refresh always 401s. SameSite=None fixes that but is only
+// accepted on a Secure cookie, so the two move together. Default stays Lax:
+// same-origin deployments keep the stronger CSRF posture.
+const CROSS_SITE_COOKIES = process.env.CROSS_SITE_COOKIES === "true";
 const ACCESS_TOKEN_FALLBACK_MS = 24 * 60 * 60 * 1000; // 24 hours
 const REFRESH_TOKEN_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -16,8 +24,8 @@ const REFRESH_TOKEN_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 function respondWithAuth(res: Response, status: number, message: string, result: AuthResult) {
   res.cookie("refreshToken", result.refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: CROSS_SITE_COOKIES || process.env.NODE_ENV === "production",
+    sameSite: CROSS_SITE_COOKIES ? "none" : "lax",
     maxAge: REFRESH_COOKIE_MAX_AGE,
   });
   res.status(status).json({
