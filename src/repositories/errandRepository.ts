@@ -12,7 +12,16 @@ export const ERRAND_INCLUDE = {
   rider: { select: { firstName: true, lastName: true, phone: true } },
   pabiliDetails: true,
   pabiliItemRequests: true,
-  pinpoints: { orderBy: { sequence: "asc" as const } },
+  pinpoints: {
+    orderBy: { sequence: "asc" as const },
+    // Only for the geofence radius. attachErrandNames flattens it onto each
+    // pinpoint so a client never has to know stops have categories at all.
+    include: { category: { select: { geofenceRadiusMeters: true } } },
+  },
+  // The recorded payout, where the errand has finished. attachErrandNames
+  // prefers it over recomputing so a rider is never shown a different figure
+  // from the one they were actually paid.
+  commission: true,
   dispatchLogs: {
     include: { dispatcher: { select: { firstName: true, lastName: true } } },
     orderBy: { dispatchedAt: "desc" as const },
@@ -137,7 +146,11 @@ export const errandRepository = {
         totalCost: true,
         deliveryFee: true,
         estimatedCost: true,
+        tip: true,
         settlement: { select: { collectedAmount: true } },
+        // Preferred over recomputing when present, so a payout already recorded
+        // for a rider cannot be restated by a later report run.
+        commission: { select: { riderShare: true, businessShare: true } },
       },
     });
   },
@@ -149,7 +162,10 @@ export const errandRepository = {
         createdAt: { gte: start, lt: end },
         status: { in: ["DELIVERED", "COMPLETED"] },
       },
-      select: { createdAt: true, totalCost: true },
+      // deliveryFee/tip/estimatedCost as well as totalCost: the dashboard's
+      // revenue tile reports gross order value, but the rider/business split
+      // beside it may only ever be taken on fees.
+      select: { createdAt: true, totalCost: true, deliveryFee: true, tip: true, estimatedCost: true },
     });
   },
 

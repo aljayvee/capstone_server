@@ -1,9 +1,21 @@
 import { prisma } from "../lib/prisma.js";
+import { haversineDistanceKm, type GeoPoint } from "../lib/geo.js";
 import { PlaceCreateInput, PlaceUpdateInput, PlaceSearchFilters, IVerifiedPlace } from "../types/place.js";
+
+// One degree of latitude is ~111.32 km everywhere. Longitude degrees shrink with
+// latitude, but Tacurong sits at ~6.7°N where cos(lat) is 0.993 — so using the
+// latitude figure for both axes over-selects the candidate box by well under a
+// percent. That is the safe direction to be wrong in for a pre-filter whose
+// results are re-measured exactly afterwards.
+const KM_PER_DEGREE = 111.32;
 
 export interface IPlaceRepository {
   findAll(filters?: PlaceSearchFilters): Promise<IVerifiedPlace[]>;
   findById(id: string): Promise<IVerifiedPlace | null>;
+  findNearest(
+    point: GeoPoint,
+    radiusMeters: number
+  ): Promise<{ place: IVerifiedPlace; distanceMeters: number } | null>;
   create(data: PlaceCreateInput): Promise<IVerifiedPlace>;
   update(id: string, data: PlaceUpdateInput): Promise<IVerifiedPlace>;
   delete(id: string): Promise<IVerifiedPlace>;
@@ -58,6 +70,53 @@ export class PrismaPlaceRepository implements IPlaceRepository {
       orderBy: { name: "asc" },
       take: limit ? Number(limit) : undefined,
     });
+  }
+
+  // Nearest active place to a coordinate, or null when nothing is close enough.
+  //
+  // Two-stage on purpose: MySQL has no spatial index on these plain Float
+  // columns, so the bounding box is what keeps this off a full table scan, and
+  // the exact great-circle ranking then happens in JS over the handful of rows
+  // that survive. A box is a square and a radius is a circle, so a row can clear
+  // the box and still be outside the radius — the haversine filter below is what
+  // makes the result actually circular.
+  async findNearest(
+    point: GeoPoint,
+    radiusMeters: number
+  ): Promise<{ place: IVerifiedPlace; distanceMeters: number } | null> {
+    const radiusDegrees = radiusMeters / 1000 / KM_PER_DEGREE;
+
+    const candidates = await prisma.verifiedPlace.findMany({
+      where: {
+        // Same visibility guard as findAll: a retired place, or one under a
+        // retired category, must not surface as somebody's delivery address.
+        isActive: true,
+        category: { status: "Active" },
+        latitude: { gte: point.latitude - radiusDegrees, lte: point.latitude + radiusDegrees },
+        longitude: { gte: point.longitude - radiusDegrees, lte: point.longitude + radiusDegrees },
+      },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          },
+        },
+      },
+    });
+
+    let best: { place: IVerifiedPlace; distanceMeters: number } | null = null;
+
+    for (const place of candidates) {
+      const distanceMeters = haversineDistanceKm(point, place) * 1000;
+      if (distanceMeters > radiusMeters) continue;
+      if (!best || distanceMeters < best.distanceMeters) {
+        best = { place, distanceMeters };
+      }
+    }
+
+    return best;
   }
 
   async findById(id: string): Promise<IVerifiedPlace | null> {

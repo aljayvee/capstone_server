@@ -1,4 +1,8 @@
 import { prisma } from "../src/lib/prisma.js";
+// Shared with merchantCategoryService's creation guard, so a name that gets
+// retired here is also a name the portal refuses to re-create. Keeping the two
+// lists in one module is what stops them drifting apart.
+import { RETIRED_CATEGORY_NAMES } from "../src/lib/blockedCategoryNames.js";
 
 async function seedPlaces() {
   console.log("🌱 Seeding verified merchant categories and pre-recorded Tacurong places...");
@@ -15,36 +19,50 @@ async function seedPlaces() {
   // spends inside a store of this kind, which for an errand dominates travel
   // time. jobs/dwellLearning.ts replaces these with measured percentiles once
   // enough DwellObservation rows exist.
+  // handlingFeeMode decides how the purchase handling fee is charged for a stop
+  // of this kind (see StandardPricingStrategy). The AMOUNTS live in RateConfig —
+  // only the mode is per-category, so the flat figure and the percentage stay
+  // editable in one place.
   const categories = [
     {
-      name: "Food & Restaurant",
+      name: "Fast Food & Restaurant",
       description: "Fast food chains, diners, carinderias, bakeries, and cafes",
       dwellP50Seconds: 480,  // 8 min - order queue plus cook time
       dwellP80Seconds: 900,  // 15 min
+      // No handling fee on an ordinary order: two meals off a counter is not
+      // shopping, and a flat ₱50 on a ₱176 order is nearly a third of the goods.
+      // Past the size gate in pricingStrategy.ts — more than 12 units or ₱1,000
+      // — this stops applying and the errand prices like any other, because a
+      // twenty-item office lunch run IS the shopping this fee is for.
+      handlingFeeMode: "NONE" as const,
     },
     {
       name: "Pharmacy & Health",
       description: "Drugstores, medical supply stores, and clinics",
       dwellP50Seconds: 360,  // 6 min - usually counter-served
       dwellP80Seconds: 720,  // 12 min
+      // Same reasoning as fast food: one prescription off a counter.
+      handlingFeeMode: "NONE" as const,
     },
     {
       name: "Supermarket & Grocery",
       description: "Supermarkets, convenience stores, and public market stalls",
       dwellP50Seconds: 900,  // 15 min - multi-item hunt plus checkout queue
       dwellP80Seconds: 1800, // 30 min
+      // The case the percentage exists for: a big grocery run ties up a lot of
+      // the company's cash and is a genuinely longer job.
+      handlingFeeMode: "PERCENT" as const,
     },
     {
       name: "Retail & General Merchandise",
       description: "Department stores, hardware, school supplies, and dry goods",
       dwellP50Seconds: 600,  // 10 min - item may need finding or sizing
       dwellP80Seconds: 1200, // 20 min
+      // Basket sizes here run from a notebook to a power tool, so the tiered
+      // rule fits better than either extreme.
+      handlingFeeMode: "THRESHOLD" as const,
     },
   ];
-
-  // Retired store types: deactivated on every seed run so a re-seed cannot
-  // silently bring them back into the customer's picker.
-  const RETIRED_CATEGORY_NAMES = ["Bills & Payment Centers"];
 
   const catMap = new Map<string, number>();
 
@@ -56,6 +74,9 @@ async function seedPlaces() {
         status: "Active",
         dwellP50Seconds: cat.dwellP50Seconds,
         dwellP80Seconds: cat.dwellP80Seconds,
+        // Deliberately NOT re-applied on update: an owner who has tuned a
+        // category's fee mode must not have it silently reset by the next
+        // deploy's seed run. The seeded value is the starting position only.
       },
       create: {
         name: cat.name,
@@ -63,6 +84,7 @@ async function seedPlaces() {
         status: "Active",
         dwellP50Seconds: cat.dwellP50Seconds,
         dwellP80Seconds: cat.dwellP80Seconds,
+        handlingFeeMode: cat.handlingFeeMode,
       },
     });
     catMap.set(cat.name, record.id);
@@ -89,7 +111,7 @@ async function seedPlaces() {
     console.log(`   Retired category "${name}" and deactivated ${count} place(s).`);
   }
 
-  const foodCatId = catMap.get("Food & Restaurant")!;
+  const foodCatId = catMap.get("Fast Food & Restaurant")!;
   const pharmCatId = catMap.get("Pharmacy & Health")!;
   const grocCatId = catMap.get("Supermarket & Grocery")!;
   const retailCatId = catMap.get("Retail & General Merchandise")!;

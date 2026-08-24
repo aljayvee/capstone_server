@@ -129,6 +129,35 @@ export class OsrmRoutingProvider implements RoutingProvider {
     };
   }
 
+  // Snaps one fix onto the road network via /nearest. The route origin is a live
+  // rider position accepted at up to MAX_ACCURACY_METERS (50 m) of GPS error by
+  // the rider app's own gate — in a street grid that is enough to sit on the
+  // wrong parallel road, and the engine will then honestly route from there,
+  // producing a visible detour that is not the rider's actual path.
+  //
+  // Reuses MAX_SNAP_METERS for the same reason match() does: beyond it the
+  // "correction" is a guess onto a road the rider may not be on at all.
+  async snap(point: GeoPoint): Promise<GeoPoint | null> {
+    if (!this.isConfigured()) return null;
+
+    const url = `${OSRM_BASE_URL}/nearest/v1/driving/${toOsrmCoordinates([point])}?number=1`;
+    const data = await getJson(url);
+
+    const waypoint = data?.waypoints?.[0];
+    if (!waypoint?.location) return null;
+
+    // OSRM reports the snap offset itself, so there is no need to recompute it.
+    // Guard against it being absent on an older engine build by falling back to
+    // measuring the move ourselves.
+    const snapped = fromOsrmLocation(waypoint.location);
+    const snapMeters =
+      typeof waypoint.distance === "number"
+        ? waypoint.distance
+        : haversineDistanceKm(point, snapped) * 1000;
+
+    return snapMeters > MAX_SNAP_METERS ? null : snapped;
+  }
+
   async matrix(sources: GeoPoint[], destinations: GeoPoint[]): Promise<MatrixResult | null> {
     if (!this.isConfigured() || sources.length === 0 || destinations.length === 0) return null;
 

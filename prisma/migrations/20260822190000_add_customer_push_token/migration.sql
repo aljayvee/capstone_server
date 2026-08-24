@@ -1,0 +1,11 @@
+-- Expo push token for customer accounts.
+--
+-- Until now only `users` (riders and staff) carried one, so the customer half
+-- of every errand was unreachable outside the app: a dispatcher accepting a
+-- request produced a socket event and nothing else, and a customer who had
+-- switched away from the waiting screen had no way to learn it had happened.
+--
+-- Nullable on purpose. A customer can decline the OS notification prompt, and
+-- every send path treats a missing token as "skip this channel" rather than as
+-- an error — the persisted Notification row is the durable record either way.
+ALTER TABLE `customer_accounts` ADD COLUMN `expoPushToken` VARCHAR(191) NULL;

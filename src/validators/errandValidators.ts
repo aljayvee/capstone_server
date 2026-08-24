@@ -62,6 +62,26 @@ export const createErrandSchema = z.object({
 
 export type CreateErrandBody = z.infer<typeof createErrandSchema>;
 
+// Everything pricing needs about a draft errand, and nothing else. Distance is
+// deliberately absent: it is not the client's to assert, and a quote predates any
+// pinned store, so the server treats it as unknown rather than accepting a guess.
+export const errandQuoteSchema = z.object({
+  estimatedCost: z.coerce.number().nonnegative().optional(),
+  tip: z.coerce.number().nonnegative().optional(),
+  storeCount: z.coerce.number().int().positive().max(3).optional(),
+  isCod: z.coerce.boolean().optional(),
+  // Store-category NAMES the customer picked. These decide how the handling fee
+  // is charged — a supermarket run and a pharmacy run are not the same job. Only
+  // names matching an ACTIVE category count; anything else is ignored and the
+  // errand falls back to the default mode.
+  storeCategories: z.array(z.string().trim().min(1).max(100)).max(3).optional(),
+
+  // Total units in the basket, which now decides whether a handling fee applies
+  // at all. Capped generously: a Pabili basket is a person's shopping, not a
+  // wholesale order, and an absurd figure here would only distort the quote.
+  itemUnits: z.coerce.number().int().nonnegative().max(500).optional(),
+});
+
 export const assignRiderSchema = z.object({
   riderId: z.coerce.number().int().positive("riderId must be a positive integer.").optional(),
 });

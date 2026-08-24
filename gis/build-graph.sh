@@ -20,6 +20,12 @@ mkdir -p "$data"
 # the router has no roads for.
 bbox="124.60,6.62,124.73,6.74"
 
+# GHCR, not Docker Hub. The OSRM project stopped publishing to docker.io at
+# v5.25.0, so `osrm/osrm-backend:v5.27.1` does not resolve at all. Keep this in
+# step with the image in docker-compose.osrm.yml — osrm-routed refuses to load a
+# graph written by a different version.
+osrm_image="ghcr.io/project-osrm/osrm-backend:v5.27.1"
+
 pbf_url="https://download.geofabrik.de/asia/philippines-latest.osm.pbf"
 pbf_full="$data/philippines-latest.osm.pbf"
 pbf_clip="$data/tacurong.osm.pbf"
@@ -41,12 +47,12 @@ fi
 echo "Clipped size: $(du -h "$pbf_clip" | cut -f1)"
 
 echo "Extracting routing graph (car profile)..."
-docker run --rm -v "$data:/data" osrm/osrm-backend:v5.27.1 \
+docker run --rm -v "$data:/data" "$osrm_image" \
   osrm-extract -p /opt/car.lua /data/tacurong.osm.pbf
 
 echo "Partitioning (MLD)..."
-docker run --rm -v "$data:/data" osrm/osrm-backend:v5.27.1 osrm-partition /data/tacurong.osrm
-docker run --rm -v "$data:/data" osrm/osrm-backend:v5.27.1 osrm-customize /data/tacurong.osrm
+docker run --rm -v "$data:/data" "$osrm_image" osrm-partition /data/tacurong.osrm
+docker run --rm -v "$data:/data" "$osrm_image" osrm-customize /data/tacurong.osrm
 
 cat <<'DONE'
 

@@ -187,3 +187,17 @@ export async function deleteCustomerPhoto(
     user: updatedProfile,
   };
 }
+
+/**
+ * Store (or refresh) this customer's Expo push token.
+ *
+ * Called on every app launch rather than once at signup: Expo tokens are not
+ * stable — they change on reinstall, on some OS updates, and when a user
+ * revokes and re-grants notification permission. A token written once at
+ * registration silently rots, and the failure is invisible because a push to a
+ * dead token succeeds at the API level and simply never arrives.
+ */
+export async function registerPushToken(customerId: number, input: { token: string }) {
+  await customerRepository.update(customerId, { expoPushToken: input.token });
+  return { success: true };
+}

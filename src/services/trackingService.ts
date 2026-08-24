@@ -7,9 +7,14 @@ import { errandRepository } from "../repositories/errandRepository.js";
 import { pinpointRepository } from "../repositories/pinpointRepository.js";
 import { trackPointRepository, type TrackPointCreateData } from "../repositories/trackPointRepository.js";
 import * as etaService from "./etaService.js";
-import { applyGeofenceTransitions, type GeofenceTransition } from "./geofenceService.js";
+import {
+  applyGeofenceTransitions,
+  detectStopMismatch,
+  type GeofenceTransition,
+} from "./geofenceService.js";
 import { ServiceError } from "./ServiceError.js";
 import type { TrackPointInput } from "../validators/trackingValidators.js";
+import { eventPublisher } from "../lib/eventPublisher.js";
 
 // Below this many points, map matching costs a round trip and buys little — a
 // couple of fixes carry too little shape for the engine to choose a road from.
@@ -121,6 +126,7 @@ export async function ingestBatch(
       placeId: stop.placeId,
       arrivedAt: stop.arrivedAt,
       departedAt: stop.departedAt,
+      radiusMeters: stop.category?.geofenceRadiusMeters ?? null,
     })),
     rows.map((row) => ({
       latitude: row.latitude,
@@ -128,6 +134,19 @@ export async function ingestBatch(
       recordedAt: row.recordedAt,
     }))
   );
+
+  // Tell everyone watching this errand which stop was reached or left.
+  //
+  // Only `errand:stop_mismatch` was ever broadcast, so the geofence recorded
+  // arrivals that no screen ever heard about — the dispatcher's board and the
+  // rider's own status both sat still while the server knew the rider had
+  // arrived.
+  for (const transition of transitions) {
+    eventPublisher.emitToErrand(errandId, `errand:stop_${transition.kind}`, {
+      errandId,
+      ...transition,
+    });
+  }
 
   // Recompute off the request path — a slow routing call must never delay the
   // rider's upload. Forced when a stop was reached or left, since those change
@@ -138,6 +157,19 @@ export async function ingestBatch(
   // takes is the defining case of an errand: they are queueing, not stuck. Tell
   // the customer why rather than letting the ETA quietly slide.
   void etaService.detectStalledStop(errandId).catch(() => {});
+
+  // The mirror case: a rider settled somewhere that is not a pinned stop at all
+  // — the wrong branch of a chain, which no transition above can detect because
+  // the two branches are further apart than the geofence is wide. Same
+  // fire-and-forget treatment; it must never delay the rider's upload.
+  void detectStopMismatch(
+    errandId,
+    rows.map((row) => ({
+      latitude: row.latitude,
+      longitude: row.longitude,
+      recordedAt: row.recordedAt,
+    }))
+  ).catch(() => {});
 
   return {
     accepted: accepted.length,

@@ -3,7 +3,7 @@ import { customerTransactionRepository } from "../repositories/customerTransacti
 import { userRepository } from "../repositories/userRepository.js";
 import { ratingRepository } from "../repositories/ratingRepository.js";
 import { getPeriodStrategy, type ReportPeriod } from "./patterns/reportPeriodStrategy.js";
-import { splitRiderBusinessShare } from "./patterns/commissionSplit.js";
+import { splitCommission } from "./patterns/commissionSplit.js";
 
 interface ReportMeta {
   period: ReportPeriod;
@@ -84,10 +84,12 @@ export async function getRiderPerformanceReport(period: ReportPeriod, referenceD
   return { ...meta, riders: riderRows };
 }
 
-// Commission is an ESTIMATE (fixed rider/business split — see
-// patterns/commissionSplit.ts — applied to historical order value) — see
-// analyticsService.ts's summarizeRevenue for why the schema doesn't support a
-// ledger-accurate historical split today.
+// Commission is an ESTIMATE for the period: a fixed rider/business split (see
+// patterns/commissionSplit.ts) applied to the service fees earned in it.
+//
+// It is an estimate because it aggregates over errands rather than reading each
+// one's recorded payout — getSettlementReport below does prefer the stored
+// RiderCommission where one exists, and is the ledger-accurate view.
 export async function getCommissionReport(period: ReportPeriod, referenceDate: Date) {
   const { start, end, meta } = resolveRange(period, referenceDate);
   const [totals, byCategory] = await Promise.all([
@@ -95,7 +97,15 @@ export async function getCommissionReport(period: ReportPeriod, referenceDate: D
     errandRepository.groupByCategoryBetween(start, end),
   ]);
 
-  const { businessShare: estimatedCommission } = splitRiderBusinessShare(totals._sum.totalCost ?? 0);
+  // Split the SERVICE FEES, not order value. totalCost bundles estimatedCost —
+  // the company's own money fronted for the goods — so splitting it credited the
+  // rider 70% of the purchase float. On a ₱3,000 grocery run that was ₱2,100 of
+  // commission nobody earned.
+  const { businessShare: estimatedCommission } = splitCommission({
+    deliveryFee: totals._sum.deliveryFee ?? 0,
+    tip: totals._sum.tip ?? 0,
+    itemCost: totals._sum.estimatedCost ?? 0,
+  });
 
   return {
     ...meta,
@@ -121,7 +131,30 @@ export async function getSettlementReport(period: ReportPeriod, referenceDate: D
   // delivered and settled; falls back to the estimate for everything still in
   // flight, so this never goes empty mid-period.
   const grossRevenue = round2(rows.reduce((sum, r) => sum + (r.settlement?.collectedAmount ?? r.totalCost), 0));
-  const { riderShare, businessShare } = splitRiderBusinessShare(grossRevenue);
+
+  // grossRevenue above is cash through the business and stays reported as such.
+  // The SPLIT, though, is taken only on fees: item money passes through the
+  // rider's hands without ever being earned by anyone.
+  //
+  // Prefers a recorded RiderCommission where one exists — same shape as the
+  // collectedAmount preference above, and for the same reason: a figure already
+  // settled should not be restated by a later run.
+  let riderShare = 0;
+  let businessShare = 0;
+  for (const row of rows) {
+    if (row.commission) {
+      riderShare = round2(riderShare + row.commission.riderShare);
+      businessShare = round2(businessShare + row.commission.businessShare);
+      continue;
+    }
+    const split = splitCommission({
+      deliveryFee: row.deliveryFee,
+      tip: row.tip,
+      itemCost: row.estimatedCost,
+    });
+    riderShare = round2(riderShare + split.riderShare);
+    businessShare = round2(businessShare + split.businessShare);
+  }
 
   return {
     ...meta,

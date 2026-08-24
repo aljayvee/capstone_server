@@ -3,6 +3,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { parseOrThrow } from "../validators/validate.js";
 import { customerProfileUpdateSchema } from "../validators/customerValidators.js";
 import { customerPhotoUploadSchema } from "../validators/customerPhotoValidators.js";
+import { pushTokenSchema } from "../validators/pushTokenValidators.js";
 import {
   verifyEmailSchema,
   resendVerificationSchema,
@@ -118,8 +119,8 @@ export const getCustomerTransactions = asyncHandler<AuthenticatedRequest>(async 
 // Pre-registration OTP endpoints (unauthenticated)
 export const sendRegistrationOtp = asyncHandler(async (req, res) => {
   const input = parseOrThrow(sendRegistrationOtpSchema, req.body);
-  await emailVerificationService.sendRegistrationOtp(input.email);
-  res.json({ success: true, message: "Verification code sent to email." });
+  const retryAfterSeconds = await emailVerificationService.sendRegistrationOtp(input.email);
+  res.json({ success: true, message: "Verification code sent to email.", retryAfterSeconds });
 });
 
 export const verifyRegistrationOtp = asyncHandler(async (req, res) => {
@@ -156,3 +157,21 @@ export const resendVerificationEmail = asyncHandler(async (req, res) => {
   await emailVerificationService.resendVerificationCode(input.customerId);
   res.json({ success: true, message: "Verification code resent." });
 });
+
+// POST /api/customers/:id/push-token — customer registers/updates their Expo token.
+export const registerCustomerPushToken = asyncHandler<AuthenticatedRequest>(
+  async (req, res: Response) => {
+    const customerId = parseInt(req.params.id, 10);
+    if (isNaN(customerId)) {
+      throw new ServiceError(400, "Invalid customer ID");
+    }
+    // Same self-or-owner guard as every other route on this resource: a token
+    // is a delivery address for notifications, so writing someone else's would
+    // redirect their alerts to your device.
+    assertSelfOrOwner(req, customerId);
+
+    const input = parseOrThrow(pushTokenSchema, req.body);
+    const result = await customerService.registerPushToken(customerId, input);
+    res.json(result);
+  }
+);

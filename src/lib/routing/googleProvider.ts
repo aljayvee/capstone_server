@@ -65,6 +65,15 @@ export class GoogleRoutingProvider implements RoutingProvider {
     const params = new URLSearchParams({
       origin: toLatLng(origin),
       destination: toLatLng(destination),
+      // Riders are on motorcycles: driving is the closest of the four modes, and
+      // it is also Google's default — set explicitly so the mode is not silently
+      // inherited if that default ever changes.
+      mode: "driving",
+      // Opts into traffic-aware durations. Without it Google returns free-flow
+      // times, which under-state a Tacurong afternoon and make the ETA optimistic.
+      departure_time: "now",
+      // Biases geocoding and road naming to the Philippines.
+      region: "ph",
       key: apiKey(),
     });
     if (waypoints.length > 0) {
@@ -83,12 +92,18 @@ export class GoogleRoutingProvider implements RoutingProvider {
       ),
     }));
 
+    // overview_polyline is Google's *generalised* geometry — it drops enough
+    // vertices that the drawn line visibly cuts corners and leaves the
+    // carriageway at street zoom. It is kept for `encodedGeometry`, which is
+    // persisted to Errand.routeGeometry and redrawn on the fleet dashboard where
+    // a compact shape is the right trade, but the coordinates handed to the
+    // customer's map are stitched from the per-step polylines instead.
     const encodedGeometry: string | null = route.overview_polyline?.points ?? null;
 
     return {
       distanceMeters: legs.reduce((sum, leg) => sum + leg.distanceMeters, 0),
       durationSeconds: legs.reduce((sum, leg) => sum + leg.durationSeconds, 0),
-      coordinates: encodedGeometry ? decodePolyline(encodedGeometry) : [],
+      coordinates: legs.flatMap((leg) => leg.coordinates),
       encodedGeometry,
       legs,
       provider: this.name,
@@ -132,6 +147,13 @@ export class GoogleRoutingProvider implements RoutingProvider {
   // separate product with its own key/billing and is not enabled here).
   // Returning null lets the resilient service fall through cleanly.
   async match(): Promise<MatchResult | null> {
+    return null;
+  }
+
+  // Same reason as match(): single-point snapping is Roads API nearestRoads,
+  // which is part of that unenabled product. Routing from the raw fix is the
+  // honest fallback.
+  async snap(): Promise<GeoPoint | null> {
     return null;
   }
 }

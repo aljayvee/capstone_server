@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { normalizeUsername, normalizeEmail } from "../../lib/identity.js";
 import type { CustomerCreateData } from "../../repositories/customerRepository.js";
 
 export interface CustomerFactoryInput {
@@ -26,9 +27,12 @@ export async function buildCustomerAccountCreateData(input: CustomerFactoryInput
   }
 
   return {
-    username: input.username.trim(),
+    // Stored in canonical form so the unique index, the duplicate check and
+    // the sign-in lookup are all comparing the same string. Previously only
+    // the email was canonicalised and the username leaned on collation.
+    username: normalizeUsername(input.username),
     passwordHash,
-    email: input.email.trim().toLowerCase(),
+    email: normalizeEmail(input.email),
     emailVerified: input.emailVerified ?? false,
     information: {
       firstName: input.firstName.trim(),

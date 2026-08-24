@@ -1,7 +1,7 @@
 import { errandRepository } from "../repositories/errandRepository.js";
 import { userRepository } from "../repositories/userRepository.js";
 import { getPeriodStrategy, type ReportPeriodStrategy } from "./patterns/reportPeriodStrategy.js";
-import { splitRiderBusinessShare } from "./patterns/commissionSplit.js";
+import { splitCommission } from "./patterns/commissionSplit.js";
 
 export type DashboardFrequency = "TODAY" | "WEEK" | "MONTH" | "YEAR";
 
@@ -67,12 +67,23 @@ function summarizeErrandStatus(statusCounts: Array<{ status: string; _count: { _
   };
 }
 
-// Commission/rider-payout split uses a fixed rate (see patterns/commissionSplit.ts)
-// applied to historical order volume — the schema stores one bundled `deliveryFee`
-// per errand, so this is presented as "estimated" rather than ledger-accurate.
-function summarizeRevenue(rows: Array<{ totalCost: number }>) {
+// `gross` is total order value — what customers paid, including the money for the
+// goods themselves. The split beside it is deliberately NOT taken on that figure:
+// item cost is company money fronted for the purchase and carried by the rider,
+// never earned by either party, so only the service fees are divided (see
+// patterns/commissionSplit.ts).
+//
+// Still "estimated": it aggregates over errands rather than reading each recorded
+// payout. reportService.getSettlementReport is the ledger-accurate view.
+function summarizeRevenue(
+  rows: Array<{ totalCost: number; deliveryFee: number; tip: number; estimatedCost: number }>
+) {
   const gross = rows.reduce((sum, r) => sum + r.totalCost, 0);
-  const { riderShare, businessShare } = splitRiderBusinessShare(gross);
+  const { riderShare, businessShare } = splitCommission({
+    deliveryFee: rows.reduce((sum, r) => sum + r.deliveryFee, 0),
+    tip: rows.reduce((sum, r) => sum + r.tip, 0),
+    itemCost: rows.reduce((sum, r) => sum + r.estimatedCost, 0),
+  });
   return {
     gross: round2(gross),
     estimatedCommission: businessShare,

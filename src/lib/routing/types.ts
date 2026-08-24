@@ -80,4 +80,10 @@ export interface RoutingProvider {
   route(points: GeoPoint[]): Promise<RouteResult | null>;
   matrix(sources: GeoPoint[], destinations: GeoPoint[]): Promise<MatrixResult | null>;
   match(trace: TracePoint[]): Promise<MatchResult | null>;
+  // Moves a single fix onto the nearest road. Distinct from match(): that needs
+  // a trace to reason about, this answers for one point with no history, which
+  // is what a route origin has. Returns null when the provider cannot snap or
+  // when the nearest road is far enough away that moving the point would be a
+  // guess rather than a correction — callers then route from the raw fix.
+  snap(point: GeoPoint): Promise<GeoPoint | null>;
 }

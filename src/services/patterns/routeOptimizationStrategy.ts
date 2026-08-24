@@ -118,5 +118,13 @@ function permutations(values: number[]): number[][] {
   return result;
 }
 
+// Sequence-preserving, matching what SequenceOrderStrategy above documents as
+// the intended default. This used to point at the exhaustive strategy, which
+// directly contradicted that comment — so anyone wiring optimisation in would
+// have reached for "the default" and silently got stop reordering, the exact
+// behaviour change the comment argues against.
+//
+// ExhaustiveRouteOptimizationStrategy stays exported and tested; choosing it is
+// now a deliberate act rather than an accident of naming.
 export const defaultRouteOptimizationStrategy: RouteOptimizationStrategy =
-  new ExhaustiveRouteOptimizationStrategy();
+  new SequenceOrderStrategy();

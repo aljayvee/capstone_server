@@ -43,21 +43,34 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // First-login email ownership proof. The two defaults are deliberately
+  // asymmetric: an account created through the dashboard already has validated
+  // names and an email (profileCompleted), but nobody has yet proven that the
+  // address is reachable (emailVerified) — so it is challenged once, on its
+  // first sign-in. Only the seeded bootstrap admin starts profile-incomplete.
+  emailVerified    Boolean   @default(false)
+  emailVerifiedAt  DateTime?
+  profileCompleted Boolean   @default(true)
+
   expoPushToken String?
 
   errandsAsRider          Errand[]                 @relation("RiderErrands")
   trackPoints             ErrandTrackPoint[]       @relation("RiderTrackPoints")
   dispatchLogs            DispatchLog[]            @relation("DispatcherLogs")
+  declinesMade            ErrandDeclineReason[]     @relation("DispatcherDeclines")
   ratingsReceived         Rating[]
   notifications           Notification[]
   paymentEnabledErrands   Errand[]                 @relation("PaymentEnabledBy")
   connectivityIncidents   ConnectivityIncident[]
   settlements             SettlementRecord[]
+  proofImages             ErrandProofImage[]
+  commissions             RiderCommission[]
   updatedByUser           User?                    @relation("UserUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
   updatedRecords          User[]                   @relation("UserUpdatedBy")
   riderLoginSessions      RiderLoginSession[]
   riderStatusLogs         RiderStatusLog[]
   accountModificationLogs AccountModificationLog[]
+  verificationCodes       EmailVerificationCode[]  @relation("UserVerificationCodes")
 
   @@map("users")
 }
@@ -74,6 +87,16 @@ model CustomerAccount {
   updatedAt     DateTime @updatedAt
 
   information             CustomerInformation?
+  // Expo push token for this customer's device.
+  //
+  // Customers had none, which is why the only thing that could reach them was
+  // the in-app panel — a dispatcher accepting an errand was silent unless the
+  // customer happened to be looking at the waiting screen. `User` has carried
+  // one since the rider app shipped; this is the same field for the other half
+  // of the conversation. Nullable because a customer may decline the OS prompt,
+  // and every push path treats a missing token as "skip", never as an error.
+  expoPushToken           String?
+
   profilePhoto            CustomerProfilePhoto?
   transactions            CustomerTransaction[]
   errands                 Errand[]                 @relation("CustomerErrands")
@@ -81,6 +104,7 @@ model CustomerAccount {
   notifications           Notification[]
   verificationCodes       EmailVerificationCode[]
   accountModificationLogs AccountModificationLog[]
+  passwordResetAttempts   PasswordResetAttempt[]
 
   @@map("customer_accounts")
 }
@@ -134,6 +158,27 @@ model CustomerTransaction {
   @@map("customer_transactions")
 }
 
+// How the purchase handling fee is charged for a stop of this kind.
+//
+// The fee used to depend on basket value alone, with no idea what sort of shop
+// the rider was standing in — so a ₱3,500 restaurant order was charged a "grocery
+// fee" of ₱350. What decides it is the store type, which is why the mode lives
+// on the category.
+//
+// The AMOUNTS stay in RateConfig. Only the mode is per-category, so the flat
+// figure and the percentage are still edited in one place and cannot drift
+// between six categories.
+enum HandlingFeeMode {
+  // Flat below RateConfig.groceryFeeThreshold, percentage at or above it.
+  THRESHOLD
+  // Always the flat amount, whatever the basket is worth.
+  FLAT
+  // Always the percentage of basket value.
+  PERCENT
+  // No handling fee at all for this store type.
+  NONE
+}
+
 // 3. Merchant Categories Table (3NF)
 model MerchantCategory {
   id          Int      @id @default(autoincrement())
@@ -142,6 +187,10 @@ model MerchantCategory {
   status      String   @default("Active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Defaulted to THRESHOLD so shipping this changes nothing: every category
+  // keeps behaving exactly as it did until an owner deliberately moves one.
+  handlingFeeMode HandlingFeeMode @default(THRESHOLD)
 
   // Service time ("dwell") for a stop of this kind - how long the rider is
   // actually inside the store, as opposed to travelling. This is the single
@@ -157,11 +206,49 @@ model MerchantCategory {
   dwellSampleCount Int       @default(0)
   dwellUpdatedAt   DateTime?
 
+  // How close the rider must be for a stop of this kind to count as reached.
+  //
+  // Per category for the same reason dwell is: a supermarket occupies a whole
+  // block and its car park pushes the rider further from the pin than a
+  // roadside carinderia ever could. A single radius either fires late at the
+  // supermarket or fires from across the street at the carinderia.
+  //
+  // Defaulted to the 75 m the breadcrumb geofence has always used, so existing
+  // categories behave exactly as before until an owner changes one.
+  geofenceRadiusMeters Int @default(75)
+
   places            VerifiedPlace[]
   pinpoints         ErrandPinpoint[]
   dwellObservations DwellObservation[]
+  image             StoreCategoryImage?
 
   @@map("merchant_categories")
+}
+
+// 3b. Store Category Image Table (3NF: at most one hero photo per category)
+//
+// Kept out of `merchant_categories` on purpose. The photo is a LongText base64
+// blob measured in hundreds of kilobytes, and `merchant_categories` is read on
+// nearly every customer app launch (the Bento grid) and on every dispatcher
+// store pick. Holding the blob in a side table lets those reads stay narrow -
+// the list endpoint selects only `mimeType`/`updatedAt` from here, and the
+// bytes are fetched once per category, by id, and then cached on the device.
+//
+// `onDelete: Cascade` because an image with no category is dead weight, and
+// `categoryId @unique` enforces the one-photo-per-category rule in the schema
+// rather than in application code.
+model StoreCategoryImage {
+  id         Int              @id @default(autoincrement())
+  categoryId Int              @unique
+  category   MerchantCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  imageData  String           @db.LongText
+  mimeType   String           @db.VarChar(50)
+  fileSize   Int
+  fileName   String?          @db.VarChar(255)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@map("store_cat_image")
 }
 
 // 4. Payment Modes Table (3NF)
@@ -244,6 +331,21 @@ model Errand {
   routeProvider        String?   @db.VarChar(20)
   routedAt             DateTime?
 
+  // How deliveryFee above was arrived at. StandardPricingStrategy has always
+  // returned these four components and recalculateFee has always thrown them
+  // away, keeping only the total — which left the customer with a number and no
+  // explanation, and led CheckoutScreen to reimplement pricing client-side (on a
+  // hardcoded 2.5 km) just to have something to show.
+  //
+  // The four sum to deliveryFee minus baseFee. estimatedCost is deliberately NOT
+  // among them: that is the customer's item money the company fronts, it is not a
+  // fee, and no surface may fold it into one.
+  multiStoreFee   Float?
+  groceryFee      Float?
+  nonCodFee       Float?
+  distanceFee     Float?
+  feeCalculatedAt DateTime?
+
   // ETA is stored as a range, never a single number: an errand includes time
   // standing in a queue, which is inherently uncertain. See services/etaService.ts.
   etaLowAt      DateTime?
@@ -256,6 +358,7 @@ model Errand {
 
   pabiliDetails         PabiliDetail[]
   pabiliItemRequests    PabiliItemRequest[]
+  declineReasons ErrandDeclineReason[]
   dispatchLogs          DispatchLog[]
   pinpoints             ErrandPinpoint[]
   transaction           CustomerTransaction?
@@ -265,6 +368,8 @@ model Errand {
   settlement            SettlementRecord?
   trackPoints           ErrandTrackPoint[]
   dwellObservations     DwellObservation[]
+  proofImages           ErrandProofImage[]
+  commission            RiderCommission?
 
   @@map("errands")
 }
@@ -285,6 +390,18 @@ model PabiliDetail {
   estimatedSubtotal Float    @default(0)
   createdAt         DateTime @default(now())
 
+  // Which stop the rider buys this at.
+  //
+  // PabiliItemRequest carries the same column for the customer's original ask.
+  // This one is the WORKING answer: when a dispatcher splits an order across
+  // shops the customer filed under one category, only the working copy records
+  // the split, and the rider shops from the working copy. Without this the
+  // rider's checklist showed the customer's own grouping back to them and the
+  // dispatcher's correction was invisible.
+  pinpointId Int?
+  pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
+
+  @@index([pinpointId])
   @@map("pabili_details_tbl")
 }
 
@@ -301,6 +418,18 @@ model PabiliItemRequest {
   quantity      Int      @default(1)
   createdAt     DateTime @default(now())
 
+  // Which stop the rider buys this at. Until this existed an item carried only a
+  // free-text storeCategory, so "what do I buy at this store" had no answer and
+  // the rider had to infer it from the category name.
+  //
+  // Nullable by necessity: items are captured by the customer at errand creation,
+  // before any dispatcher has pinned a store. They attach when pins are saved,
+  // and anything still unattached stays visible as a general list rather than
+  // vanishing from the rider's view. SetNull so re-pinning never deletes items.
+  pinpointId Int?
+  pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
+
+  @@index([pinpointId])
   @@map("pabili_item_requests_tbl")
 }
 
@@ -322,7 +451,15 @@ model ErrandPinpoint {
   categoryId Int?
   category   MerchantCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   placeId    String?           @db.VarChar(36)
-  place      VerifiedPlace?    @relation(fields: [placeId], references: [id], onDelete: SetNull)
+  place      VerifiedPlace?    @relation("PinnedPlace", fields: [placeId], references: [id], onDelete: SetNull)
+
+  // Where the rider actually settled, when that was a catalogue place other than
+  // the one pinned above — the Jollibee Drive-Thru vs Jollibee Center case, which
+  // the geofence cannot see because the two are 440 m apart. Observational only:
+  // arrivedAt stays null and the stop stays outstanding. Null is the normal case.
+  observedPlaceId    String?        @db.VarChar(36)
+  observedPlace      VerifiedPlace? @relation("ObservedPlace", fields: [observedPlaceId], references: [id], onDelete: SetNull)
+  mismatchDetectedAt DateTime?
 
   // Set by geofence entry/exit derived from the rider's breadcrumb. The gap
   // between them is one dwell observation.
@@ -338,6 +475,11 @@ model ErrandPinpoint {
   sequenceLocked Boolean @default(false)
 
   dwellObservations DwellObservation[]
+  itemRequests      PabiliItemRequest[]
+  // The working item list filed under this stop — what the rider actually buys
+  // here after any dispatcher restructuring.
+  items             PabiliDetail[]
+  proofImages       ErrandProofImage[]
 
   @@index([errandId])
   @@map("errand_pinpoints_tbl")
@@ -356,6 +498,40 @@ model DispatchLog {
   @@map("dispatch_logs")
 }
 
+// 9b. Errand Decline Reasons (why a dispatcher turned a request down)
+//
+// A dispatcher declining a request used to leave nothing behind: the reason was
+// posted to `PATCH /errands/:id/status` and dropped on the floor, so the errand
+// simply became CANCELLED and neither the customer nor the owner could ever
+// learn why. That is the one thing a customer most wants to know at that moment,
+// and the one thing an owner needs to spot a pattern ("all declines this week
+// were 'store closed'").
+//
+// Its own table rather than a column on `errands`, because a reason is a fact
+// about a decision made by a person at a time — it has an author and a
+// timestamp of its own. Not unique per errand: an errand could in principle be
+// reopened and declined again, and losing the earlier reason would defeat the
+// point of recording it.
+model ErrandDeclineReason {
+  id           Int      @id @default(autoincrement())
+  errandId     String
+  errand       Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  dispatcherId Int
+  dispatcher   User     @relation("DispatcherDeclines", fields: [dispatcherId], references: [id])
+
+  reason String @db.VarChar(255)
+  // True when the dispatcher typed a free-text reason instead of picking one of
+  // the preset options, which is what makes the presets reviewable later: a
+  // rising share of custom reasons means the preset list has gone stale.
+  isCustom Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([errandId])
+  @@index([dispatcherId])
+  @@map("errand_decline_reasons")
+}
+
 // 10. Service Rates Configuration Table (3NF)
 model RateConfig {
   id        Int   @id @default(1)
@@ -368,9 +544,15 @@ model RateConfig {
   multiStoreFeePerStore Float @default(30)
   maxAdditionalStores   Int   @default(2)
 
-  // Grocery fee tier: a flat cap above the threshold protects large orders
-  // from paying a straight percentage; a percentage below it keeps small
-  // orders proportional instead of overpaying a flat fee.
+  // Grocery fee tier: FLAT below the threshold, PERCENTAGE at or above it.
+  //
+  // A small basket is about the same work whatever it costs, so it pays one
+  // predictable handling fee; a large one ties up proportionally more company
+  // cash and carries more risk, so it scales with value.
+  //
+  // The two column names describe what the values ARE (a percentage, a flat
+  // amount), not where they apply — so inverting which side each governs needed
+  // no data change. See StandardPricingStrategy for the applied rule.
   groceryFeeThreshold Float @default(3000)
   groceryFeePercent   Float @default(10)
   groceryFeeFlat      Float @default(50)
@@ -404,6 +586,55 @@ model SavedDeliveryLocation {
 }
 
 // 12. Token Blocklist Table (Server-Side Session Revocation)
+// 12b. User Sessions (one row per signed-in device, for both staff and customers)
+//
+// Before this table a refresh token was a bare 7-day bearer JWT: whoever held
+// the string was the user, it could be replayed forever until it expired, and
+// nothing on the server could tell a legitimate refresh from a stolen one. That
+// is the trade the 30-day session length would otherwise make much worse.
+//
+// So the refresh token now carries a `sid` pointing here, and this row holds
+// only the SHA-256 of the token, never the token itself - a database read does
+// not hand the reader a working credential. Every refresh rotates the token and
+// rewrites `tokenHash`, which is what makes theft detectable: if a token that
+// has already been rotated away is presented again, either the client replayed
+// or someone else is holding a copy, and the whole session is revoked rather
+// than guessing which. `previousHash` + `rotatedAt` carve out a few seconds of
+// grace so a phone firing several requests at once does not trip that alarm.
+//
+// No foreign key: staff live in `users` and customers in `customer_accounts`,
+// so `subjectType` discriminates and referential integrity is enforced in
+// sessionService instead. Deleting an account leaves rows here, which the
+// expiry sweep collects.
+model UserSession {
+  id          String @id @db.VarChar(36)
+  subjectId   Int
+  subjectType String @db.VarChar(16)
+  role        String @db.VarChar(20)
+
+  tokenHash    String    @db.Char(64)
+  previousHash String?   @db.Char(64)
+  rotatedAt    DateTime?
+
+  // Captured at sign-in and compared on every rotation. A refresh arriving from
+  // a different device than the one that signed in is the clearest hijack
+  // signal available without asking the user anything.
+  deviceId  String? @db.VarChar(80)
+  userAgent String? @db.VarChar(300)
+  ipAddress String? @db.VarChar(64)
+
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime  @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason String?   @db.VarChar(64)
+
+  @@index([subjectType, subjectId])
+  @@index([expiresAt])
+  @@index([tokenHash])
+  @@map("user_sessions")
+}
+
 model TokenBlocklist {
   id        Int      @id @default(autoincrement())
   token     String   @unique @db.VarChar(500)
@@ -450,9 +681,13 @@ model Rating {
 model EmailVerificationCode {
   id         Int              @id @default(autoincrement())
   customerId Int?
+  // Staff (users) codes are keyed by userId, customers by customerId. Exactly
+  // one of the two is set; the row is still channel-addressable via `email`.
+  userId     Int?
   email      String?
   phone      String?
   customer   CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user       User?            @relation("UserVerificationCodes", fields: [userId], references: [id], onDelete: Cascade)
   codeHash   String
   expiresAt  DateTime
   consumedAt DateTime?
@@ -460,6 +695,7 @@ model EmailVerificationCode {
   createdAt  DateTime         @default(now())
 
   @@index([customerId])
+  @@index([userId])
   @@index([email])
   @@index([phone])
   @@map("email_verification_codes")
@@ -500,6 +736,141 @@ model SettlementRecord {
 
   @@index([riderId])
   @@map("settlement_records")
+}
+
+enum ProofImageKind {
+  // Store receipt for goods bought on the customer's behalf. Thermal paper,
+  // photographed in a shop — the hard OCR case, routed to Cloud Vision.
+  RECEIPT
+  // GCash / bank transfer confirmation. A digital screenshot, so crisp and
+  // high-contrast — on-device ML Kit reads these without a network call.
+  TRANSFER
+  // Handover photo at the customer's door.
+  PROOF_OF_DELIVERY
+}
+
+enum ImageClarityVerdict {
+  SHARP
+  ACCEPTABLE
+  // Rejected before any OCR runs. Spending a Cloud Vision call on an unreadable
+  // photo costs money and still fails; better to ask for a retake immediately.
+  TOO_BLURRY
+  TOO_DARK
+}
+
+// 14f. Errand Proof Images (photographic evidence for one errand)
+//
+// Base64 in LongText, matching CustomerProfilePhoto and StoreCategoryImage — the
+// established pattern in this schema. Clients downscale to ~1600px JPEG before
+// upload, so a receipt lands near 300 KB rather than the 5 MB the validator caps
+// at.
+model ErrandProofImage {
+  id       Int             @id @default(autoincrement())
+  errandId String
+  errand   Errand          @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  // Which stop this receipt came from. Null for a delivery photo, which happens
+  // at the customer's address rather than at any store.
+  pinpointId Int?
+  pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
+  riderId  Int
+  rider    User            @relation(fields: [riderId], references: [id])
+
+  kind      ProofImageKind
+  imageData String         @db.LongText
+  mimeType  String         @db.VarChar(30)
+  byteSize  Int
+
+  // Measured on the device before upload. Persisted rather than checked and
+  // discarded: when an extracted total is disputed later, whether the photo was
+  // legible in the first place is the first question worth answering.
+  clarityScore   Float?
+  clarityVerdict ImageClarityVerdict?
+
+  capturedAt DateTime @default(now())
+
+  extraction ReceiptExtraction?
+
+  @@index([errandId])
+  @@index([riderId])
+  @@map("errand_proof_images")
+}
+
+enum OcrEngine {
+  MLKIT
+  CLOUD_VISION
+}
+
+enum OcrStatus {
+  OK
+  // Read something, but not confidently enough to pre-fill without a second look.
+  NEEDS_REVIEW
+  FAILED
+}
+
+// 14g. Receipt Extractions (OCR result for one proof image)
+//
+// Separate from the image on purpose: OCR is retryable and re-runnable on a
+// different engine, and rawText is a second large blob that almost no query
+// wants alongside the picture.
+//
+// The distinction that matters here is extractedTotal vs confirmedTotal. OCR
+// proposes; the rider confirms. A misread digit must never silently become the
+// figure a customer is charged, so both are kept and any divergence between them
+// stays auditable.
+model ReceiptExtraction {
+  id           Int              @id @default(autoincrement())
+  proofImageId Int              @unique
+  proofImage   ErrandProofImage @relation(fields: [proofImageId], references: [id], onDelete: Cascade)
+
+  engine  OcrEngine
+  rawText String?   @db.LongText
+
+  extractedTotal Float?
+  extractedDate  DateTime?
+  confidence     Float?
+  status         OcrStatus @default(NEEDS_REVIEW)
+
+  // What the rider actually accepted. Null until they confirm.
+  confirmedTotal Float?
+  confirmedAt    DateTime?
+
+  extractedAt DateTime @default(now())
+
+  @@map("receipt_extractions")
+}
+
+// 14h. Rider Commissions (payout snapshot, one row per completed errand)
+//
+// Snapshotted rather than computed on demand so a past payout cannot change
+// under a rider's feet when a rate is edited, and so "why was I paid this?" has
+// a stored answer showing the inputs as well as the result.
+//
+// itemCostExcluded records the money that was deliberately kept OUT of the
+// split — the company fronts it for the goods, the rider only carries it. It is
+// stored precisely because it is excluded: without it there is no evidence the
+// exclusion happened.
+model RiderCommission {
+  id       Int    @id @default(autoincrement())
+  errandId String @unique
+  errand   Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  riderId  Int
+  rider    User   @relation(fields: [riderId], references: [id])
+
+  deliveryFee    Float
+  tip            Float
+  commissionRate Float
+
+  // riderShare = deliveryFee * rate + tip (the whole tip, never split).
+  // businessShare = deliveryFee - (deliveryFee * rate).
+  riderShare    Float
+  businessShare Float
+
+  itemCostExcluded Float
+
+  computedAt DateTime @default(now())
+
+  @@index([riderId])
+  @@map("rider_commissions")
 }
 
 enum RiderPresenceStatus {
@@ -586,6 +957,33 @@ model AccountModificationLog {
   @@map("account_modification_logs")
 }
 
+// 16b. Password Reset Attempts Table (3NF: one row per step of the customer
+// "forgot password" flow). Deliberately NOT AccountModificationLog: that table
+// requires a resolved account, and the rows most worth having here are the ones
+// where no account resolved at all — an IP walking a list of usernames to learn
+// which ones exist. `customerId` is therefore nullable, and `identifier` records
+// what was actually searched for, whether or not it matched anything.
+model PasswordResetAttempt {
+  id         Int              @id @default(autoincrement())
+  identifier String           @db.VarChar(255)
+  customerId Int?
+  customer   CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  // REQUESTED | UNKNOWN_ACCOUNT | HONEYPOT | THROTTLED | COOLDOWN |
+  // CODE_VERIFIED | CODE_REJECTED | COMPLETED — see
+  // passwordResetService.ResetOutcome.
+  outcome    String           @db.VarChar(32)
+  ipAddress  String?          @db.VarChar(64)
+  userAgent  String?          @db.Text
+  createdAt  DateTime         @default(now())
+
+  // The composite index is the one that matters: every throttle decision is a
+  // "how many rows from this IP since T" count.
+  @@index([ipAddress, createdAt])
+  @@index([identifier])
+  @@index([customerId])
+  @@map("password_reset_attempts")
+}
+
 // 17. Verified Places Table (Pre-recorded GPS coordinates of establishments in Tacurong City)
 model VerifiedPlace {
   id         String           @id @default(uuid()) @db.VarChar(36)
@@ -601,7 +999,10 @@ model VerifiedPlace {
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
-  pinpoints         ErrandPinpoint[]
+  // Two relations to the same model, so both must be named: the place a
+  // dispatcher pinned, and the place a rider was actually observed at.
+  pinpoints         ErrandPinpoint[]   @relation("PinnedPlace")
+  observedAt        ErrandPinpoint[]   @relation("ObservedPlace")
   dwellObservations DwellObservation[]
 
   @@index([name])

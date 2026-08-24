@@ -10,11 +10,18 @@
 import { OsrmRoutingProvider } from "../src/lib/routing/osrmProvider.js";
 import { haversineDistanceKm } from "../src/lib/geo.js";
 
+// Real Tacurong locations, spread across the service area so the sampled pairs
+// are long enough for the detour ratio to mean something.
+//
+// "STI College Tacurong" previously carried 6.6702, 124.6635 — which is Mercury
+// Drug Tacurong Center's exact coordinate from the places catalogue, and ~1.5 km
+// from the campus. So the run measured a route between two points that were both
+// downtown while reporting it as a cross-town pair. Corrected to the campus.
 const POIS: Record<string, { latitude: number; longitude: number }> = {
   "Jollibee Tacurong Center": { latitude: 6.6873, longitude: 124.6752 },
   "Chooks-to-Go City Center": { latitude: 6.6912, longitude: 124.6765 },
   "Chooks-to-Go Highway": { latitude: 6.6854, longitude: 124.6738 },
-  "STI College Tacurong": { latitude: 6.6702, longitude: 124.6635 },
+  "STI College Tacurong": { latitude: 6.6838192, longitude: 124.6647395 },
   "Tacurong City Center": { latitude: 6.671, longitude: 124.6644 },
 };
 

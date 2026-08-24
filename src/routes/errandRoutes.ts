@@ -10,11 +10,17 @@ import {
   assignRider,
   updateStatus,
   declineErrand,
+  declineErrandReview,
+  getDeclineReasons,
   setPinpoints,
   updateItems,
   markItemsPurchased,
   enablePayment,
   confirmOrder,
+  quoteErrand,
+  uploadProofImage,
+  confirmProofImage,
+  listProofImages,
 } from "../controllers/errandController.js";
 import { getPaymentSelection, confirmPaymentSelection } from "../controllers/paymentSelectionController.js";
 import { uploadTrackBatch, getTrack } from "../controllers/trackingController.js";
@@ -25,8 +31,48 @@ import { userApiLimiter, readLimiter, trackingLimiter } from "../middleware/rate
 
 const router = Router();
 
+// POST /api/errands/quote - Price a draft errand before it is created.
+//
+// Declared above the "/:id" routes below: Express matches in declaration order,
+// and a future POST "/:id/..." handler placed first would capture "quote".
+//
+// A read in every sense that matters — it writes nothing — so it carries
+// readLimiter rather than the stricter write budget. The customer's checkout
+// re-quotes as they adjust their basket.
+router.post("/quote", authenticateToken, readLimiter, quoteErrand);
+
 // GET /api/errands - Fetch all errands (Owner/Dispatcher view)
 router.get("/", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, listErrands);
+
+// --- Photographic proof (receipts, transfers, delivery) ---------------------
+//
+// Rider-only writes: the person who took the photo is the person who owns the
+// errand. Reads are open to any signed-in role because dispatch and the owner
+// both need to see the evidence during a dispute.
+//
+// userApiLimiter rather than readLimiter on the upload: it carries a ~400KB body
+// and spends a paid OCR call, so it belongs on the write budget.
+
+// POST /api/errands/:id/proof-images - upload a photo, OCR it, return the reading
+router.post(
+  "/:id/proof-images",
+  authenticateToken,
+  requireRole(["RIDER"]),
+  userApiLimiter,
+  uploadProofImage
+);
+
+// PATCH /api/errands/:id/proof-images/:imageId/confirm - rider accepts or corrects
+router.patch(
+  "/:id/proof-images/:imageId/confirm",
+  authenticateToken,
+  requireRole(["RIDER"]),
+  userApiLimiter,
+  confirmProofImage
+);
+
+// GET /api/errands/:id/proof-images - metadata only, never the image blobs
+router.get("/:id/proof-images", authenticateToken, readLimiter, listProofImages);
 
 // GET /api/errands/:id - Fetch single errand details by ID
 router.get("/:id", authenticateToken, readLimiter, getErrandById);
@@ -49,6 +95,21 @@ router.post("/:id/accept", authenticateToken, requireRole(["RIDER"]), userApiLim
 // POST /api/errands/:id/decline - Rider declines an errand assigned to them
 // (un-assigns, reverts to PENDING so the dispatcher can reassign)
 router.post("/:id/decline", authenticateToken, requireRole(["RIDER"]), userApiLimiter, declineErrand);
+
+// PATCH /api/errands/:id/dispatcher-decline - dispatcher declines during review,
+// recording why. The reason is required by the validator: this endpoint exists
+// precisely because the old path let it be dropped.
+router.patch(
+  "/:id/dispatcher-decline",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  declineErrandReview
+);
+
+// GET /api/errands/:id/decline-reasons - visible to staff and to the customer
+// who owns the errand (enforced by the same object-level check as GET /:id).
+router.get("/:id/decline-reasons", authenticateToken, readLimiter, getDeclineReasons);
 
 // POST /api/errands/:id/pinpoints - Dispatcher sets/replaces store pinpoints (max 3)
 router.post(

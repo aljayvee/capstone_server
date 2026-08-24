@@ -62,14 +62,23 @@ const breakers = new Map<RoutingProviderName, CircuitBreaker>(
 // result for this particular input (OSRM NoRoute/NoMatch, Google ZERO_RESULTS).
 // Conflating the two would let a rider parked on an unmapped private lot trip
 // the OSRM breaker and disable routing for every user for a minute.
+//
+// How "no provider answered" is reported varies by operation:
+//   "error"  — the default. Nothing could serve a route or a matrix, which is a
+//              fault worth waking up to.
+//   "info"   — a routine miss. A stationary rider's fixes have no road shape to
+//              map-match, and that happens on every single store visit; at error
+//              level it would bury real faults.
+//   "silent" — expected on every call under a normal configuration. Snapping is
+//              a best-effort improvement that only OSRM implements, so while
+//              OSRM is unconfigured a null is the correct answer every time, and
+//              logging it would emit a line per tracking client per refresh.
+type NoResultLog = "error" | "info" | "silent";
+
 async function attempt<T>(
   operation: string,
   call: (provider: RoutingProvider) => Promise<T | null>,
-  // Some operations legitimately have no answer as a routine outcome — a
-  // stationary rider's fixes have no road shape to map-match, and that happens
-  // on every single store visit. Logging those at error level would bury real
-  // faults in noise.
-  nullIsRoutine = false
+  noResultLog: NoResultLog = "error"
 ): Promise<T | null> {
   for (const provider of providers) {
     if (!provider.isConfigured()) continue;
@@ -89,9 +98,9 @@ async function attempt<T>(
     }
   }
 
-  if (nullIsRoutine) {
+  if (noResultLog === "info") {
     logger.info(`No routing provider produced a ${operation} result.`);
-  } else {
+  } else if (noResultLog === "error") {
     logger.error(`No routing provider could serve ${operation}.`);
   }
   return null;
@@ -127,7 +136,15 @@ export async function matrix(
 // and the caller stores the unmatched trace instead.
 export async function match(trace: TracePoint[]): Promise<MatchResult | null> {
   if (trace.length < 2) return null;
-  return attempt("match", (provider) => provider.match(trace), true);
+  return attempt("match", (provider) => provider.match(trace), "info");
+}
+
+// Snaps a single point onto the road network. Like match(), only OSRM answers —
+// so until OSRM is configured this returns null on every call and callers route
+// from the raw coordinate, which is exactly the previous behaviour. That is why
+// it is "silent": see NoResultLog above.
+export async function snap(point: GeoPoint): Promise<GeoPoint | null> {
+  return attempt("snap", (provider) => provider.snap(point), "silent");
 }
 
 // Exposed for diagnostics and tests.

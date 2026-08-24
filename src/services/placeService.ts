@@ -1,8 +1,40 @@
 import { IPlaceRepository, placeRepository } from "../repositories/placeRepository.js";
+import type { GeoPoint } from "../lib/geo.js";
+import { isWithinServiceArea } from "../lib/serviceArea.js";
 import { IVerifiedPlace, PlaceCreateInput, PlaceUpdateInput, PlaceSearchFilters } from "../types/place.js";
+
+// How close a pin has to be before we are willing to call it "at" a place.
+//
+// Measured against the actual catalogue rather than guessed. The downtown rows
+// sit 25-110 m apart (Jollibee Main to Greenwich is ~89 m, to Chowking ~95 m,
+// Greenwich to Chowking ~62 m), so anything near 150 m would routinely reach a
+// second establishment — and, worse, would label a customer's *home* with the
+// name of a restaurant down the street. That address then goes to a rider.
+//
+// 50 m is roughly a building footprint: close enough that a pin dropped inside
+// the premises still resolves, tight enough that standing outside on the road
+// does not. A miss costs nothing — the caller falls back to a street address.
+const REVERSE_LOOKUP_RADIUS_METERS = 50;
+
+export interface ReverseLookupResult {
+  place: IVerifiedPlace;
+  distanceMeters: number;
+}
 
 export class PlaceService {
   constructor(private repo: IPlaceRepository = placeRepository) {}
+
+  // Coordinate -> nearest verified establishment. This is the Tier-1 answer for
+  // "what is at this pin": the catalogue holds real Tacurong POIs with names a
+  // rider recognises, which is precisely what a device geocoder cannot produce
+  // for a coordinate that has no street address of its own.
+  async reverseLookup(point: GeoPoint): Promise<ReverseLookupResult | null> {
+    // Outside the operating boundary there is nothing in the catalogue worth
+    // matching, and any hit would be a stray row rather than a real answer.
+    if (!isWithinServiceArea(point)) return null;
+
+    return this.repo.findNearest(point, REVERSE_LOOKUP_RADIUS_METERS);
+  }
 
   async searchPlaces(filters: PlaceSearchFilters = {}): Promise<IVerifiedPlace[]> {
     const places = await this.repo.findAll(filters);

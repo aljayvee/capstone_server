@@ -29,8 +29,20 @@ function chainFor(method: string, path: string): string[] {
   return layer.route.stack.map((handler) => handler.name || "(anonymous)");
 }
 
-const READS: [string, string][] = [["get", "/"], ["get", "/:id"], ["get", "/categories"]];
+const READS: [string, string][] = [
+  ["get", "/"],
+  ["get", "/:id"],
+  ["get", "/categories"],
+  ["get", "/reverse"],
+];
 const WRITES: [string, string][] = [["post", "/"], ["put", "/:id"], ["delete", "/:id"]];
+
+// Index of a path in the router's declaration order.
+function positionOf(method: string, path: string): number {
+  const index = stack().findIndex((e) => e.route?.path === path && e.route?.methods[method]);
+  if (index < 0) throw new Error(`No ${method.toUpperCase()} ${path} route registered`);
+  return index;
+}
 
 describe("place routes authorization", () => {
   it.each([...READS, ...WRITES])("authenticates %s %s first", (method, path) => {
@@ -50,9 +62,18 @@ describe("place routes authorization", () => {
     expect(chainFor(method, path)).toHaveLength(3);
   });
 
+  // Express matches in declaration order, so "/:id" declared first would capture
+  // "reverse" as an id and 404 every reverse-geocode call. Nothing about that
+  // failure looks like a routing-order bug from the client side — it presents as
+  // "the catalogue has no place with id 'reverse'" — so the ordering is pinned
+  // here rather than left to a comment.
+  it.each([["categories"], ["reverse"]])("declares /%s before the /:id catch-all", (literal) => {
+    expect(positionOf("get", `/${literal}`)).toBeLessThan(positionOf("get", "/:id"));
+  });
+
   it("registers every route behind authentication", () => {
     const routed = stack().filter((entry) => entry.route);
-    expect(routed).toHaveLength(6);
+    expect(routed).toHaveLength(7);
     for (const entry of routed) {
       expect(entry.route!.stack.map((h) => h.name)).toContain("authenticateToken");
     }

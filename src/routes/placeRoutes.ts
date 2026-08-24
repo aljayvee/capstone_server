@@ -26,6 +26,17 @@ router.get("/categories", authenticateToken, readLimiter, (req, res) =>
 // stay out of every customer-facing path.
 router.get("/", authenticateToken, readLimiter, (req, res) => placeController.getAll(req, res));
 
+// GET /api/places/reverse?lat=&lng= - nearest verified place to a coordinate.
+// Backs the customer app's address resolution: a pin dropped on a known
+// establishment resolves to its catalogue name instead of the plus code the
+// device geocoder returns for a coordinate with no street address.
+//
+// MUST stay above the "/:id" route below — Express matches in declaration order,
+// and "/:id" would otherwise capture "reverse" as an id and 404 every call.
+router.get("/reverse", authenticateToken, readLimiter, (req, res) =>
+  placeController.reverse(req, res)
+);
+
 // GET /api/places/:id - single place detail
 router.get("/:id", authenticateToken, readLimiter, (req, res) => placeController.getById(req, res));
 

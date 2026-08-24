@@ -79,4 +79,11 @@ export class HaversineRoutingProvider implements RoutingProvider {
   async match(): Promise<MatchResult | null> {
     return null;
   }
+
+  // Likewise: with no road network there is nothing to snap to. Returning the
+  // point unchanged would be worse than null — it would claim a correction had
+  // been applied when none had.
+  async snap(): Promise<GeoPoint | null> {
+    return null;
+  }
 }

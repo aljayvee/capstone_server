@@ -89,7 +89,34 @@ export const verificationLimiter = rateLimit({
 });
 
 /**
- * 5. Rider Breadcrumb Ingest Limiter (POST /errands/:id/track)
+ * 5. Password Reset Limiter (Anti-Enumeration)
+ *
+ * Two deliberate differences from the limiters above.
+ *
+ * It does NOT skip successful requests. /forgot-password answers 200 whether or
+ * not the account exists — that is what closes the enumeration oracle — so a
+ * 200 says nothing about whether the caller is legitimate. Skipping them would
+ * leave the endpoint effectively unlimited for precisely the traffic it needs
+ * to cap.
+ *
+ * It does NOT use smartKeyGenerator. That helper falls back to the client-sent
+ * `x-device-id` header, which an attacker simply rotates. Password reset is
+ * unauthenticated, so IP (express-rate-limit's default key) is the only key
+ * here the caller cannot choose for themselves.
+ */
+export const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 60 : 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: "Too many password reset requests. Please try again after 15 minutes.",
+  },
+});
+
+/**
+ * 6. Rider Breadcrumb Ingest Limiter (POST /errands/:id/track)
  * Batched telemetry, not per-fix: a rider device flushes roughly once a minute
  * while moving, plus a burst of backlog batches immediately after reconnecting
  * from a signal blackout. Sized to absorb that reconnect burst comfortably

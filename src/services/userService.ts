@@ -5,6 +5,8 @@ import * as riderPresenceService from "./riderPresenceService.js";
 import { ServiceError } from "./ServiceError.js";
 import { withFullName } from "./authService.js";
 import { buildUserCreateData } from "./patterns/userFactory.js";
+import { normalizeUsername, normalizeEmail } from "../lib/identity.js";
+import { ROLE_CHANGE_REAUTH_ROLES } from "../validators/userValidators.js";
 import type { CreateUserInput, UpdateUserInput, ProfileUpdateInput } from "../validators/userValidators.js";
 import type { PushTokenInput } from "../validators/pushTokenValidators.js";
 
@@ -32,18 +34,78 @@ export async function createUser(input: CreateUserInput) {
   }
 }
 
+// Re-assigning a Dispatcher or Rider immediately changes what that account can
+// see and do on the live dispatch board, so it costs the acting admin their own
+// password. 403 rather than 401 on purpose: the caller IS authenticated, and a
+// 401 would make the dashboard's axios interceptor burn a token refresh and
+// retry the very request that was just refused.
+async function assertRoleChangeAuthorised(
+  currentRole: string,
+  nextRole: string,
+  adminPassword: string | undefined,
+  actingUserId: number | undefined
+) {
+  const from = String(currentRole).toUpperCase();
+  const to = String(nextRole).toUpperCase();
+  if (from === to || !ROLE_CHANGE_REAUTH_ROLES.includes(from)) {
+    return;
+  }
+
+  if (!actingUserId) {
+    throw new ServiceError(403, "Sign in again before changing an account's role.");
+  }
+  if (!adminPassword) {
+    throw new ServiceError(
+      403,
+      "Changing the role of a Dispatcher or Rider account requires your Admin password."
+    );
+  }
+
+  const actingUser = await userRepository.findById(actingUserId);
+  if (!actingUser || String(actingUser.role).toUpperCase() !== "OWNER") {
+    throw new ServiceError(403, "Only an Admin account can change the role of a Dispatcher or Rider.");
+  }
+
+  const passwordMatches = await bcrypt.compare(adminPassword, actingUser.passwordHash);
+  if (!passwordMatches) {
+    throw new ServiceError(403, "Incorrect Admin password. The role change was not saved.");
+  }
+}
+
 export async function updateUser(userId: number, input: UpdateUserInput, actingUserId?: number) {
   const existingUser = await userRepository.findById(userId);
   if (!existingUser) {
     throw new ServiceError(404, "User not found");
   }
 
+  await assertRoleChangeAuthorised(
+    existingUser.role,
+    input.role ?? existingUser.role,
+    input.adminPassword,
+    actingUserId
+  );
+
   const updateData: Record<string, unknown> = {};
-  if (input.username !== undefined) updateData.username = input.username.trim();
+  // Canonicalised on update as well as on create — otherwise renaming a user to
+  // "Jayvee" would store a form that sign-in could only find by way of the
+  // column collation, which is the implicit dependency this change removes.
+  if (input.username !== undefined) updateData.username = normalizeUsername(input.username);
   if (input.firstName !== undefined) updateData.firstName = input.firstName.trim();
   if (input.middleName !== undefined) updateData.middleName = input.middleName.trim();
   if (input.lastName !== undefined) updateData.lastName = input.lastName.trim();
-  if (input.email !== undefined) updateData.email = input.email.trim();
+  if (input.email !== undefined) {
+    // Canonicalise to lower case so the stored form matches what sign-in looks
+    // up, regardless of the database collation.
+    const nextEmail = normalizeEmail(input.email);
+    updateData.email = nextEmail;
+    // Pointing an account at a different mailbox un-proves it. Without this, an
+    // admin correcting a typo would leave the account flagged as verified
+    // against an address nobody controls; now the next sign-in re-verifies.
+    if (nextEmail !== (existingUser.email || "").toLowerCase()) {
+      updateData.emailVerified = false;
+      updateData.emailVerifiedAt = null;
+    }
+  }
   if (input.phone !== undefined) updateData.phone = input.phone.trim();
   if (input.role !== undefined) updateData.role = input.role.toUpperCase();
   if (input.status !== undefined) updateData.status = input.status;

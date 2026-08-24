@@ -6,6 +6,7 @@ import http from "http";
 
 import { io } from "./lib/socket.js";
 import { logger } from "./lib/logger.js";
+import { isEmailConfigured } from "./lib/mailer.js";
 import { PORT, ALLOWED_ORIGINS } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { schedulePruneBlocklistJob } from "./jobs/pruneBlocklist.js";
@@ -68,4 +69,12 @@ scheduleDwellLearningJob();
 // Start HTTP Server (which includes Express and Socket.IO)
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   logger.info(`Backend Server running on http://0.0.0.0:${PORT}`);
+  // Staff first-login verification cannot complete without outbound mail, so a
+  // missing SMTP config is worth saying out loud at boot rather than letting it
+  // surface as a mysterious 503 the first time someone new signs in.
+  if (!isEmailConfigured()) {
+    logger.error(
+      "SMTP is not configured (SMTP_HOST/SMTP_USER/SMTP_PASS). Staff first-login OTP and sign-in alerts will fail."
+    );
+  }
 });

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { normalizeUsername, normalizeEmail } from "../../lib/identity.js";
 import type { Prisma } from "@prisma/client";
 
 export interface UserFactoryInput {
@@ -21,13 +22,13 @@ export interface UserFactoryInput {
 export async function buildUserCreateData(input: UserFactoryInput): Promise<Prisma.UserCreateInput> {
   const passwordHash = await bcrypt.hash(input.password.trim(), 10);
   return {
-    username: input.username.trim(),
+    username: normalizeUsername(input.username),
     passwordHash,
     role: (input.role ? input.role.toUpperCase() : "RIDER") as Prisma.UserCreateInput["role"],
     firstName: input.firstName.trim(),
     middleName: input.middleName ? input.middleName.trim() : "",
     lastName: input.lastName.trim(),
-    email: input.email ? input.email.trim().toLowerCase() : "",
+    email: input.email ? normalizeEmail(input.email) : "",
     phone: input.phone ? input.phone.trim() : "",
     status: input.status || "Active",
   };

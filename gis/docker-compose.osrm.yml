@@ -7,7 +7,15 @@
 # will exit immediately if ./data/tacurong.osrm is missing.
 services:
   osrm:
-    image: osrm/osrm-backend:v5.27.1
+    # GHCR, not Docker Hub. The project stopped publishing to docker.io at
+    # v5.25.0 and its `latest` there is from July 2021; v5.27.1 is only on
+    # GitHub Container Registry. Pulling the Docker Hub path fails outright with
+    # "not found" rather than silently serving something older.
+    #
+    # This tag MUST match the one build-graph.ps1/.sh used. osrm-routed refuses
+    # to load a graph written by a different version, so extract, partition,
+    # customize and routed move together or not at all.
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     container_name: capstone-osrm
     restart: unless-stopped
     # SECURITY: osrm-routed has NO authentication or rate limiting whatsoever.

@@ -1,5 +1,15 @@
 # GIS layer — OSM data, OSRM routing engine, QGIS workflow
 
+> ### Status: live since 2026-08-22
+>
+> Container `capstone-osrm` serves the Tacurong graph on `127.0.0.1:5001`, and
+> `OSRM_BASE_URL` is set in `server/.env`. The provider chain is
+> **osrm → google → haversine**, confirmed via `configuredProviderNames()`.
+>
+> The graph is small: 8,724 edges / 15,516 nodes, ~3 MB on disk, peak build RAM
+> under 20 MB. `osrm-extract` takes seconds — the only slow part is the one-time
+> 600 MB country download, which is cached.
+
 Everything the system knows about roads comes from one OpenStreetMap extract of
 Tacurong City. The same file feeds three things, which is the point: the routing
 engine the riders use, the fare the customer is quoted, and the maps in the
@@ -84,8 +94,22 @@ distance scaled by `ROAD_DETOUR_FACTOR`, at `FALLBACK_AVG_SPEED_KMH`. Those two
 constants feed **fare calculation**, so they are measured against the real road
 network rather than guessed. Re-run after any OSM data refresh.
 
-Measured for Tacurong (10 POI pairs, 4 excluded as too short to be stable):
-detour factor **1.48** (range 1.42–1.66), effective speed **25 km/h** (21–30).
+Measured 2026-08-22 against the live graph (7 pairs sampled, 3 excluded as too
+short to be stable): detour factor **1.43** (range 1.24–1.66), effective speed
+**29 km/h** (24.8–30.1).
+
+The POI list had given "STI College Tacurong" Mercury Drug Tacurong Center's
+exact coordinate, which put two supposedly cross-town points 133 m apart and got
+that pair excluded as unstable. Correcting it recovered a real long pair, so
+these figures rest on 7 samples rather than 6.
+
+**Only the detour factor was adopted.** `ROAD_DETOUR_FACTOR` is now 1.43 — it
+describes the street grid, not the vehicle, so the measurement is simply better
+than the earlier 1.48. `FALLBACK_AVG_SPEED_KMH` stays at **25**, against the
+measured 29, because that is what `car.lua` predicts for a *car* in free flow and
+the riders are on motorcycles in traffic. 25 also biases the estimate toward a
+longer ETA, which is the right direction to be wrong in. Re-running calibration
+will keep reporting high twenties; that is expected, not a discrepancy to fix.
 
 Short pairs are excluded deliberately — two POIs 133 m apart measured 1.8 km by
 road around a one-way loop, a ratio of 13.6. Real, but meaningless for the
@@ -110,6 +134,23 @@ distances that actually get billed.
 
 ## Notes
 
+- **The images come from GHCR, not Docker Hub.** The OSRM project stopped
+  publishing to `docker.io/osrm/osrm-backend` at v5.25.0 — its `latest` there
+  dates from July 2021 — so the pinned `v5.27.1` resolves only at
+  `ghcr.io/project-osrm/osrm-backend`. Pulling the Docker Hub path fails with a
+  bare `not found`. The tag appears in three places (`build-graph.ps1`,
+  `build-graph.sh`, `docker-compose.osrm.yml`) and they must agree: `osrm-routed`
+  refuses to load a graph written by a different version.
+- **The profile is `car.lua`, but the riders are on motorcycles.** This is a
+  deliberate choice, not an oversight. The alternatives are worse: `bicycle.lua`
+  and `foot.lua` route over footpaths and pedestrian-only segments a rider cannot
+  legally or safely take, which would produce directions nobody can follow. The
+  car profile's one-way and turn restrictions are the ones a motorcycle is also
+  bound by; where a tricycle in Tacurong takes a liberty a car cannot, the router
+  will simply propose the legal way round. The speed model is corrected out of
+  band by the calibrated `FALLBACK_AVG_SPEED_KMH` (25 km/h), not by the profile.
+  Revisit only with measured evidence that the routes, rather than the times, are
+  wrong.
 - OSRM speaks `longitude,latitude`. So does GeoJSON. Everything else in this
   codebase uses `{ latitude, longitude }`. The flip is confined to
   `osrmProvider.ts` and the two GeoJSON loaders.

@@ -14,7 +14,14 @@ export interface PinpointInput {
 
 export const pinpointRepository = {
   findByErrandId(errandId: string) {
-    return prisma.errandPinpoint.findMany({ where: { errandId }, orderBy: { sequence: "asc" } });
+    return prisma.errandPinpoint.findMany({
+      where: { errandId },
+      orderBy: { sequence: "asc" },
+      // The category is read only for its geofence radius. A pin dropped
+      // outside the catalogue has none, and the geofence falls back to its
+      // default for that stop.
+      include: { category: { select: { geofenceRadiusMeters: true } } },
+    });
   },
 
   // Pinpoints plus the dwell priors for their category — everything the ETA
@@ -37,6 +44,17 @@ export const pinpointRepository = {
 
   markDeparted(pinpointId: number, departedAt: Date) {
     return prisma.errandPinpoint.update({ where: { id: pinpointId }, data: { departedAt } });
+  },
+
+  // Records that the rider settled at a catalogue place other than the one this
+  // stop was pinned to (see geofenceService.detectStopMismatch). Purely
+  // observational — it never touches arrivedAt, so the stop stays outstanding
+  // and the rider can still complete it properly.
+  markStopMismatch(pinpointId: number, observedPlaceId: string, detectedAt: Date) {
+    return prisma.errandPinpoint.update({
+      where: { id: pinpointId },
+      data: { observedPlaceId, mismatchDetectedAt: detectedAt },
+    });
   },
 
   setLegMetrics(pinpointId: number, distanceMeters: number, durationSeconds: number) {

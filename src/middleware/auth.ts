@@ -35,6 +35,18 @@ export async function authenticateToken(req: AuthenticatedRequest, res: Response
       if (err) {
         return res.status(401).json({ error: "Invalid or expired token." });
       }
+
+      // Only fully-authenticated session tokens get past here. A pre-auth
+      // login-challenge token is already unable to reach this point because it
+      // is signed with JWT_CHALLENGE_SECRET, not JWT_SECRET — this check exists
+      // to catch the refactor that someday "simplifies" those two back into
+      // one. A payload carrying `purpose`, or missing `role`/`id`, is not a
+      // session token no matter what signed it.
+      const claims = decoded as Partial<TokenPayload> & { purpose?: string };
+      if (claims?.purpose || !claims?.role || !claims?.id) {
+        return res.status(401).json({ error: "Invalid or expired token." });
+      }
+
       req.user = decoded as TokenPayload;
       next();
     });

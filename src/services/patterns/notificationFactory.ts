@@ -19,6 +19,30 @@ export const notificationFactory = {
     };
   },
 
+  errandAccepted(dispatcherName: string, storeSummary: string): NotificationContent {
+    return {
+      type: "ERRAND_ACCEPTED",
+      // Named, because "a dispatcher" is an abstraction and a person is not.
+      // This is the moment the customer stops waiting on a system and starts
+      // dealing with someone, and the copy should carry that.
+      title: `${dispatcherName} is handling your errand`,
+      body: storeSummary
+        ? `Tap to chat about your ${storeSummary} request.`
+        : "Tap to chat about your errand.",
+    };
+  },
+
+  errandDeclined(reason: string): NotificationContent {
+    return {
+      type: "ERRAND_DECLINED",
+      title: "Your errand could not be accepted",
+      // The reason travels in the notification itself. A customer who is told
+      // only that their request was cancelled has to open the app to find out
+      // why, and the why is the entire content of the message.
+      body: reason,
+    };
+  },
+
   feeUpdated(errandId: string, totalCost: number): NotificationContent {
     return {
       type: "FEE_UPDATED",

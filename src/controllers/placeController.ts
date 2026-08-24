@@ -33,6 +33,49 @@ export class PlaceController {
     }
   }
 
+  // GET /api/places/reverse?lat=&lng=
+  //
+  // A miss is a 200 with `place: null`, not a 404: "no verified establishment at
+  // this pin" is the ordinary answer for most coordinates in the city, and the
+  // caller's next move is to fall back to its own geocoder either way.
+  async reverse(req: Request, res: Response) {
+    try {
+      const latitude = Number(req.query.lat);
+      const longitude = Number(req.query.lng);
+
+      if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        return res.status(400).json({ message: "lat and lng must be valid coordinates" });
+      }
+
+      const match = await placeService.reverseLookup({ latitude, longitude });
+      if (!match) {
+        return res.json({ place: null });
+      }
+
+      return res.json({
+        place: {
+          id: match.place.id,
+          name: match.place.name,
+          address: match.place.address,
+          barangay: match.place.barangay ?? null,
+          latitude: match.place.latitude,
+          longitude: match.place.longitude,
+        },
+        distanceMeters: Math.round(match.distanceMeters),
+      });
+    } catch (err: any) {
+      console.error("[PlaceController.reverse] Error:", err);
+      return res.status(500).json({ message: "Failed to resolve place", error: err.message });
+    }
+  }
+
   async getById(req: Request, res: Response) {
     try {
       const place = await placeService.getPlaceById(req.params.id);

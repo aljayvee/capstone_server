@@ -8,13 +8,15 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed": "tsx src/seed.ts",
+    "seed": "npm run seed:users && npm run seed:places",
     "migrate:passwords": "tsx src/migrate-passwords.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate deploy",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed:users": "tsx src/seed.ts",
+    "seed:places": "tsx prisma/seedPlaces.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
@@ -48,5 +50,8 @@
     "tsx": "^4.7.1",
     "typescript": "^5.3.3",
     "vitest": "^2.1.9"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seedPlaces.ts"
   }
 }

@@ -1,6 +1,7 @@
 import * as routingProvider from "../lib/routing/resilientRoutingService.js";
 import type { GeoPoint, RouteResult } from "../lib/routing/types.js";
 import { ServiceError } from "./ServiceError.js";
+import { smoothPath } from "../lib/routing/smoothPath.js";
 
 // The wire shape POST /api/routing/directions has always returned. Both mobile
 // apps consume exactly these fields (see useLiveRoute.ts in CustomerApp and
@@ -26,9 +27,11 @@ function splitLegs(result: RouteResult): Pick<
   const pickup = result.legs.length > 0 ? result.legs[0].coordinates : [];
   const delivery = result.legs.slice(1).flatMap((leg) => leg.coordinates);
 
+  // Each leg is rounded on its own, so the join between the orange pickup line
+  // and the blue delivery line stays exactly on the store it passes through.
   return {
-    pickupLegCoordinates: pickup.length > 0 ? pickup : null,
-    deliveryLegCoordinates: delivery.length > 0 ? delivery : null,
+    pickupLegCoordinates: pickup.length > 0 ? smoothPath(pickup) : null,
+    deliveryLegCoordinates: delivery.length > 0 ? smoothPath(delivery) : null,
   };
 }
 
@@ -37,13 +40,27 @@ export async function getDirections(
   destination: GeoPoint,
   waypoints: GeoPoint[] = []
 ): Promise<DirectionsResponse> {
-  const result = await routingProvider.route([origin, ...waypoints, destination]);
+  // Only the origin is snapped. It is the one point in the request that is a
+  // live GPS fix — the waypoints are dispatcher-pinned VerifiedPlace coordinates
+  // and the destination is a customer's deliberately-placed pin, both of which
+  // are already where they are meant to be. Snapping those would drag a delivery
+  // point out to the nearest road and quietly change where the rider is sent.
+  //
+  // Returns null when no provider can snap (OSRM not configured) or when the
+  // nearest road is too far to move the fix honestly, in which case the raw
+  // coordinate is used and behaviour is unchanged.
+  const snappedOrigin = (await routingProvider.snap(origin)) ?? origin;
+
+  const result = await routingProvider.route([snappedOrigin, ...waypoints, destination]);
   if (!result) {
     throw new ServiceError(503, "Routing is temporarily unavailable. Please try again shortly.");
   }
 
   return {
-    coordinates: result.coordinates,
+    // Corners rounded for drawing only. distanceMeters and durationSeconds below
+    // are the engine's own numbers and are never derived from this line — the
+    // fare must not move because a corner was drawn differently.
+    coordinates: smoothPath(result.coordinates),
     ...splitLegs(result),
     distanceMeters: result.distanceMeters,
     durationSeconds: result.durationSeconds,

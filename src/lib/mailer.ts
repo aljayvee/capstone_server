@@ -29,9 +29,13 @@ function getTransporter(): Transporter | null {
   return transporter;
 }
 
-export async function sendEmail(to: string, subject: string, text: string, html?: string): Promise<void> {
+// Returns whether the message actually went out. Callers that treat mail as
+// best-effort keep ignoring the result (`void sendEmail(...)`); the staff
+// login OTP is the one caller that must know, because a silently-dropped code
+// locks a person out of the system with no way to recover on their own.
+export async function sendEmail(to: string, subject: string, text: string, html?: string): Promise<boolean> {
   const client = getTransporter();
-  if (!client) return;
+  if (!client) return false;
 
   try {
     await client.sendMail({
@@ -41,7 +45,16 @@ export async function sendEmail(to: string, subject: string, text: string, html?
       text,
       html: html || undefined,
     });
+    return true;
   } catch (err) {
     logger.error("Failed to send email:", err);
+    return false;
   }
+}
+
+// True when SMTP is configured well enough to attempt a send. Used at startup
+// to surface a missing config as a warning rather than as a mystery lockout on
+// the first staff login.
+export function isEmailConfigured(): boolean {
+  return getTransporter() !== null;
 }

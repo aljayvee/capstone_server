@@ -49,10 +49,56 @@ export async function notifyRiderAssigned(
   });
 }
 
-// Customers have no push token in this schema (CustomerAccount, unlike
-// User, doesn't collect one) — the in-app notification panel Phase 5 built
-// for CustomerApp is the only delivery channel here, so this only persists.
+/**
+ * Tells a customer their errand has been accepted, and by whom.
+ *
+ * This is the first moment a real person takes responsibility for the request,
+ * and it used to be silent: `claimErrand` emitted a socket event and nothing
+ * else, so a customer who had navigated away from the waiting screen — or
+ * backgrounded the app, which is what people do while waiting — learned about
+ * it only by going back and looking.
+ *
+ * `data.errandId` is what lets the app open the RIGHT conversation when the
+ * notification is tapped. A customer can have several errands in flight, so a
+ * push that only said "your errand was accepted" would leave them to work out
+ * which one.
+ */
+export async function notifyErrandAccepted(
+  customer: { id: number; expoPushToken: string | null },
+  errandId: string,
+  dispatcherName: string,
+  storeSummary: string
+) {
+  const content = notificationFactory.errandAccepted(dispatcherName, storeSummary);
+  await notificationRepository.create({ customerId: customer.id, ...content });
+
+  void sendPushNotification(customer.expoPushToken, {
+    title: content.title,
+    body: content.body,
+    data: { errandId, type: content.type },
+  });
+}
+
+// Only persists: this one has no push counterpart because a fee change is not
+// worth interrupting someone for — it shows up in the in-app panel and on the
+// errand itself.
 export async function notifyFeeUpdated(customerId: number, errandId: string, totalCost: number) {
   const content = notificationFactory.feeUpdated(errandId, totalCost);
   await notificationRepository.create({ customerId, ...content });
+}
+
+/** Tells a customer their errand was declined, and why. */
+export async function notifyErrandDeclined(
+  customer: { id: number; expoPushToken: string | null },
+  errandId: string,
+  reason: string
+) {
+  const content = notificationFactory.errandDeclined(reason);
+  await notificationRepository.create({ customerId: customer.id, ...content });
+
+  void sendPushNotification(customer.expoPushToken, {
+    title: content.title,
+    body: content.body,
+    data: { errandId, type: content.type },
+  });
 }

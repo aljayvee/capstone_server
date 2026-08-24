@@ -1,13 +1,16 @@
 import { Response } from "express";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { declineErrandReviewSchema } from "../validators/errandDeclineValidators.js";
 import * as errandService from "../services/errandService.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { ServiceError } from "../services/ServiceError.js";
 import { parseOrThrow } from "../validators/validate.js";
-import { createErrandSchema, assignRiderSchema, declineErrandSchema } from "../validators/errandValidators.js";
+import { createErrandSchema, assignRiderSchema, declineErrandSchema, errandQuoteSchema } from "../validators/errandValidators.js";
 import { pinpointsBodySchema } from "../validators/pinpointValidators.js";
 import { pabiliItemsBodySchema } from "../validators/pabiliItemValidators.js";
 import { occurredAtSchema } from "../validators/trackingValidators.js";
+import { proofImageUploadSchema, proofImageConfirmSchema } from "../validators/proofImageValidators.js";
+import * as proofImageService from "../services/proofImageService.js";
 
 export const listErrands = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const callerRole = String(req.user?.role || "").toUpperCase();
@@ -84,6 +87,13 @@ export const createErrand = asyncHandler<AuthenticatedRequest>(async (req, res: 
   const input = parseOrThrow(createErrandSchema, req.body);
   const errand = await errandService.createErrand(req.user!.id, input);
   res.status(201).json(errand);
+});
+
+// Prices a draft before it is created, so the customer's checkout shows a figure
+// the server produced rather than one it computed itself. Writes nothing.
+export const quoteErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(errandQuoteSchema, req.body);
+  res.json(await errandService.quoteErrand(input));
 });
 
 export const claimErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
@@ -169,4 +179,63 @@ export const enablePayment = asyncHandler<AuthenticatedRequest>(async (req, res:
 export const confirmOrder = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const errand = await errandService.confirmOrder(req.params.id, req.user!.id);
   res.json({ success: true, errand });
+});
+
+// PATCH /api/errands/:id/dispatcher-decline — dispatcher declines during review.
+//
+// Separate from the rider's POST /:id/decline, which bounces an assignment back
+// to the pool. This one ends the errand and requires a reason.
+export const declineErrandReview = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const input = parseOrThrow(declineErrandReviewSchema, req.body);
+  const result = await errandService.declineErrandReview(
+    req.params.id,
+    req.user!.id,
+    input.reason
+  );
+  res.json(result);
+});
+
+// GET /api/errands/:id/decline-reasons — the recorded reasons, newest first.
+export const getDeclineReasons = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const reasons = await errandService.getDeclineReasons(req.params.id);
+  res.json(reasons);
+});
+
+// Photographic proof for one errand — a store receipt, a transfer confirmation,
+// or a handover photo. Receipts are read by Cloud Vision here; transfers arrive
+// with text the device already extracted on-device (see proofImageService).
+export const uploadProofImage = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(proofImageUploadSchema, req.body);
+  const image = await proofImageService.uploadProofImage(req.params.id, req.user!.id, input);
+
+  // The blob goes back out to nobody — the client already holds the picture it
+  // just uploaded, and echoing it doubles the response for nothing.
+  res.status(201).json({
+    id: image.id,
+    kind: image.kind,
+    clarityVerdict: image.clarityVerdict,
+    extraction: {
+      id: image.extraction!.id,
+      engine: image.extraction!.engine,
+      extractedTotal: image.extraction!.extractedTotal,
+      extractedDate: image.extraction!.extractedDate,
+      status: image.extraction!.status,
+    },
+  });
+});
+
+// The rider accepts the extracted figure or corrects it. Both are kept.
+export const confirmProofImage = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(proofImageConfirmSchema, req.body);
+  const extraction = await proofImageService.confirmProofImage(
+    req.params.id,
+    Number(req.params.imageId),
+    req.user!.id,
+    input.confirmedTotal
+  );
+  res.json({ success: true, extraction });
+});
+
+export const listProofImages = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  res.json(await proofImageService.listProofImages(req.params.id));
 });
