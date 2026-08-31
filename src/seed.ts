@@ -26,16 +26,19 @@ async function main() {
     },
   });
 
-  // 3. Rate Config
-  const rateConfig = await prisma.rateConfig.upsert({
-    where: { id: 1 },
-    update: {},
-    create: {
-      id: 1,
-      baseFee: 50,
-      perKmRate: 10,
-    },
-  });
+  // 3. Rate Config — deliberately NOT seeded.
+  //
+  // Rates are the owner's to set, and there is no such thing as a default one.
+  // A seeded row is indistinguishable from a configured row the moment it
+  // exists: the portal shows it, the pricing strategy charges it, and nobody
+  // downstream can tell the customer is being billed a figure that was never
+  // chosen. Seeding "a sensible starting rate" is the same bug as a column
+  // default, one layer up.
+  //
+  // Until the owner saves their rates in the Service Rates module, no config
+  // row exists, and the read paths already handle that honestly rather than
+  // falling back: quoteErrand refuses with a 503 ("Pricing is not configured
+  // yet") and recalculateFee leaves the errand's fee untouched.
 
   // 4. Payment Modes — only Cash on Delivery is functional today. The other
   // three are seeded as `Inactive` (repurposing the existing Active/Inactive

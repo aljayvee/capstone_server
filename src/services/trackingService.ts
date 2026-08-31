@@ -53,7 +53,7 @@ export async function ingestBatch(
   // chronological order by device clock.
   const ordered = [...points].sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
 
-  const latest = await trackPointRepository.findLatestForRider(riderId);
+  const latest = await trackPointRepository.findLatestForRider(riderId, errandId);
   let previous: QualityCandidate | null = latest
     ? {
         latitude: latest.latitude,
@@ -127,6 +127,7 @@ export async function ingestBatch(
       arrivedAt: stop.arrivedAt,
       departedAt: stop.departedAt,
       radiusMeters: stop.category?.geofenceRadiusMeters ?? null,
+      dwellP80Seconds: stop.category?.dwellP80Seconds ?? null,
     })),
     rows.map((row) => ({
       latitude: row.latitude,

@@ -9,6 +9,7 @@ import type {
   MatrixResult,
   RouteLeg,
   RouteResult,
+  RouteStep,
   RoutingProvider,
   TracePoint,
 } from "./types.js";
@@ -22,6 +23,34 @@ const REQUEST_TIMEOUT_MS = 8000;
 // so traces are chunked. Verified against a live OSRM: a 12-point request came
 // back "TooBig" on a server configured with a small limit.
 const MAX_MATCH_POINTS = Number(process.env.OSRM_MAX_MATCH_POINTS) || 90;
+
+function buildOsrmInstruction(type: string, modifier: string | undefined, name: string): string {
+  const street = name ? name.trim() : "";
+  const onto = street ? ` onto ${street}` : "";
+
+  switch (type) {
+    case "depart":
+      return street ? `Head out on ${street}` : "Head out along route";
+    case "arrive":
+      return street ? `Arrive at ${street}` : "Arrive at destination";
+    case "roundabout":
+    case "rotary":
+    case "roundabout turn":
+      return `Enter roundabout and take exit${onto}`;
+    case "uturn":
+      return `Make a U-turn${onto}`;
+    case "fork":
+      return modifier ? `Take the fork ${modifier}${onto}` : `Keep ${modifier || "straight"}${onto}`;
+    case "turn":
+      return modifier ? `Turn ${modifier}${onto}` : `Turn${onto}`;
+    case "continue":
+    case "new name":
+      return street ? `Continue onto ${street}` : "Continue straight";
+    default:
+      if (modifier) return `Turn ${modifier}${onto}`;
+      return street ? `Continue on ${street}` : "Continue along route";
+  }
+}
 
 // Consecutive chunks share this many points so the road choice at a chunk
 // boundary is informed by where the rider actually came from.
@@ -110,13 +139,46 @@ export class OsrmRoutingProvider implements RoutingProvider {
     const route = data?.routes?.[0];
     if (!route) return null;
 
-    const legs: RouteLeg[] = (route.legs ?? []).map((leg: any) => ({
-      distanceMeters: Math.round(leg.distance ?? 0),
-      durationSeconds: Math.round(leg.duration ?? 0),
-      coordinates: (leg.steps ?? []).flatMap((step: any) =>
-        step?.geometry ? decodePolyline(step.geometry) : []
-      ),
-    }));
+    const allSteps: RouteStep[] = [];
+
+    const legs: RouteLeg[] = (route.legs ?? []).map((leg: any, legIndex: number) => {
+      const steps: RouteStep[] = (leg.steps ?? []).map((step: any) => {
+        const type = step?.maneuver?.type || "continue";
+        const modifier = step?.maneuver?.modifier;
+        const name = step?.name || "";
+        const location = step?.maneuver?.location
+          ? fromOsrmLocation(step.maneuver.location)
+          : points[0];
+        const stepCoords = step?.geometry ? decodePolyline(step.geometry) : [];
+
+        const routeStep: RouteStep = {
+          instruction: buildOsrmInstruction(type, modifier, name),
+          streetName: name,
+          maneuverType: type,
+          modifier: modifier || undefined,
+          distanceMeters: Math.round(step?.distance ?? 0),
+          durationSeconds: Math.round(step?.duration ?? 0),
+          location,
+          bearingBefore: step?.maneuver?.bearing_before,
+          bearingAfter: step?.maneuver?.bearing_after,
+          coordinates: stepCoords,
+        };
+        allSteps.push(routeStep);
+        return routeStep;
+      });
+
+      const isLastLeg = legIndex === (route.legs?.length ?? 1) - 1;
+      return {
+        distanceMeters: Math.round(leg.distance ?? 0),
+        durationSeconds: Math.round(leg.duration ?? 0),
+        coordinates: (leg.steps ?? []).flatMap((step: any) =>
+          step?.geometry ? decodePolyline(step.geometry) : []
+        ),
+        steps,
+        targetType: isLastLeg ? "CUSTOMER" : "STORE",
+        targetIndex: isLastLeg ? undefined : legIndex,
+      };
+    });
 
     return {
       distanceMeters: Math.round(route.distance ?? 0),
@@ -124,6 +186,7 @@ export class OsrmRoutingProvider implements RoutingProvider {
       coordinates: route.geometry ? decodePolyline(route.geometry) : [],
       encodedGeometry: route.geometry ?? null,
       legs,
+      steps: allSteps,
       provider: this.name,
       degraded: false,
     };

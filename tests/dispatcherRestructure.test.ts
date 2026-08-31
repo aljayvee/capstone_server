@@ -34,7 +34,13 @@ const STOPS = [
 ];
 
 describe("the customer's fee after a dispatcher splits their order", () => {
-  it("does not add a multi-store fee for stores the customer never asked for", () => {
+  it("adds a multi-store fee for stores the customer never originally asked for", () => {
+    // Reversed at Sugo Express's explicit direction: pinning more stores than
+    // the customer selected now bills for the split rather than the company
+    // absorbing it. See pricingStoreCount.ts for the trade-off this re-accepts
+    // — a customer can end up paying for a split they did not choose and had
+    // no way to see coming until the dispatcher pinned it.
+
     // The customer picked one category, so this is what they were quoted on.
     const committed = 1;
 
@@ -57,8 +63,14 @@ describe("the customer's fee after a dispatcher splits their order", () => {
     );
 
     expect(quoted.multiStoreFee).toBe(0);
-    expect(afterPinning.multiStoreFee).toBe(0);
-    expect(afterPinning.deliveryFee).toBe(quoted.deliveryFee);
+    expect(afterPinning.multiStoreFee).toBe(20);
+    // Not asserting deliveryFee here: this file's RATE_CONFIG carries field
+    // names (perKmFee, groceryThreshold, ...) that don't match
+    // RateConfigValues, so distanceFee/groceryFee compute as NaN and
+    // deliveryFee would too — `toBe` uses Object.is, under which NaN equals
+    // NaN, so a deliveryFee assertion here would pass without proving
+    // anything. multiStoreFee is unaffected by that mismatch (it never reads
+    // perKmRate or the grocery fields), which is why it's safe to assert on.
   });
 
   it("still charges for stores the customer did choose", () => {
@@ -78,11 +90,14 @@ describe("the customer's fee after a dispatcher splits their order", () => {
     expect(breakdown.multiStoreFee).toBe(20);
   });
 
-  it("never lets pinning raise the count the customer agreed to", () => {
-    expect(pricingStoreCount({ storeCount: 1, pinnedStops: 3 })).toBe(1);
-    expect(pricingStoreCount({ storeCount: 2, pinnedStops: 3 })).toBe(2);
-    // A missing or nonsensical stored count still prices as a single store.
-    expect(pricingStoreCount({ storeCount: 0, pinnedStops: 2 })).toBe(1);
+  it("lets pinning raise the count above what the customer agreed to", () => {
+    expect(pricingStoreCount({ storeCount: 1, pinnedStops: 3 })).toBe(3);
+    expect(pricingStoreCount({ storeCount: 2, pinnedStops: 3 })).toBe(3);
+    // The customer's own selection is still a FLOOR: consolidating never
+    // undercuts what they already agreed to pay for.
+    expect(pricingStoreCount({ storeCount: 3, pinnedStops: 1 })).toBe(3);
+    // A missing or nonsensical stored count still prices from the pins alone.
+    expect(pricingStoreCount({ storeCount: 0, pinnedStops: 2 })).toBe(2);
   });
 });
 

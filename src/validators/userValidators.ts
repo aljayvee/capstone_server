@@ -117,10 +117,24 @@ export const updateUserSchema = z.object({
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
+// The rider app's Edit Account form and the dashboard's own profile edit both
+// land here. It used to accept any trimmed string for email and phone, so this
+// was the one path by which an account could acquire an address that bounces or
+// a number that cannot be dialled — the exact things createUserSchema exists to
+// prevent. Same rules, same messages, one definition.
 export const profileUpdateSchema = z.object({
-  firstName: z.string().trim().optional(),
-  lastName: z.string().trim().optional(),
-  email: z.string().trim().optional(),
-  phone: z.string().trim().optional(),
+  firstName: personName("First Name").optional(),
+  lastName: personName("Last Name").optional(),
+  email: strictEmail.optional(),
+  phone: strictPhone.optional(),
 });
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+
+// Self-service password change. Deliberately separate from updateUserSchema's
+// optional `password` field, which is the Owner resetting someone else's
+// credential — this one requires proving you already know the current one.
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required."),
+  newPassword: strongPassword,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

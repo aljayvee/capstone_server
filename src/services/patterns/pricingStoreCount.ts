@@ -8,21 +8,28 @@ export interface PricingStoreCountInput {
 /**
  * How many stores the customer is charged for.
  *
- * This used to be `Math.max(errand.storeCount, pinpoints.length, 1)`, so pinning
- * stores raised the fare. That produced the reported bug: a customer orders
- * burgers and noodles under one category, the dispatcher notices the noodles are
- * not fast food and pins a grocery as a second stop, and the customer is billed
- * a multi-store fee for a split they never asked for and cannot see the reason
- * for — on an order whose fees then exceed the goods.
+ * The larger of what the customer selected at checkout and how many stores the
+ * dispatcher has actually pinned. The customer's own selection is a FLOOR, never
+ * a ceiling: consolidating three chosen categories into one shop does not refund
+ * the multi-store fee they already agreed to, and pinning MORE stores than they
+ * selected now raises it — fulfilling one category across two shops is two
+ * stops' worth of real rider time and route complexity, and that cost is billed
+ * rather than absorbed by the company.
  *
- * The dispatcher's pins still drive the ROUTE, and therefore the distance fee:
- * that reflects real kilometres a rider covers. What they no longer drive is the
- * multi-store fee, which is a charge for a decision only the customer can make.
- *
- * `pinnedStops` is accepted but deliberately unused, so the rule reads as the
- * decision it is rather than looking like the parameter was forgotten.
+ * This reverses the previous rule (`pinnedStops` was accepted but deliberately
+ * ignored) at Sugo Express's explicit direction, after being shown the
+ * trade-off it re-accepts and choosing it anyway. Know the trade-off before
+ * touching this function again: a customer can end up billed for a split they
+ * did not choose at checkout and cannot see coming until the dispatcher pins
+ * it — burgers and noodles filed under one Fast Food category, the dispatcher
+ * notices the noodles belong at a grocery, pins a second stop, and the
+ * customer's fare rises for a decision they did not make. That is accepted
+ * here, deliberately, not overlooked. If it turns out to be a real trust
+ * problem in practice, the fix is to disclose the added stop to the customer
+ * BEFORE the extra charge lands, not to silently revert this function.
  */
 export function pricingStoreCount(input: PricingStoreCountInput): number {
-  void input.pinnedStops;
-  return Math.max(1, Math.round(input.storeCount) || 1);
+  const selected = Math.max(1, Math.round(input.storeCount) || 1);
+  const pinned = Math.max(1, Math.round(input.pinnedStops) || 1);
+  return Math.max(selected, pinned);
 }

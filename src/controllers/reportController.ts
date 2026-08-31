@@ -33,3 +33,8 @@ export const getTransactionSummary = asyncHandler(async (req, res) => {
   const { period, referenceDate } = parseQuery(req);
   res.json(await reportService.getTransactionSummary(period, referenceDate));
 });
+
+export const getExceptionReport = asyncHandler(async (req, res) => {
+  const { period, referenceDate } = parseQuery(req);
+  res.json(await reportService.getExceptionReport(period, referenceDate));
+});

@@ -7,7 +7,7 @@ import { z } from "zod";
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"] as const;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
-export const PROOF_IMAGE_KINDS = ["RECEIPT", "TRANSFER", "PROOF_OF_DELIVERY"] as const;
+export const PROOF_IMAGE_KINDS = ["RECEIPT", "TRANSFER", "PROOF_OF_DELIVERY", "NO_RECEIPT"] as const;
 
 export const proofImageUploadSchema = z.object({
   kind: z.enum(PROOF_IMAGE_KINDS),
@@ -43,6 +43,15 @@ export const proofImageUploadSchema = z.object({
   // on-device OCR handles perfectly well. Absent for RECEIPT, which the server
   // reads itself.
   deviceText: z.string().max(20000).optional().nullable(),
+
+  // What the rider paid at a shop that issued no receipt. Only meaningful for
+  // NO_RECEIPT, where it is the sole source of the figure — every other kind
+  // carries its amount on the extraction the OCR produced.
+  declaredTotal: z.coerce
+    .number()
+    .positive("Enter what you paid at this shop.")
+    .max(100000, "That is larger than any Pabili basket. Check the amount.")
+    .optional(),
 });
 
 export const proofImageConfirmSchema = z.object({

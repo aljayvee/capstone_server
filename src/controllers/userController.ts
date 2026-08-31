@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { parseOrThrow } from "../validators/validate.js";
-import { createUserSchema, updateUserSchema, profileUpdateSchema } from "../validators/userValidators.js";
+import { createUserSchema, updateUserSchema, profileUpdateSchema, changePasswordSchema } from "../validators/userValidators.js";
 import * as userService from "../services/userService.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { ServiceError } from "../services/ServiceError.js";
@@ -42,4 +42,22 @@ export const updateProfile = asyncHandler<AuthenticatedRequest>(async (req, res:
   const input = parseOrThrow(profileUpdateSchema, req.body);
   const user = await userService.updateProfile(targetUserId, input);
   res.status(200).json({ message: "Profile updated successfully", user });
+});
+
+// PUT /api/users/password/:userId — self-service password change. No Owner
+// bypass, unlike updateProfile: proving you know the CURRENT password is the
+// entire point, so nobody but the account holder may use this route.
+export const changePassword = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const targetUserId = parseInt(req.params.userId, 10);
+  if (isNaN(targetUserId)) {
+    throw new ServiceError(400, "Invalid user ID");
+  }
+
+  if (req.user?.id !== targetUserId) {
+    throw new ServiceError(403, "Access denied: You can only change your own password.");
+  }
+
+  const input = parseOrThrow(changePasswordSchema, req.body);
+  const result = await userService.changePassword(targetUserId, input);
+  res.status(200).json(result);
 });

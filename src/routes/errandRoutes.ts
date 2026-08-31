@@ -21,8 +21,10 @@ import {
   uploadProofImage,
   confirmProofImage,
   listProofImages,
+  getProofImage,
 } from "../controllers/errandController.js";
 import { getPaymentSelection, confirmPaymentSelection } from "../controllers/paymentSelectionController.js";
+import { getOpenExceptions, resolveException } from "../controllers/exceptionController.js";
 import { uploadTrackBatch, getTrack } from "../controllers/trackingController.js";
 import { getRating, submitRating } from "../controllers/ratingController.js";
 import { submitSettlement } from "../controllers/settlementController.js";
@@ -40,6 +42,33 @@ const router = Router();
 // readLimiter rather than the stricter write budget. The customer's checkout
 // re-quotes as they adjust their basket.
 router.post("/quote", authenticateToken, readLimiter, quoteErrand);
+
+// --- Reconciliation exceptions ------------------------------------------------
+//
+// Declared above "/:id" so the literal path is matched before the id pattern
+// captures "exceptions" as an errand id.
+
+// GET /api/errands/exceptions - the dispatcher's open queue. Staff only: this
+// aggregates evidence across every customer's errands.
+router.get(
+  "/exceptions",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  readLimiter,
+  getOpenExceptions
+);
+
+// POST /api/errands/:id/exceptions/resolve - record that a person cleared one.
+// A dispatcher clears operational exceptions; an owner may clear anything,
+// including one a dispatcher already closed, which adds a second row rather
+// than replacing the first.
+router.post(
+  "/:id/exceptions/resolve",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  resolveException
+);
 
 // GET /api/errands - Fetch all errands (Owner/Dispatcher view)
 router.get("/", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, listErrands);
@@ -71,8 +100,14 @@ router.patch(
   confirmProofImage
 );
 
-// GET /api/errands/:id/proof-images - metadata only, never the image blobs
+// GET /api/errands/:id/proof-images - metadata only, never the image blobs.
+// Object-level check inside: staff see any errand, a customer only their own, a
+// rider only errands assigned to them.
 router.get("/:id/proof-images", authenticateToken, readLimiter, listProofImages);
+
+// GET /api/errands/:id/proof-images/:imageId - one image's bytes, same check.
+// Separate from the list because the list omits every blob on purpose.
+router.get("/:id/proof-images/:imageId", authenticateToken, readLimiter, getProofImage);
 
 // GET /api/errands/:id - Fetch single errand details by ID
 router.get("/:id", authenticateToken, readLimiter, getErrandById);

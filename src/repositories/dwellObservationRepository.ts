@@ -8,6 +8,8 @@ export interface DwellObservationCreateData {
   dwellSeconds: number;
   arrivedAt: Date;
   departedAt: Date;
+  /** True when this dwell ran past what this kind of shop usually takes. */
+  stalled?: boolean;
 }
 
 export const dwellObservationRepository = {

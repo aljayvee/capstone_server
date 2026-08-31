@@ -46,6 +46,9 @@ export async function notifyRiderAssigned(
     title: content.title,
     body: content.body,
     data: { errandId, type: content.type },
+    // The rider has 45 seconds to answer. A message Doze is free to sit on until
+    // the next maintenance window loses the errand before they ever see it.
+    urgent: true,
   });
 }
 

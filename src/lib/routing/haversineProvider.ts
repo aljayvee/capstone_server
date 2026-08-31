@@ -7,6 +7,7 @@ import type {
   MatrixResult,
   RouteLeg,
   RouteResult,
+  RouteStep,
   RoutingProvider,
 } from "./types.js";
 
@@ -31,14 +32,47 @@ export class HaversineRoutingProvider implements RoutingProvider {
   async route(points: GeoPoint[]): Promise<RouteResult | null> {
     if (points.length < 2) return null;
 
+    const allSteps: RouteStep[] = [];
     const legs: RouteLeg[] = [];
+
     for (let i = 0; i < points.length - 1; i++) {
       const straightKm = haversineDistanceKm(points[i], points[i + 1]);
       const roadKm = straightKm * ROAD_DETOUR_FACTOR;
+      const distanceMeters = Math.round(roadKm * 1000);
+      const durationSeconds = Math.round((roadKm / FALLBACK_AVG_SPEED_KMH) * 3600);
+      const isLastLeg = i === points.length - 2;
+
+      const legSteps: RouteStep[] = [
+        {
+          instruction: isLastLeg ? "Proceed towards customer delivery address" : `Proceed towards stop #${i + 1}`,
+          streetName: "",
+          maneuverType: i === 0 ? "depart" : "continue",
+          modifier: "straight",
+          distanceMeters,
+          durationSeconds,
+          location: points[i],
+          coordinates: [points[i], points[i + 1]],
+        },
+        {
+          instruction: isLastLeg ? "Arrive at customer delivery address" : `Arrive at stop #${i + 1}`,
+          streetName: "",
+          maneuverType: "arrive",
+          distanceMeters: 0,
+          durationSeconds: 0,
+          location: points[i + 1],
+          coordinates: [points[i + 1]],
+        },
+      ];
+
+      allSteps.push(...legSteps);
+
       legs.push({
-        distanceMeters: Math.round(roadKm * 1000),
-        durationSeconds: Math.round((roadKm / FALLBACK_AVG_SPEED_KMH) * 3600),
+        distanceMeters,
+        durationSeconds,
         coordinates: [points[i], points[i + 1]],
+        steps: legSteps,
+        targetType: isLastLeg ? "CUSTOMER" : "STORE",
+        targetIndex: isLastLeg ? undefined : i,
       });
     }
 
@@ -48,6 +82,7 @@ export class HaversineRoutingProvider implements RoutingProvider {
       coordinates: [...points],
       encodedGeometry: encodePolyline(points),
       legs,
+      steps: allSteps,
       provider: this.name,
       degraded: true,
     };

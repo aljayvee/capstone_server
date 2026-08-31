@@ -20,7 +20,7 @@ export const pinpointRepository = {
       // The category is read only for its geofence radius. A pin dropped
       // outside the catalogue has none, and the geofence falls back to its
       // default for that stop.
-      include: { category: { select: { geofenceRadiusMeters: true } } },
+      include: { category: { select: { geofenceRadiusMeters: true, dwellP80Seconds: true } } },
     });
   },
 

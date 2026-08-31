@@ -32,9 +32,9 @@ function priced(overrides: Partial<PricedErrand> = {}): PricedErrand {
 }
 
 describe("grocery fee: flat below the threshold, percentage at or above", () => {
-  // Priced past the size gate — which needs BOTH more than 12 units and at
-  // least ₱1,000 — so these cases exercise the flat/percentage switch rather
-  // than whether a handling fee applies at all.
+  // Priced past the size gate — more than 20 units OR at least ₱1,000 — so
+  // these cases exercise the flat/percentage switch rather than whether a
+  // handling fee applies at all.
   const fee = (estimatedCost: number, itemUnits = 20) =>
     new StandardPricingStrategy().calculate(
       { estimatedCost, itemUnits, tip: 0, storeCount: 1, distanceKm: 0, isCod: true },
@@ -53,9 +53,8 @@ describe("grocery fee: flat below the threshold, percentage at or above", () => 
     // Three meals off a counter. Below the gate no handling fee applies, which
     // is what stopped a flat ₱50 landing on a ₱176 fast-food order.
     expect(fee(176, 3)).toBe(0);
-    // Either condition alone is not enough: a long cheap list, or one dear item.
+    // Neither the list nor the amount reaches its threshold.
     expect(fee(999, 20)).toBe(0);
-    expect(fee(5000, 4)).toBe(0);
   });
 
   it("charges the percentage once the basket reaches the threshold", () => {

@@ -114,8 +114,8 @@ describe("the wider breakdown still balances", () => {
 
 
 describe("the size gate", () => {
-  // Nothing is charged for handling until an errand is BOTH a long list and a
-  // meaningful amount of company money. Either alone is still a quick pick-up.
+  // Nothing is charged for handling until an errand is either a long list or a
+  // meaningful amount of company money. Either alone is enough.
 
   it("charges nothing for a small, cheap order whatever the category", () => {
     for (const mode of ["FLAT", "PERCENT", "THRESHOLD", "NONE"] as HandlingFeeMode[]) {
@@ -123,33 +123,41 @@ describe("the size gate", () => {
     }
   });
 
-  it("charges nothing for a long list of cheap things", () => {
-    // Fifteen sachets of shampoo: plenty to carry, hardly any money.
-    expect(fee(800, ["THRESHOLD"], 15)).toBe(0);
-    expect(fee(999.99, ["THRESHOLD"], 50)).toBe(0);
+  it("charges for a long list even when it is cheap", () => {
+    // Twenty-five sachets of shampoo: little money, but a trolley and a queue.
+    expect(fee(800, ["THRESHOLD"], 25)).toBe(50);
   });
 
-  it("charges nothing for one expensive thing", () => {
-    // A ₱5,000 phone case is real money but one item off a shelf.
-    expect(fee(5000, ["THRESHOLD"], 1)).toBe(0);
-    expect(fee(5000, ["THRESHOLD"], 12)).toBe(0);
+  it("charges for a valuable basket even when it is short", () => {
+    // Two items at five thousand pesos is company money the rider carries.
+    expect(fee(5000, ["THRESHOLD"], 2)).toBe(500);
   });
 
-  it("charges only when the order is both long and valuable", () => {
-    expect(fee(1000, ["THRESHOLD"], 13)).toBe(50);
+  it("sits exactly on both boundaries", () => {
+    // Twenty units is not "more than twenty".
+    expect(fee(800, ["THRESHOLD"], 20)).toBe(0);
+    expect(fee(800, ["THRESHOLD"], 21)).toBe(50);
+    // The amount is compared in whole pesos, so ₱999.99 IS a thousand pesos.
+    expect(fee(999.99, ["THRESHOLD"], 3)).toBe(50);
+    expect(fee(1000, ["THRESHOLD"], 3)).toBe(50);
   });
 
-  it("sits exactly on the two boundaries", () => {
-    // Twelve units is not "exceeds 12"; ₱999.99 is not "₱1,000".
-    expect(fee(1000, ["THRESHOLD"], 12)).toBe(0);
-    expect(fee(1000, ["THRESHOLD"], 13)).toBe(50);
-    expect(fee(999.99, ["THRESHOLD"], 13)).toBe(0);
-    expect(fee(1000, ["THRESHOLD"], 13)).toBe(50);
+  it("rounds the basket to the nearest peso before testing it", () => {
+    // A centavo must not be what decides whether a fee applies at all.
+    expect(fee(999.49, ["THRESHOLD"], 3)).toBe(0);
+    expect(fee(999.5, ["THRESHOLD"], 3)).toBe(50);
   });
 
-  it("still switches to the percentage on a big qualifying basket", () => {
-    expect(fee(2999, ["THRESHOLD"], 13)).toBe(50);
-    expect(fee(3000, ["THRESHOLD"], 13)).toBe(300);
+  it("still switches to the percentage on a big basket", () => {
+    expect(fee(2999, ["THRESHOLD"], 3)).toBe(50);
+    expect(fee(3000, ["THRESHOLD"], 3)).toBe(300);
+  });
+
+  it("rounds at the percentage switch too, so both thresholds agree", () => {
+    // ₱2,999.99 is three thousand pesos on a receipt, and the two thresholds
+    // must not disagree about what a peso figure means.
+    expect(fee(2999.49, ["THRESHOLD"], 3)).toBe(50);
+    expect(fee(2999.5, ["THRESHOLD"], 3)).toBe(300);
   });
 
   it("exempts a fast-food order of the size people actually place", () => {

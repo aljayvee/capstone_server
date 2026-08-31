@@ -20,17 +20,17 @@ import { haversineDistanceKm, type GeoPoint } from "../geo.js";
  * engine reported them; this changes only what is drawn.
  */
 
-/** How far back from a corner the curve begins, at most. About a lane width. */
-export const TURN_RADIUS_METERS = 12;
+/** How far back from a corner the curve begins, at most. Tight curb radius to keep 90-degree street turns crisp and on-road. */
+export const TURN_RADIUS_METERS = 3;
 
 /**
  * Never consume more than this share of a segment, so a curve cannot swallow a
  * short block whole and cut the corner off the road entirely.
  */
-const MAX_SEGMENT_SHARE = 0.4;
+const MAX_SEGMENT_SHARE = 0.15;
 
 /** Below this the vertex is not a turn, and rounding it would only add points. */
-const MIN_TURN_DEGREES = 10;
+const MIN_TURN_DEGREES = 15;
 
 /** Points drawn along each corner. Four is smooth at city zoom and cheap. */
 const ARC_STEPS = 4;

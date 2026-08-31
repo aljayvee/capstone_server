@@ -23,10 +23,13 @@ import type { HandlingFeeMode } from "./pricingStrategy.js";
  * one FLAT category was quoted ₱50 and charged ₱500 — a charge that appeared
  * after they had agreed, for a decision they did not make and cannot audit.
  *
- * It is the same rule as pricingStoreCount, for the same reason: the dispatcher
- * decides how the errand is FULFILLED, and that properly moves the distance fee,
- * which tracks real kilometres. It does not decide what the customer agreed to
- * pay for handling.
+ * This is NOT the same rule as pricingStoreCount, which now lets a dispatcher's
+ * pins raise the multi-store fee (a real extra stop, a real extra cost).
+ * Handling-fee category has no equivalent real-cost anchor: moving one
+ * mis-filed item into a PERCENT category re-prices the WHOLE basket at a
+ * percentage, which is a pricing decision, not a fulfilment one — so it stays
+ * keyed to what the customer themselves picked regardless of what the
+ * dispatcher pins.
  *
  * The company does absorb the float when a customer genuinely mis-files a large
  * grocery run as fast food. That is the accepted cost of a fee a customer can

@@ -9,7 +9,24 @@ function round2(value: number): number {
 
 // Gated to COD errands only — if the confirmed payment mode isn't COD, no
 // cash changed hands, so there's nothing for the rider to reconcile.
-export async function submitSettlement(errandId: string, riderId: number, collectedAmount: number) {
+/**
+ * Records the cash that came back.
+ *
+ * `collectedAmount` is deliberately optional. On the default path the client
+ * sends `collectedInFull` and NOTHING ELSE, and the expected figure below is
+ * used — so the amount recorded cannot be influenced by the device. The rider
+ * app used to ask the rider to type what they collected, which made
+ * under-reporting a matter of typing a smaller number.
+ *
+ * A genuine shortfall still has to be recordable, and it has no other source, so
+ * an explicit amount is accepted — and lands as SHORT, with a reason, where
+ * dispatch can see it.
+ */
+export async function submitSettlement(
+  errandId: string,
+  riderId: number,
+  input: { collectedInFull?: boolean; collectedAmount?: number; shortReason?: string }
+) {
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) {
     throw new ServiceError(404, "Errand not found");
@@ -30,6 +47,15 @@ export async function submitSettlement(errandId: string, riderId: number, collec
   }
 
   const expectedAmount = errand.totalCost;
+
+  // The server's figure wins unless the rider is explicitly reporting a
+  // discrepancy. An amount sent alongside collectedInFull is ignored rather
+  // than trusted.
+  const collectedAmount =
+    input.collectedInFull || input.collectedAmount === undefined
+      ? expectedAmount
+      : input.collectedAmount;
+
   const variance = round2(collectedAmount - expectedAmount);
   const status = variance === 0 ? "MATCHED" : variance > 0 ? "OVER" : "SHORT";
 
@@ -40,5 +66,7 @@ export async function submitSettlement(errandId: string, riderId: number, collec
     collectedAmount: round2(collectedAmount),
     variance,
     status,
+    // Only meaningful on a shortfall; a matched settlement has nothing to explain.
+    shortReason: status === "SHORT" ? input.shortReason?.trim() || null : null,
   });
 }

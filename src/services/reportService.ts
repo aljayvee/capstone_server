@@ -4,6 +4,7 @@ import { userRepository } from "../repositories/userRepository.js";
 import { ratingRepository } from "../repositories/ratingRepository.js";
 import { getPeriodStrategy, type ReportPeriod } from "./patterns/reportPeriodStrategy.js";
 import { splitCommission } from "./patterns/commissionSplit.js";
+import * as exceptionService from "./exceptionService.js";
 
 interface ReportMeta {
   period: ReportPeriod;
@@ -192,4 +193,19 @@ export async function getTransactionSummary(period: ReportPeriod, referenceDate:
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+
+/**
+ * Errands that did not reconcile, across a period.
+ *
+ * The owner's view of the same derivation the dispatcher's queue runs — but
+ * keeping the resolved ones, because "who cleared this and what did they say"
+ * is the part with teeth. An unresolved exception from three weeks ago is the
+ * thing this report exists to make impossible to miss.
+ */
+export async function getExceptionReport(period: ReportPeriod, referenceDate: Date) {
+  const { start, end, meta } = resolveRange(period, referenceDate);
+  const found = await exceptionService.findExceptions(start, end);
+  return { meta, ...found };
 }

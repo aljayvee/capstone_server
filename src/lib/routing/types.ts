@@ -7,12 +7,28 @@ export type { GeoPoint };
 // synthesised fallback instead of treating every number as equally trustworthy.
 export type RoutingProviderName = "osrm" | "google" | "haversine";
 
+export interface RouteStep {
+  instruction: string;
+  streetName: string;
+  maneuverType: string;
+  modifier?: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  location: GeoPoint;
+  bearingBefore?: number;
+  bearingAfter?: number;
+  coordinates: GeoPoint[];
+}
+
 export interface RouteLeg {
   distanceMeters: number;
   durationSeconds: number;
   // Decoded coordinates for this leg only. Empty when the provider can't split
   // per-leg geometry (the haversine fallback returns the two endpoints).
   coordinates: GeoPoint[];
+  steps: RouteStep[];
+  targetType?: "STORE" | "CUSTOMER";
+  targetIndex?: number;
 }
 
 export interface RouteResult {
@@ -24,6 +40,7 @@ export interface RouteResult {
   coordinates: GeoPoint[];
   encodedGeometry: string | null;
   legs: RouteLeg[];
+  steps: RouteStep[];
   provider: RoutingProviderName;
   // True when the numbers are estimated rather than measured against a road
   // network. Callers MUST widen any promise they build on a degraded result —

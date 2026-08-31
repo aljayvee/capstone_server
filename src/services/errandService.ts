@@ -23,6 +23,7 @@ import * as routingService from "./routingService.js";
 import * as etaService from "./etaService.js";
 import * as riderPresenceStore from "../lib/riderPresenceStore.js";
 import * as riderPositionStore from "../lib/riderPositionStore.js";
+import * as riderBeaconService from "./riderBeaconService.js";
 import * as routingProvider from "../lib/routing/resilientRoutingService.js";
 import { isWithinServiceArea } from "../lib/serviceArea.js";
 import { POSITION_FRESHNESS_MS } from "./etaService.js";
@@ -30,11 +31,26 @@ import * as commissionService from "./commissionService.js";
 import { buildFeeBreakdown, type CustomerFeeBreakdown, type PricedErrand } from "./patterns/feeBreakdown.js";
 import { modesForCategoryNames, resolveCategoryModes } from "./patterns/categoryFeeModes.js";
 import { buildRiderEarnings, type EarningErrand } from "./patterns/riderEarnings.js";
+import { whereRiderBecomesFree, dispatchCostSeconds } from "./patterns/dispatchCost.js";
+import type { GeoPoint } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma.js";
 
+/**
+ * How many accepted errands one rider may carry at once.
+ *
+ * This was the bare literal `3`, written twice inside assignRider and a third
+ * time inside the sentence shown to a dispatcher when nobody was eligible — so
+ * the cap could be changed in one place and silently disagree with itself in
+ * the other two. The rider app now draws one fee capsule per errand up to this
+ * number, which makes it a contract rather than an internal heuristic.
+ */
+export const MAX_ACTIVE_ERRANDS_PER_RIDER = 3;
+
 /** A stop as errandRepository loads it, with just enough of its category. */
-type PinpointWithCategory = { category?: { geofenceRadiusMeters: number } | null };
+type PinpointWithCategory = {
+  category?: { geofenceRadiusMeters: number; name: string } | null;
+};
 
 type NamedPerson = { firstName: string; lastName: string } | null | undefined;
 type CustomerRelation =
@@ -91,6 +107,12 @@ export function attachErrandNames<
             ...stop,
             geofenceRadiusMeters:
               stop.category?.geofenceRadiusMeters ?? GEOFENCE_RADIUS_METERS,
+            // The category's NAME, flattened the same way and for the same
+            // reason as the radius. The rider app shows it under the store so a
+            // rider walking into a mall knows whether they are shopping for
+            // groceries or collecting a bill. Null for a stop pinned off the
+            // catalogue, which renders as no line rather than as "Other".
+            storeCategory: stop.category?.name ?? null,
           })),
         }
       : {}),
@@ -408,8 +430,8 @@ export async function recalculateFee(errandId: string) {
     return attachErrandNames(errand);
   }
 
-  // What the customer committed to, never raised by the dispatcher's pins —
-  // see pricingStoreCount for why.
+  // The larger of what the customer committed to and how many stops are
+  // actually pinned — see pricingStoreCount for the trade-off this accepts.
   const storeCount = pricingStoreCount({
     storeCount: errand.storeCount,
     pinnedStops: (errand.pinpoints || []).length,
@@ -591,10 +613,20 @@ export async function assignRider(
     throw new ServiceError(404, "Errand not found");
   }
 
-  let finalRiderId: number | null = riderId ?? null;
+  // An ORDERED list, not a single choice.
+  //
+  // The claim below can fail because a concurrent dispatch took the rider's last
+  // slot. Ranking produces a queue so that loses one candidate rather than the
+  // whole dispatch — the second-best rider is already known and does not need the
+  // matrix call to be run again.
+  //
+  // A dispatcher naming a rider explicitly gets a list of exactly one: their
+  // choice is a decision, not a suggestion, and silently substituting someone
+  // else would be worse than telling them the rider is full.
+  const candidates: number[] = riderId ? [riderId] : [];
 
   // Automated "Assign Rider Now" algorithm when riderId is not explicitly provided
-  if (!finalRiderId) {
+  if (candidates.length === 0) {
     // 1. Repeat-customer priority (capped at 3 active/queued per customer).
     //
     // Collapsed from an N+1: this previously ran a count query and a user lookup
@@ -627,10 +659,22 @@ export async function assignRider(
         select: { id: true },
       });
 
-      const repeatRider = activeRiders.find(
-        (rider) => (countByRider.get(rider.id) ?? 0) < 3 && riderPresenceStore.isOnline(rider.id)
+      // Beacon-derived, not socket-derived. isOnline() asked whether a WebSocket
+      // was currently attached, which Android's battery optimiser severs on a
+      // locked screen — so a rider sitting outside a store was excluded from
+      // their own repeat customer's errand while perfectly able to take it.
+      const repeatAvailability = await riderBeaconService.availabilityForRiders(
+        activeRiders.map((r) => r.id)
       );
-      if (repeatRider) finalRiderId = repeatRider.id;
+      const repeatRider = activeRiders.find(
+        (rider) =>
+          (countByRider.get(rider.id) ?? 0) < MAX_ACTIVE_ERRANDS_PER_RIDER &&
+          repeatAvailability.get(rider.id)?.dispatchable === true
+      );
+      // Preferred, not exclusive: proximity ranking still runs below and fills in
+      // behind them, so a repeat rider who turns out to be full falls through to
+      // the ordinary nearest-rider queue instead of failing the dispatch.
+      if (repeatRider) candidates.push(repeatRider.id);
     }
 
     // 2. Proximity fallback: nearest eligible rider by real road travel time.
@@ -642,7 +686,7 @@ export async function assignRider(
     // Real positions now come from the breadcrumb store, and ranking is by
     // travel time on the road network rather than straight-line distance: a
     // rider 500 m away across the river is not the nearest rider.
-    if (!finalRiderId) {
+    {
       const store1 = errand.pinpoints && errand.pinpoints.length > 0 ? errand.pinpoints[0] : null;
       const targetPoint = store1
         ? { latitude: Number(store1.latitude), longitude: Number(store1.longitude) }
@@ -664,20 +708,58 @@ export async function assignRider(
         },
       });
 
-      // `status: "Active"` is the admin account flag, not presence. The old code
-      // filtered on it alone while telling the dispatcher that offline riders
-      // had been excluded — they had not. isOnline() is the real signal.
+      // `status: "Active"` is the admin account flag, not presence.
+      //
+      // Presence now comes from the rider's own beacon rather than from a live
+      // socket. Two failures go away at once: a rider whose socket Doze killed
+      // is no longer excluded while sitting on their motorcycle waiting, and a
+      // rider whose socket is alive but whose location task has died is no longer
+      // included while being impossible to locate. `dispatchable` also folds in
+      // the permissions an offer actually depends on — there is no point sending
+      // a 45-second countdown to a handset that cannot raise a notification.
+      const availability = await riderBeaconService.availabilityForRiders(
+        allRiders.map((r) => r.id)
+      );
       const eligibleRiders = allRiders.filter(
         (r) =>
           !excludedRiderIds.includes(r.id) &&
-          r.errandsAsRider.length < 3 &&
-          riderPresenceStore.isOnline(r.id)
+          r.errandsAsRider.length < MAX_ACTIVE_ERRANDS_PER_RIDER &&
+          availability.get(r.id)?.dispatchable === true
       );
 
-      if (eligibleRiders.length === 0) {
+      if (eligibleRiders.length === 0 && candidates.length === 0) {
+        // Say WHICH reason, per rider.
+        //
+        // This used to read "All riders are offline, at capacity, or have
+        // declined" no matter what was actually wrong, so a dispatcher staring
+        // at a roster of riders they could see were online had nothing to act
+        // on. The three real causes look nothing alike: a rider who has not
+        // beaconed needs their app opened, one missing a permission needs a
+        // setting changed, and one at capacity needs nothing at all.
+        const reasons = allRiders
+          .filter((r) => !excludedRiderIds.includes(r.id))
+          .map((r) => {
+            const name = `${r.firstName} ${r.lastName}`.trim() || `Rider ${r.id}`;
+            if (r.errandsAsRider.length >= MAX_ACTIVE_ERRANDS_PER_RIDER) {
+              return `${name}: already carrying ${r.errandsAsRider.length}`;
+            }
+            const state = availability.get(r.id);
+            if (!state) return `${name}: no presence recorded`;
+            if (state.state === "NEEDS_PERMISSIONS") {
+              return `${name}: needs ${state.impediments.join(", ")}`;
+            }
+            const age =
+              state.beaconAgeMs === null
+                ? "never checked in"
+                : `last seen ${Math.round(state.beaconAgeMs / 1000)}s ago`;
+            return `${name}: ${state.state.toLowerCase().replace(/_/g, " ")} (${age})`;
+          });
+
         throw new ServiceError(
           404,
-          "No available riders. All riders are offline, at capacity (3 tasks), or have declined."
+          reasons.length > 0
+            ? `No rider can take this errand right now. ${reasons.join("; ")}.`
+            : "No riders are set up on this account yet."
         );
       }
 
@@ -686,68 +768,160 @@ export async function assignRider(
       // "signal lost" — so the map and dispatch can never disagree about who is
       // reachable. Riders outside the service area are excluded too: the routing
       // graph has no roads for them and any travel time would be invented.
+      const now = Date.now();
       const located = eligibleRiders
-        .map((rider) => ({
-          rider,
-          position: riderPositionStore.getFresh(rider.id, POSITION_FRESHNESS_MS),
-        }))
+        .map((rider) => {
+          const position = riderPositionStore.getFresh(rider.id, POSITION_FRESHNESS_MS);
+          // Where they will be when they can START, which for a rider already
+          // carrying work is the end of that work, not their current fix.
+          const free = whereRiderBecomesFree(
+            position ? position.point : null,
+            rider.errandsAsRider.map((e) => ({
+              etaHighAt: e.etaHighAt,
+              deliveryLatitude: e.deliveryLatitude,
+              deliveryLongitude: e.deliveryLongitude,
+            })),
+            now
+          );
+          return { rider, position, free };
+        })
         .filter(
-          (entry): entry is { rider: (typeof eligibleRiders)[number]; position: NonNullable<ReturnType<typeof riderPositionStore.getFresh>> } =>
-            entry.position !== undefined && isWithinServiceArea(entry.position.point)
+          (entry): entry is typeof entry & { free: { point: GeoPoint } & typeof entry.free } =>
+            entry.position !== undefined &&
+            entry.free.point !== null &&
+            isWithinServiceArea(entry.free.point)
         );
 
       if (located.length === 0) {
         // No usable positions: fall back to the least-loaded rider rather than
         // failing the dispatch, but say so plainly instead of pretending a
         // proximity decision was made.
-        const leastLoaded = [...eligibleRiders].sort(
+        const byLoad = [...eligibleRiders].sort(
           (a, b) => a.errandsAsRider.length - b.errandsAsRider.length
-        )[0];
-        logger.info(
-          `Assigning errand ${errandId} to rider ${leastLoaded.id} by load — no rider had a GPS position fresher than ${POSITION_FRESHNESS_MS}ms.`
         );
-        finalRiderId = leastLoaded.id;
+        if (byLoad.length > 0) {
+          logger.info(
+            `Assigning errand ${errandId} to rider ${byLoad[0].id} by load — no rider had a GPS position fresher than ${POSITION_FRESHNESS_MS}ms.`
+          );
+        }
+        candidates.push(...byLoad.map((r) => r.id));
       } else {
         // One matrix call ranks every candidate at once.
         const matrix = await routingProvider.matrix(
-          located.map((entry) => entry.position.point),
+          located.map((entry) => entry.free.point),
           [targetPoint]
         );
 
         if (matrix) {
-          let best = 0;
-          for (let i = 1; i < located.length; i++) {
-            if ((matrix.durationsSeconds[i]?.[0] ?? Infinity) < (matrix.durationsSeconds[best]?.[0] ?? Infinity)) {
-              best = i;
-            }
-          }
-          finalRiderId = located[best].rider.id;
+          // Sorted rather than reduced to a minimum: the runner-up is the retry
+          // candidate if the winner's last slot is taken between here and the write.
+          const ranked = located
+            .map((entry, i) => ({
+              id: entry.rider.id,
+              // Travel from where they become free, PLUS the wait until then.
+              // Both are seconds, so a rider 3 minutes away who is free now beats
+              // one 1 minute away who is 20 minutes from finishing.
+              seconds: dispatchCostSeconds(
+                matrix.durationsSeconds[i]?.[0] ?? Infinity,
+                entry.free.availableInSeconds
+              ),
+            }))
+            .sort((a, b) => a.seconds - b.seconds);
+          candidates.push(...ranked.map((r) => r.id));
         } else {
           // Routing unavailable entirely — straight-line is a poor proxy but a
           // real position beats no decision at all.
+          // No routing engine: straight-line from the free point, still weighted
+          // by the wait. 25 km/h is a deliberately rough city-motorcycle figure —
+          // it only has to make distance and time comparable, not be accurate.
+          const APPROX_MPS = 25_000 / 3600;
           located.sort(
             (a, b) =>
-              haversineDistanceKm(a.position.point, targetPoint) -
-              haversineDistanceKm(b.position.point, targetPoint)
+              dispatchCostSeconds(
+                (haversineDistanceKm(a.free.point, targetPoint) * 1000) / APPROX_MPS,
+                a.free.availableInSeconds
+              ) -
+              dispatchCostSeconds(
+                (haversineDistanceKm(b.free.point, targetPoint) * 1000) / APPROX_MPS,
+                b.free.availableInSeconds
+              )
           );
-          finalRiderId = located[0].rider.id;
+          candidates.push(...located.map((entry) => entry.rider.id));
         }
       }
+
+      // Riders with no usable position still belong at the BACK of the queue, so
+      // a dispatch never fails while a willing rider is standing by unranked.
+      candidates.push(...eligibleRiders.map((r) => r.id));
     }
   }
 
-  const rider = await userRepository.findById(finalRiderId);
-  if (!rider || rider.role !== "RIDER") {
-    throw new ServiceError(400, "Selected user is not a valid rider.");
+  // Deduped, order preserved: proximity and least-loaded can both nominate the
+  // same rider, and retrying one who just refused a slot only wastes a round trip.
+  const orderedCandidates = [...new Set(candidates)];
+  if (orderedCandidates.length === 0) {
+    throw new ServiceError(
+      404,
+      `No available riders. All riders are offline, at capacity (${MAX_ACTIVE_ERRANDS_PER_RIDER} errands), or have declined.`
+    );
   }
 
   assertValidTransition(errand.status as unknown as ErrandStatusValue, "ASSIGNED");
 
-  const updatedErrand = await errandRepository.update(errandId, {
-    riderId: finalRiderId,
-    status: "ASSIGNED",
-    assignedAt: new Date(),
-  });
+  let finalRiderId: number | null = null;
+  let atCapacity = 0;
+
+  for (const candidateId of orderedCandidates) {
+    const candidate = await userRepository.findById(candidateId);
+    if (!candidate || candidate.role !== "RIDER") {
+      // An explicitly named non-rider is the caller's mistake and worth saying so;
+      // one that turned up through ranking is just a stale row to skip.
+      if (riderId) throw new ServiceError(400, "Selected user is not a valid rider.");
+      continue;
+    }
+
+    const outcome = await errandRepository.claimForRider(
+      errandId,
+      candidateId,
+      MAX_ACTIVE_ERRANDS_PER_RIDER
+    );
+
+    if (outcome === "CLAIMED") {
+      finalRiderId = candidateId;
+      break;
+    }
+    if (outcome === "ERRAND_MOVED") {
+      // Another dispatcher assigned or cancelled this errand while we ranked.
+      // Retrying a different rider would fight them for it, so stop.
+      throw new ServiceError(409, "This errand was already assigned by someone else.");
+    }
+    atCapacity += 1;
+    logger.info(
+      `Rider ${candidateId} was at capacity when errand ${errandId} tried to claim them — trying the next candidate.`
+    );
+  }
+
+  if (finalRiderId === null) {
+    throw new ServiceError(
+      riderId ? 409 : 404,
+      riderId
+        ? `That rider is already carrying ${MAX_ACTIVE_ERRANDS_PER_RIDER} errands.`
+        : `No available riders. ${atCapacity} were at capacity by the time the errand was assigned.`
+    );
+  }
+
+  const rider = await userRepository.findById(finalRiderId);
+  if (!rider) {
+    throw new ServiceError(400, "Selected user is not a valid rider.");
+  }
+
+  // Re-read rather than reuse the transaction's return: claimForRider writes
+  // through updateMany, which cannot carry the relation includes every consumer
+  // of this response expects.
+  const updatedErrand = await errandRepository.findById(errandId);
+  if (!updatedErrand) {
+    throw new ServiceError(404, "Errand not found");
+  }
 
   const errandWithNames = attachErrandNames(updatedErrand);
   eventPublisher.emit("order:updated", errandWithNames);
@@ -844,13 +1018,15 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
     logger.info(`Errand ${errandId}: filed ${attached} item(s) under their store stops.`);
   }
 
-  // storeCount deliberately NOT raised to pins.length here.
+  // storeCount (the COLUMN) is still not raised to pins.length here — it keeps
+  // recording how many stores the CUSTOMER chose at checkout, the figure this
+  // errand was originally quoted and agreed against, and the audit trail a
+  // later dispute gets checked on.
   //
-  // It records how many stores the CUSTOMER chose, which is what they were
-  // quoted and agreed to. Pinning three shops to fulfil a one-category order is
-  // a dispatcher's fulfilment decision, and ratcheting this up billed the
-  // customer a multi-store fee for it. The pins still change the route, so the
-  // distance fee moves; the multi-store fee does not.
+  // The multi-store FEE is a different thing and does now move when the
+  // dispatcher pins more stores than that: pricingStoreCount (called from
+  // recalculateFee below) computes the billed count from this column plus the
+  // live pin count at pricing time, rather than it being persisted back here.
 
   // Pinpoints are the first source of real distance data — recompute now
   // that they're known (see recalculateFee). This also emits order:updated
@@ -1017,6 +1193,19 @@ export async function acceptErrand(errandId: string, riderId: number, occurredAt
   }
 
   assertValidTransition(errand.status as unknown as ErrandStatusValue, "IN_TRANSIT");
+
+  // The cap lived only in auto-assign, so it governed who was OFFERED work and
+  // nothing at all about who could take it. A dispatcher hand-picking a rider
+  // skipped that branch entirely, and accepting never checked, so a rider could
+  // end up carrying four. Checked here because this is the one call that turns
+  // an offer into a commitment.
+  const inFlight = await errandRepository.countInTransitForRider(riderId);
+  if (inFlight >= MAX_ACTIVE_ERRANDS_PER_RIDER) {
+    throw new ServiceError(
+      409,
+      `You are already carrying ${MAX_ACTIVE_ERRANDS_PER_RIDER} errands. Finish one before taking another.`
+    );
+  }
 
   const updatedErrand = await errandRepository.update(errandId, {
     status: "IN_TRANSIT",

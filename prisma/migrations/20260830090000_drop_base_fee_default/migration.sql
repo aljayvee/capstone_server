@@ -1,0 +1,14 @@
+-- The base fee is a price, and the database must not invent one.
+--
+-- `baseFee` carried DEFAULT 50, so any INSERT that omitted it produced a config
+-- row that priced errands at a figure nobody had chosen — and nothing
+-- downstream could tell that apart from a rate the owner deliberately set.
+--
+-- Both writers (the seed and rateConfigRepository.upsert) already supply the
+-- value explicitly, and the read paths refuse to quote when no config exists
+-- rather than falling back to a literal, so dropping the default removes the
+-- silent-price path without opening a new failure mode.
+--
+-- Data-safe: dropping a DEFAULT does not touch existing rows, and the column
+-- stays NOT NULL.
+ALTER TABLE `rate_configs` ALTER COLUMN `baseFee` DROP DEFAULT;

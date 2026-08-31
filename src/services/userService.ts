@@ -2,13 +2,16 @@ import bcrypt from "bcryptjs";
 import { userRepository } from "../repositories/userRepository.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import * as riderPresenceService from "./riderPresenceService.js";
+import * as riderBeaconService from "./riderBeaconService.js";
 import { ServiceError } from "./ServiceError.js";
 import { withFullName } from "./authService.js";
 import { buildUserCreateData } from "./patterns/userFactory.js";
 import { normalizeUsername, normalizeEmail } from "../lib/identity.js";
 import { ROLE_CHANGE_REAUTH_ROLES } from "../validators/userValidators.js";
-import type { CreateUserInput, UpdateUserInput, ProfileUpdateInput } from "../validators/userValidators.js";
+import type { CreateUserInput, UpdateUserInput, ProfileUpdateInput, ChangePasswordInput } from "../validators/userValidators.js";
 import type { PushTokenInput } from "../validators/pushTokenValidators.js";
+import { riderPhotoRepository } from "../repositories/riderPhotoRepository.js";
+import type { RiderPhotoUploadInput } from "../validators/riderPhotoValidators.js";
 
 function sanitize<T extends { passwordHash: string }>(user: T) {
   const { passwordHash: _, ...rest } = user;
@@ -159,6 +162,23 @@ export async function updateProfile(targetUserId: number, input: ProfileUpdateIn
   return withFullName(sanitize(updatedUser));
 }
 
+export async function changePassword(targetUserId: number, input: ChangePasswordInput) {
+  const existingUser = await userRepository.findById(targetUserId);
+  if (!existingUser) {
+    throw new ServiceError(404, "User not found");
+  }
+
+  const currentMatches = await bcrypt.compare(input.currentPassword, existingUser.passwordHash);
+  if (!currentMatches) {
+    throw new ServiceError(401, "Current password is incorrect.");
+  }
+
+  const passwordHash = await bcrypt.hash(input.newPassword, 10);
+  await userRepository.update(targetUserId, { passwordHash });
+
+  return { message: "Password updated successfully" };
+}
+
 export async function registerPushToken(riderId: number, input: PushTokenInput) {
   const existingUser = await userRepository.findById(riderId);
   if (!existingUser) {
@@ -172,16 +192,65 @@ export async function getRiderProfile(riderId: number) {
   if (!user) {
     throw new ServiceError(404, "Rider user not found in database");
   }
-  return withFullName(sanitize(user));
+  const photo = await riderPhotoRepository.findMetaByUserId(riderId);
+  // A timestamp, not the image. The app uses it to decide whether to fetch the
+  // bytes at all and to bust its own cache when the rider changes their photo —
+  // both of which a profile read would otherwise pay for on every load.
+  return { ...withFullName(sanitize(user)), photoUpdatedAt: photo?.updatedAt ?? null };
+}
+
+export async function getRiderPhoto(riderId: number) {
+  const photo = await riderPhotoRepository.findByUserId(riderId);
+  if (!photo) {
+    throw new ServiceError(404, "No profile photo set");
+  }
+  return {
+    photoData: photo.photoData,
+    mimeType: photo.mimeType,
+    fileSize: photo.fileSize,
+    fileName: photo.fileName,
+    updatedAt: photo.updatedAt,
+  };
+}
+
+export async function uploadRiderPhoto(riderId: number, input: RiderPhotoUploadInput) {
+  const user = await userRepository.findById(riderId);
+  if (!user) {
+    throw new ServiceError(404, "Rider user not found in database");
+  }
+  const photo = await riderPhotoRepository.upsert(riderId, input);
+  return {
+    message: "Profile photo updated",
+    photo: {
+      id: photo.id,
+      mimeType: photo.mimeType,
+      fileSize: photo.fileSize,
+      fileName: photo.fileName,
+      updatedAt: photo.updatedAt,
+    },
+  };
+}
+
+export async function deleteRiderPhoto(riderId: number) {
+  const user = await userRepository.findById(riderId);
+  if (!user) {
+    throw new ServiceError(404, "Rider user not found in database");
+  }
+  await riderPhotoRepository.deleteByUserId(riderId);
+  return { message: "Profile photo removed" };
 }
 
 // Full fleet roster (all statuses, real active-order counts, real online
 // presence) — backs dispatcher/owner rider-monitoring views and the
 // "Assign Rider" picker (via listOnlineRiders below).
 export async function listAllRiders() {
-  const [riders, activeCounts] = await Promise.all([
-    userRepository.findAllRiders(),
+  const riders = await userRepository.findAllRiders();
+  const [activeCounts, availability] = await Promise.all([
     errandRepository.countActiveByRider(),
+    // The same beacon-derived state dispatch uses. When the roster said "online"
+    // from a socket and dispatch decided from something else, a dispatcher could
+    // watch a rider sit there green and still be told nobody was available.
+    riderBeaconService.availabilityForRiders(riders.map((r) => r.id)),
   ]);
 
   const countByRiderId = new Map<number, number>();
@@ -198,7 +267,13 @@ export async function listAllRiders() {
     avatar: r.avatar,
     status: r.status,
     activeOrdersCount: countByRiderId.get(r.id) ?? 0,
-    online: riderPresenceService.isRiderOnline(r.id),
+    online: availability.get(r.id)?.dispatchable ?? false,
+    // Named separately from `online` so the board can distinguish a rider in a
+    // dead zone from one who has notifications switched off — and can say
+    // "presumed offline" where the server only inferred it from silence.
+    availability: availability.get(r.id)?.state ?? "OFFLINE",
+    presumed: availability.get(r.id)?.presumed ?? true,
+    impediments: availability.get(r.id)?.impediments ?? [],
   }));
 }
 

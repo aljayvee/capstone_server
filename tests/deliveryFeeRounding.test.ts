@@ -15,14 +15,14 @@ const RATE_CONFIG = {
   nonCodFeeLow: 15,
 } as any;
 
-/** Prices an errand, varying only the distance, which is the fractional term. */
+/** Prices an errand, varying only the distance. */
 function priceAt(distanceKm: number, overrides: Record<string, unknown> = {}) {
   return defaultPricingStrategy.calculate(
     {
-      // Past the size gate on BOTH counts — over 12 units and at least ₱1,000 —
-      // so these cases exercise ROUNDING with a handling fee present rather
-      // than accidentally testing the gate. FLAT keeps the fee at ₱50 whatever
-      // the basket, so the arithmetic below is unaffected by the amount.
+      // Past the size gate on the AMOUNT (₱1,500 ≥ ₱1,000), so these cases
+      // exercise ROUNDING with a handling fee present rather than accidentally
+      // testing the gate. FLAT keeps the fee at ₱50 whatever the basket, so the
+      // arithmetic below is unaffected by the amount.
       estimatedCost: 1500,
       itemUnits: 20,
       tip: 0,
@@ -36,24 +36,57 @@ function priceAt(distanceKm: number, overrides: Record<string, unknown> = {}) {
   );
 }
 
+describe("the distance fee ceils to the next whole started kilometre", () => {
+  // A rider who crosses into a new kilometre travels it however little of it
+  // the errand actually needed — the fuel and the minutes are the same
+  // whether they used 40 metres of that km or all 999. So the excess bills in
+  // whole started kilometres, never a fraction. Matches
+  // docs/errand_pricing_formula.md section 2.B.
+  //
+  // Every other fee component is zeroed so nothing but base + distance can
+  // contribute — no items means no handling fee, one store means no
+  // multi-store fee, COD means no non-COD fee.
+  const RATE = {
+    baseFee: 70,
+    perKmRate: 10,
+    multiStoreFeePerStore: 0,
+    maxAdditionalStores: 0,
+    groceryFeeThreshold: 999999,
+    groceryFeePercent: 0,
+    groceryFeeFlat: 0,
+    nonCodThreshold: 999999,
+    nonCodFeeHigh: 0,
+    nonCodFeeLow: 0,
+  } as any;
+
+  const feeAt = (distanceKm: number) =>
+    defaultPricingStrategy.calculate(
+      { estimatedCost: 0, itemUnits: 0, tip: 0, storeCount: 1, distanceKm, isCod: true, categoryModes: [] } as any,
+      RATE
+    ).deliveryFee;
+
+  it.each([
+    [1.5, 70], // inside the allowance
+    [2.0, 70], // exactly at the allowance
+    [2.1, 80], // one metre into the next started km
+    [2.9, 80], // still the same started km
+    [3.0, 80], // exactly closes the started km
+    [3.1, 90], // opens a third km
+  ])("bills %skm at ₱%i", (distanceKm, expected) => {
+    expect(feeAt(distanceKm)).toBe(expected);
+  });
+
+  it("bills two different fractions inside the same started km identically", () => {
+    expect(feeAt(2.55)).toBe(feeAt(2.99));
+  });
+
+  it("bills one more full km the instant the next km starts", () => {
+    expect(feeAt(3.0)).toBe(80);
+    expect(feeAt(3.01)).toBe(90);
+  });
+});
+
 describe("the delivery fee is charged in whole pesos", () => {
-  it("rounds a half peso up", () => {
-    // base 67 + flat handling 50 + 2.55 excess km x 10 = 142.50
-    const { deliveryFee } = priceAt(4.05);
-    expect(deliveryFee).toBe(143);
-  });
-
-  it("rounds a tenth of a peso down", () => {
-    // base 67 + flat handling 50 + 2.51 excess km x 10 = 142.10
-    const { deliveryFee } = priceAt(4.01);
-    expect(deliveryFee).toBe(142);
-  });
-
-  it("leaves a fare that is already whole alone", () => {
-    const { deliveryFee } = priceAt(4.0);
-    expect(deliveryFee).toBe(142);
-  });
-
   it("is always an integer, at every distance", () => {
     for (let km = 0; km <= 30; km += 0.07) {
       const { deliveryFee } = priceAt(km);
@@ -62,14 +95,28 @@ describe("the delivery fee is charged in whole pesos", () => {
   });
 
   it("rounds the total, not each part", () => {
-    // Handling at 10% of 1234 is 123.40 and the distance leg is 0.40, each of
-    // which rounds to zero centavos on its own but to a whole peso together.
+    // Two fractional components at once: the handling fee (PERCENT of a
+    // basket not a multiple of ₱10) and the distance fee (a fractional
+    // perKmRate — an owner can configure ₱10.40/km same as ₱10.00/km; a
+    // WHOLE perKmRate alone no longer produces a fractional distance fee
+    // under the ceiling formula, so this scenario needs one to keep testing
+    // what it claims to test). Rounding each separately first
+    // (67 + round(123.4) + round(10.4) = 67 + 123 + 10 = 200) disagrees with
+    // rounding the sum once (67 + 123.4 + 10.4 = 200.8 -> 201) — proving the
+    // fare is rounded over the total, not component by component.
     const breakdown = defaultPricingStrategy.calculate(
-      { estimatedCost: 1234, itemUnits: 20, tip: 0, storeCount: 1, distanceKm: 2.04, isCod: true, categoryModes: ["PERCENT"] } as any,
-      RATE_CONFIG
+      {
+        estimatedCost: 1234,
+        itemUnits: 20,
+        tip: 0,
+        storeCount: 1,
+        distanceKm: 2.5,
+        isCod: true,
+        categoryModes: ["PERCENT"],
+      } as any,
+      { ...RATE_CONFIG, perKmRate: 10.4 }
     );
-    // 67 + 123.40 + 5.40 = 195.80 -> 196, not 67 + 123 + 5 = 195.
-    expect(breakdown.deliveryFee).toBe(196);
+    expect(breakdown.deliveryFee).toBe(201);
   });
 });
 
@@ -94,13 +141,31 @@ describe("the breakdown still adds up to the fare", () => {
     }
   });
 
-  it("keeps every configured component exactly as the owner set it", () => {
-    const b = priceAt(4.05);
+  it("keeps every configured component reconciling exactly, with a fractional rate", () => {
+    // Same fractional-perKmRate scenario as "rounds the total, not each
+    // part" — the one case in this file where the distance fee still carries
+    // real rounding residual under the ceiling formula, since a whole
+    // perKmRate (₱10, production's actual rate) makes ceil(excess) ×
+    // perKmRate always an integer with nothing left to absorb.
+    const b = defaultPricingStrategy.calculate(
+      {
+        estimatedCost: 1234,
+        itemUnits: 20,
+        tip: 0,
+        storeCount: 1,
+        distanceKm: 2.5,
+        isCod: true,
+        categoryModes: ["PERCENT"],
+      } as any,
+      { ...RATE_CONFIG, perKmRate: 10.4 }
+    );
     expect(b.baseFee).toBe(67);
-    expect(b.groceryFee).toBe(50);
+    expect(b.groceryFee).toBe(123.4);
     expect(b.multiStoreFee).toBe(0);
-    // The rounding lands here, on the one component that is already an estimate.
-    expect(b.distanceFee).toBe(26);
+    // The rounding residual lands here, same preference as always — the one
+    // component that is already a measured estimate rather than a configured
+    // figure the customer could check against the rate card.
+    expect(b.distanceFee).toBe(10.6);
   });
 
   it("never drives the distance fee negative when rounding down", () => {

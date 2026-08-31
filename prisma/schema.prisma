@@ -65,15 +65,84 @@ model User {
   settlements             SettlementRecord[]
   proofImages             ErrandProofImage[]
   commissions             RiderCommission[]
+  exceptionReviews        ExceptionReview[]        @relation("ExceptionReviews")
   updatedByUser           User?                    @relation("UserUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
   updatedRecords          User[]                   @relation("UserUpdatedBy")
   riderLoginSessions      RiderLoginSession[]
   riderStatusLogs         RiderStatusLog[]
   accountModificationLogs AccountModificationLog[]
   verificationCodes       EmailVerificationCode[]  @relation("UserVerificationCodes")
+  profilePhoto            RiderProfilePhoto?
+  presence                RiderPresence?
 
   @@map("users")
 }
+
+// 1b. Staff Profile Photos (dedicated storage for OWNER/DISPATCHER/RIDER avatars)
+//
+// Mirrors CustomerProfilePhoto rather than reusing User.avatar, which is a plain
+// String — a VarChar that a base64 image does not fit in. Splitting the bytes off
+// the User row also keeps every ordinary user read (auth, the dispatcher roster,
+// the errand joins) from dragging a megabyte of image along with it.
+model RiderProfilePhoto {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photoData String   @db.LongText
+  mimeType  String   @db.VarChar(50)
+  fileSize  Int
+  fileName  String?  @db.VarChar(255)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rider_profile_photos")
+}
+
+// 1c. Rider Presence (durable mirror of the in-process presence/position caches)
+//
+// riderPositionStore and riderPresenceStore both live in Node memory and both
+// fill only as a side effect of an errand already in progress, so an idle rider
+// was invisible to dispatch and a server restart erased the whole fleet's state.
+// This row is written by the rider's low-rate beacon, independently of any
+// errand, so "who can I dispatch to right now" has a durable answer.
+//
+// One row per rider, overwritten in place: this is current state, not history.
+// The breadcrumb trail in ErrandTrackPoint remains the audit record.
+model RiderPresence {
+  id        Int      @id @default(autoincrement())
+  riderId   Int      @unique
+  rider     User     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  latitude       Float?
+  longitude      Float?
+  accuracyMeters Float?
+  headingDeg     Float?
+
+  onDuty             Boolean @default(false)
+  backgroundLocation Boolean @default(false)
+  notifications      Boolean @default(false)
+  exactAlarms        Boolean @default(false)
+  // 'wifi' | 'cellular' | 'none' — recorded for diagnosis, never for eligibility.
+  connectivity       String? @db.VarChar(16)
+  // The cadence the device reported beaconing at. The staleness window is derived
+  // from it rather than fixed, because a threshold shorter than the interval marks
+  // a healthy rider lost between every pair of beacons.
+  beaconIntervalMs   Int?
+
+  // Device clock at the fix, and server clock at receipt. Both, because the gap
+  // between them is the only way to tell a slow network from a wrong clock.
+  recordedAt DateTime?
+  lastBeaconAt DateTime?
+  // Set only by an explicit shutdown beacon. Null means any absence is inferred.
+  shutdownAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rider_presence")
+}
+
+
 
 // 1b. Customer Account Table (3NF: auth/identity only, split from operational `users`)
 model CustomerAccount {
@@ -368,6 +437,7 @@ model Errand {
   settlement            SettlementRecord?
   trackPoints           ErrandTrackPoint[]
   dwellObservations     DwellObservation[]
+  exceptionReviews ExceptionReview[]
   proofImages           ErrandProofImage[]
   commission            RiderCommission?
 
@@ -485,6 +555,41 @@ model ErrandPinpoint {
   @@map("errand_pinpoints_tbl")
 }
 
+// 6z. Exception Reviews (who cleared a reconciliation exception, and why)
+model ExceptionReview {
+  id       Int    @id @default(autoincrement())
+  errandId String
+  errand   Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+
+  // Which of the errand's exceptions this clears. Stored as a string rather
+  // than an enum so a kind added to exceptionRules.ts does not need a migration
+  // before it can be reviewed.
+  kind String @db.VarChar(40)
+
+  reviewerId Int
+  reviewer   User @relation("ExceptionReviews", fields: [reviewerId], references: [id])
+
+  // Required. An exception cleared with no stated reason is weak evidence
+  // later, which is exactly when it is needed.
+  reason String @db.VarChar(500)
+
+  // The exposure AS IT STOOD when this was cleared.
+  //
+  // An exception is derived, so the figures behind it can move afterwards.
+  // Freezing the amount here is what makes the row evidence rather than a
+  // pointer to a number that has since changed.
+  amountAtRisk Float @default(0)
+
+  resolvedAt DateTime @default(now())
+
+  // Deliberately NOT unique on (errandId, kind): an owner reviewing something a
+  // dispatcher already closed writes a second row rather than overwriting the
+  // first, so the sequence of who looked and what they concluded survives.
+  @@index([errandId])
+  @@index([reviewerId, resolvedAt])
+  @@map("exception_reviews")
+}
+
 // 7. Dispatch Logs Table (3NF: Dispatcher assignment logs)
 model DispatchLog {
   id           Int      @id @default(autoincrement())
@@ -534,8 +639,18 @@ model ErrandDeclineReason {
 
 // 10. Service Rates Configuration Table (3NF)
 model RateConfig {
-  id        Int   @id @default(1)
-  baseFee   Float @default(50)
+  id Int @id @default(1)
+
+  // No column default, deliberately.
+  //
+  // The base fee is a PRICE, and the database must never invent one. A default
+  // meant an incompletely-created config row still priced errands — at a figure
+  // nobody chose, indistinguishable from one the owner had set. Every writer
+  // (seed, rateConfigRepository.upsert) supplies it explicitly, and the read
+  // paths already handle a missing config by refusing to quote rather than
+  // falling back (see errandService.quoteErrand's 503).
+  baseFee Float
+
   perKmRate Float @default(10)
 
   // Multi-store surcharge: charged per store beyond the first, capped at
@@ -732,6 +847,15 @@ model SettlementRecord {
   collectedAmount Float
   variance        Float
   status          String
+
+  // Why the cash came back short, in the rider's words.
+  //
+  // Only set on a SHORT settlement. Collected because a variance with no
+  // explanation is a number nobody can act on -- the difference between a
+  // customer who paid what they had and a rider who kept the rest is exactly
+  // what this line records, and it is the first thing an investigation asks.
+  shortReason     String?  @db.VarChar(300)
+
   settledAt       DateTime @default(now())
 
   @@index([riderId])
@@ -747,6 +871,11 @@ enum ProofImageKind {
   TRANSFER
   // Handover photo at the customer's door.
   PROOF_OF_DELIVERY
+  // A purchase from a shop that issues no receipt at all -- a sari-sari store,
+  // a market stall. The photo is of the GOODS, so there is nothing to read and
+  // the OCR path is skipped entirely; the amount comes from the rider and is
+  // marked unverified because nothing else can corroborate it.
+  NO_RECEIPT
 }
 
 enum ImageClarityVerdict {
@@ -787,6 +916,17 @@ model ErrandProofImage {
   clarityVerdict ImageClarityVerdict?
 
   capturedAt DateTime @default(now())
+
+  // Whether a machine read this, or a person asserted it.
+  //
+  // False only for NO_RECEIPT: the figure is the rider's word. Kept as its own
+  // column rather than inferred from `kind` so a report can rank exposure by
+  // what is actually unverified without knowing every kind that might be.
+  verified Boolean @default(true)
+
+  // What the rider said they paid, where no receipt existed to read. Null on
+  // every other kind, which carry their figure on the extraction instead.
+  declaredTotal Float?
 
   extraction ReceiptExtraction?
 
@@ -1078,6 +1218,16 @@ model DwellObservation {
   dwellSeconds Int
   arrivedAt    DateTime
   departedAt   DateTime
+
+  // Whether this dwell ran far past what this kind of shop usually takes.
+  //
+  // detectStalledStop computed exactly this and threw it away -- it emitted a
+  // socket event and returned, so a rider who queues for forty minutes at every
+  // supermarket left no trace anyone could look at later. Stored so the pattern
+  // is trendable, and deliberately kept OUT of any amount at risk: a long queue
+  // is a judgement about time, not a claim about money.
+  stalled      Boolean  @default(false)
+
   createdAt    DateTime @default(now())
 
   @@index([categoryId, createdAt])

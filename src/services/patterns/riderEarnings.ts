@@ -13,11 +13,17 @@ import { splitCommission } from "./commissionSplit.js";
  * result. A rider who can see the split is far less likely to dispute it, and
  * `itemCostExcluded` is here specifically so the money they carry for the goods
  * is named as the company's rather than left to look like part of the total.
+ *
+ * `businessShare` is deliberately NOT here. It used to be, and since
+ * attachErrandNames attaches this object to every errand response regardless of
+ * who asked, every rider was shown the company's cut of their own delivery fee
+ * on the accept card, the tracker and the history list. The figure is still
+ * computed by splitCommission and still recorded on RiderCommission — the owner
+ * settlement report reads it from there. It simply does not travel to a device.
  */
 export interface RiderEarnings {
   /** The headline figure: (deliveryFee × rate) + the whole tip. */
   riderShare: number;
-  businessShare: number;
   /** The gross fee the split was taken from. */
   deliveryFee: number;
   tip: number;
@@ -51,8 +57,19 @@ export function buildRiderEarnings(errand: EarningErrand): RiderEarnings {
   // Prefer the recorded payout where one exists — same preference the settlement
   // report applies, and for the same reason: a figure already settled must not be
   // restated by a later read.
+  //
+  // Picked field by field rather than spread. `{ ...errand.commission }` carried
+  // the row's businessShare straight through to the device however the interface
+  // above was declared — the type would have said one thing and the JSON another.
   if (errand.commission) {
-    return { ...errand.commission, isFinal: true };
+    return {
+      riderShare: errand.commission.riderShare,
+      deliveryFee: errand.commission.deliveryFee,
+      tip: errand.commission.tip,
+      commissionRate: errand.commission.commissionRate,
+      itemCostExcluded: errand.commission.itemCostExcluded,
+      isFinal: true,
+    };
   }
 
   const split = splitCommission({
@@ -63,7 +80,6 @@ export function buildRiderEarnings(errand: EarningErrand): RiderEarnings {
 
   return {
     riderShare: split.riderShare,
-    businessShare: split.businessShare,
     deliveryFee: round2(errand.deliveryFee),
     tip: round2(errand.tip),
     commissionRate: split.commissionRate,

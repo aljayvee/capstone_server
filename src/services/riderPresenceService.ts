@@ -2,6 +2,7 @@ import { riderLoginSessionRepository } from "../repositories/riderLoginSessionRe
 import { riderStatusLogRepository } from "../repositories/riderStatusLogRepository.js";
 import { userRepository } from "../repositories/userRepository.js";
 import * as riderPresenceStore from "../lib/riderPresenceStore.js";
+import { riderPresenceRepository } from "../repositories/riderPresenceRepository.js";
 import { logger } from "../lib/logger.js";
 
 // How long a rider can stay absent from the presence store before their still-open
@@ -19,6 +20,12 @@ export async function openLoginSession(riderId: number) {
 }
 
 export async function closeLoginSession(riderId: number) {
+  // Presence is cleared even when there is no open session row to close: a rider
+  // who signs out must stop being dispatchable immediately, and a beacon that
+  // arrived seconds earlier would otherwise keep them AVAILABLE for the full
+  // grace window.
+  await riderPresenceRepository.clearForRider(riderId);
+
   const session = await riderLoginSessionRepository.findOpenForRider(riderId);
   if (!session) return;
   const logoutAt = new Date();

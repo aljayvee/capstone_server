@@ -132,10 +132,10 @@ describe("the fee the customer was quoted holds through fulfilment", () => {
   it.each([
     [250, 3, 0],
     [800, 20, 0],
-    [1500, 5, 0],
-    [1500, 20, 50],
-    [3000, 20, 50],
-    [5000, 20, 50],
+    [800, 25, 50],
+    [1500, 5, 50],
+    [3000, 3, 50],
+    [5000, 2, 50],
   ])(
     "a ₱%i basket of %i units is charged ₱%i regardless of how the dispatcher splits it",
     (basket, units, expected) => {

@@ -24,8 +24,8 @@ const MIN_LEGIBLE_CHARACTERS = 40;
  * Small corrections are routine: OCR misreads a digit on creased paper and the
  * rider fixes it. Alerting on those trains dispatch to ignore the alert.
  */
-const DIVERGENCE_ABSOLUTE = 100;
-const DIVERGENCE_FRACTION = 0.2;
+export const DIVERGENCE_ABSOLUTE = 100;
+export const DIVERGENCE_FRACTION = 0.2;
 
 function stripDataUri(imageData: string): string {
   return imageData.replace(/^data:image\/[a-z]+;base64,/, "");
@@ -61,6 +61,73 @@ export async function uploadProofImage(
   await assertRidersOwnErrand(errandId, riderId);
 
   const base64 = stripDataUri(input.imageData);
+
+  // A shop that prints nothing.
+  //
+  // The photo is of the GOODS, so there is no text in it by definition — running
+  // it through OCR would spend a paid call to learn that, and the legibility
+  // floor below would then reject a perfectly sharp picture as "too blurry to
+  // read". That is exactly what stranded riders at sari-sari stores: a gate
+  // demanding a receipt that was never going to exist, and an error message
+  // blaming them for it.
+  //
+  // The rider's figure is the only one available, so it is stored as an
+  // assertion — verified false — rather than dressed up as a reading.
+  if (input.kind === "NO_RECEIPT") {
+    if (!input.declaredTotal || input.declaredTotal <= 0) {
+      throw new ServiceError(400, "Enter what you paid at this shop.");
+    }
+
+    const declared = await prisma.errandProofImage.create({
+      data: {
+        errandId,
+        riderId,
+        pinpointId: input.pinpointId ?? null,
+        kind: "NO_RECEIPT",
+        imageData: base64,
+        mimeType: input.mimeType,
+        byteSize: input.fileSize,
+        verified: false,
+        declaredTotal: input.declaredTotal,
+      },
+    });
+
+    logger.info(
+      `Errand ${errandId}: rider ${riderId} declared ${input.declaredTotal} at a shop with no receipt.`
+    );
+
+    // Dispatch is told while it is happening, not found in a report later.
+    eventPublisher.emitToErrand(errandId, "errand:unverified_purchase", {
+      errandId,
+      imageId: declared.id,
+      riderId,
+      declaredTotal: input.declaredTotal,
+      pinpointId: input.pinpointId ?? null,
+    });
+
+    // A declared purchase counts toward the basket the same as a read one.
+    await errandService.markItemsPurchased(errandId, riderId, await confirmedReceiptTotal(errandId));
+
+    // `extraction: null` rather than absent, so every caller sees one shape
+    // whatever kind was uploaded.
+    return { ...declared, clarityVerdict: null, extraction: null };
+  }
+
+  // A doorstep photo has nothing to read either, and no amount attached to it.
+  if (input.kind === "PROOF_OF_DELIVERY") {
+    const handover = await prisma.errandProofImage.create({
+      data: {
+        errandId,
+        riderId,
+        pinpointId: null,
+        kind: "PROOF_OF_DELIVERY",
+        imageData: base64,
+        mimeType: input.mimeType,
+        byteSize: input.fileSize,
+      },
+    });
+    return { ...handover, clarityVerdict: null, extraction: null };
+  }
 
   // Read first, store second. A photo that cannot be read is not evidence, and
   // keeping it would leave rows nothing can ever act on.
@@ -208,13 +275,87 @@ export async function confirmProofImage(
  * a machine's guess, and a guess must never reach a customer's bill.
  */
 async function confirmedReceiptTotal(errandId: string): Promise<number> {
-  const receipts = await prisma.errandProofImage.findMany({
-    where: { errandId, kind: "RECEIPT" },
-    select: { extraction: { select: { confirmedTotal: true } } },
+  const purchases = await prisma.errandProofImage.findMany({
+    where: { errandId, kind: { in: ["RECEIPT", "NO_RECEIPT"] } },
+    select: { declaredTotal: true, extraction: { select: { confirmedTotal: true } } },
   });
 
-  const total = receipts.reduce((sum, r) => sum + (r.extraction?.confirmedTotal ?? 0), 0);
+  // A declared amount from a receiptless shop spends the same money as a read
+  // one, so it joins the basket the same way. Whether it can be corroborated is
+  // recorded on the row, not by leaving it out of the total the customer pays.
+  const total = purchases.reduce(
+    (sum, p) => sum + (p.extraction?.confirmedTotal ?? p.declaredTotal ?? 0),
+    0
+  );
   return Math.round(total * 100) / 100;
+}
+
+/**
+ * Who may look at an errand's evidence.
+ *
+ * This check did not exist: listProofImages was authenticated and nothing more,
+ * so any signed-in account could enumerate the proof metadata for any errand by
+ * id — another customer's receipts, totals and capture times. The route comment
+ * justified open reads because dispatch and the owner need the evidence during a
+ * dispute, which is an argument for STAFF, not for everyone.
+ *
+ * Mirrors the object-level rule getErrandById already applies. The dispatcher
+ * claim restriction there is deliberately not repeated: it governs who may work
+ * an errand in the queue, and evidence has to stay readable by whoever ends up
+ * investigating it.
+ */
+export async function assertMayViewProofs(
+  errandId: string,
+  caller: { id?: number; role?: string } | undefined
+) {
+  const errand = await errandRepository.findByIdBasic(errandId);
+  if (!errand) throw new ServiceError(404, "Errand not found");
+
+  const role = String(caller?.role || "").toUpperCase();
+  const callerId = caller?.id;
+
+  if (role === "OWNER" || role === "DISPATCHER") return errand;
+
+  if (role === "CUSTOMER") {
+    if (errand.customerId !== callerId) {
+      throw new ServiceError(403, "Access denied: you can only view your own errands.");
+    }
+    return errand;
+  }
+
+  if (role === "RIDER") {
+    if (errand.riderId !== callerId) {
+      throw new ServiceError(403, "Access denied: you can only view errands assigned to you.");
+    }
+    return errand;
+  }
+
+  // Anything else is denied rather than allowed.
+  //
+  // Written as an allow-list on purpose: the deny-by-default version of this
+  // check cannot be widened by accident. A role added to the system later —
+  // or a token carrying none at all — has to be named here before it can read
+  // another person's evidence, instead of arriving with access already granted.
+  throw new ServiceError(403, "Access denied.");
+}
+
+/**
+ * One image's bytes.
+ *
+ * Separate from the list, which omits every blob on purpose — five receipts
+ * would otherwise be two megabytes of base64 returned to a screen showing
+ * thumbnails. A viewer asks for the one it is about to display.
+ */
+export async function getProofImage(errandId: string, imageId: number) {
+  const image = await prisma.errandProofImage.findUnique({
+    where: { id: imageId },
+    select: { id: true, errandId: true, kind: true, mimeType: true, imageData: true, capturedAt: true },
+  });
+
+  if (!image || image.errandId !== errandId) {
+    throw new ServiceError(404, "That photo does not belong to this errand.");
+  }
+  return image;
 }
 
 export function listProofImages(errandId: string) {
@@ -230,6 +371,8 @@ export function listProofImages(errandId: string) {
       byteSize: true,
       clarityVerdict: true,
       capturedAt: true,
+      verified: true,
+      declaredTotal: true,
       extraction: {
         select: { extractedTotal: true, confirmedTotal: true, status: true, engine: true },
       },

@@ -7,6 +7,6 @@ import type { AuthenticatedRequest } from "../middleware/auth.js";
 
 export const submitSettlement = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(submitSettlementSchema, req.body);
-  const settlement = await settlementService.submitSettlement(req.params.id, req.user!.id, input.collectedAmount);
+  const settlement = await settlementService.submitSettlement(req.params.id, req.user!.id, input);
   res.status(201).json(settlement);
 });

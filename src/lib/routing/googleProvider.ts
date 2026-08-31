@@ -6,12 +6,35 @@ import type {
   MatrixResult,
   RouteLeg,
   RouteResult,
+  RouteStep,
   RoutingProvider,
 } from "./types.js";
 
 const REQUEST_TIMEOUT_MS = 6000;
 const DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json";
 const MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
+
+function stripHtml(html: string): string {
+  return (html || "").replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ").trim();
+}
+
+function parseGoogleManeuver(maneuver: string | undefined, instruction: string): { maneuverType: string; modifier?: string } {
+  if (maneuver) {
+    const parts = maneuver.split("-");
+    if (parts.length >= 2) {
+      return { maneuverType: parts[0], modifier: parts.slice(1).join(" ") };
+    }
+    return { maneuverType: maneuver };
+  }
+  const lower = instruction.toLowerCase();
+  if (lower.includes("turn right") || lower.includes("sharp right")) return { maneuverType: "turn", modifier: "right" };
+  if (lower.includes("turn left") || lower.includes("sharp left")) return { maneuverType: "turn", modifier: "left" };
+  if (lower.includes("u-turn")) return { maneuverType: "uturn" };
+  if (lower.includes("roundabout")) return { maneuverType: "roundabout" };
+  if (lower.includes("arrive")) return { maneuverType: "arrive" };
+  if (lower.includes("head") || lower.includes("depart")) return { maneuverType: "depart" };
+  return { maneuverType: "continue" };
+}
 
 function apiKey(): string {
   return process.env.GOOGLE_MAPS_API_KEY || "";
@@ -84,13 +107,43 @@ export class GoogleRoutingProvider implements RoutingProvider {
     const route = data?.routes?.[0];
     if (!route) return null;
 
-    const legs: RouteLeg[] = (route.legs ?? []).map((leg: any) => ({
-      distanceMeters: leg.distance?.value ?? 0,
-      durationSeconds: leg.duration?.value ?? 0,
-      coordinates: (leg.steps ?? []).flatMap((step: any) =>
-        step?.polyline?.points ? decodePolyline(step.polyline.points) : []
-      ),
-    }));
+    const allSteps: RouteStep[] = [];
+
+    const legs: RouteLeg[] = (route.legs ?? []).map((leg: any, legIndex: number) => {
+      const steps: RouteStep[] = (leg.steps ?? []).map((step: any) => {
+        const rawInstruction = stripHtml(step?.html_instructions || "");
+        const { maneuverType, modifier } = parseGoogleManeuver(step?.maneuver, rawInstruction);
+        const location: GeoPoint = step?.start_location
+          ? { latitude: step.start_location.lat, longitude: step.start_location.lng }
+          : points[0];
+        const stepCoords = step?.polyline?.points ? decodePolyline(step.polyline.points) : [];
+
+        const routeStep: RouteStep = {
+          instruction: rawInstruction || "Continue along route",
+          streetName: "",
+          maneuverType,
+          modifier,
+          distanceMeters: Math.round(step?.distance?.value ?? 0),
+          durationSeconds: Math.round(step?.duration?.value ?? 0),
+          location,
+          coordinates: stepCoords,
+        };
+        allSteps.push(routeStep);
+        return routeStep;
+      });
+
+      const isLastLeg = legIndex === (route.legs?.length ?? 1) - 1;
+      return {
+        distanceMeters: leg.distance?.value ?? 0,
+        durationSeconds: leg.duration?.value ?? 0,
+        coordinates: (leg.steps ?? []).flatMap((step: any) =>
+          step?.polyline?.points ? decodePolyline(step.polyline.points) : []
+        ),
+        steps,
+        targetType: isLastLeg ? "CUSTOMER" : "STORE",
+        targetIndex: isLastLeg ? undefined : legIndex,
+      };
+    });
 
     // overview_polyline is Google's *generalised* geometry — it drops enough
     // vertices that the drawn line visibly cuts corners and leaves the
@@ -106,6 +159,7 @@ export class GoogleRoutingProvider implements RoutingProvider {
       coordinates: legs.flatMap((leg) => leg.coordinates),
       encodedGeometry,
       legs,
+      steps: allSteps,
       provider: this.name,
       degraded: false,
     };

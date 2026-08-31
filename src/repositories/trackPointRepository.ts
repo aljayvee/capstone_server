@@ -31,9 +31,16 @@ export const trackPointRepository = {
 
   // Newest accepted fix for a rider, used to rebuild the in-process position
   // cache after a restart and to sanity-check incoming points against.
-  findLatestForRider(riderId: number) {
+  // Scoped to ONE errand, not to the rider's whole history.
+  //
+  // Unscoped, the anchor could be the last fix of a previous errand finished
+  // across town hours earlier — against which the first fix of a new errand
+  // looks like a teleport and is rejected, taking the rest of the batch with it.
+  // A trail is per-errand; the fix before the first one of an errand is not a
+  // predecessor in any useful sense.
+  findLatestForRider(riderId: number, errandId?: string) {
     return prisma.errandTrackPoint.findFirst({
-      where: { riderId },
+      where: { riderId, ...(errandId ? { errandId } : {}) },
       orderBy: { recordedAt: "desc" },
     });
   },

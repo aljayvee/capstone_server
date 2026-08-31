@@ -32,10 +32,7 @@ export interface RouteOptimizationStrategy {
 }
 
 // Enumerates every ordering of the unlocked stops while holding locked stops at
-// their original index. Errands are capped at 3 stops (AGENTS.md), so the worst
-// case is 3! = 6 candidates — exact optimisation is cheaper here than any
-// heuristic, and it needs exactly one distance-matrix call regardless of how
-// many orderings it scores.
+// their original index.
 export class ExhaustiveRouteOptimizationStrategy implements RouteOptimizationStrategy {
   readonly name = "exhaustive";
 
@@ -44,14 +41,11 @@ export class ExhaustiveRouteOptimizationStrategy implements RouteOptimizationStr
     stops: OptimizableStop[],
     destination: GeoPoint
   ): Promise<OptimizedRoute | null> {
-    // Nothing to reorder: 0 or 1 stop has only one possible sequence.
     if (stops.length < 2) return null;
 
     const candidates = buildCandidateOrders(stops);
     if (candidates.length <= 1) return null;
 
-    // One matrix over [origin, ...stops, destination] gives every leg cost any
-    // candidate ordering could need.
     const points = [origin, ...stops.map((stop) => stop.point), destination];
     const matrix = await routingProvider.matrix(points, points);
     if (!matrix) return null;
@@ -103,7 +97,6 @@ function buildCandidateOrders(stops: OptimizableStop[]): number[][] {
 
   return permutations(movableIds).map((permutation) => {
     const queue = [...permutation];
-    // Walk the original slots, refilling only the unlocked ones.
     return stops.map((stop) => (stop.sequenceLocked ? stop.id : (queue.shift() as number)));
   });
 }

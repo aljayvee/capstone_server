@@ -210,17 +210,27 @@ export const uploadProofImage = asyncHandler<AuthenticatedRequest>(async (req, r
 
   // The blob goes back out to nobody — the client already holds the picture it
   // just uploaded, and echoing it doubles the response for nothing.
+  //
+  // Not every kind carries an extraction. A receiptless purchase and a doorstep
+  // photo have nothing to read, so `extraction` is null and the client shows the
+  // declared figure — or, for a handover, no figure at all.
+  const extraction = image.extraction;
+
   res.status(201).json({
     id: image.id,
     kind: image.kind,
     clarityVerdict: image.clarityVerdict,
-    extraction: {
-      id: image.extraction!.id,
-      engine: image.extraction!.engine,
-      extractedTotal: image.extraction!.extractedTotal,
-      extractedDate: image.extraction!.extractedDate,
-      status: image.extraction!.status,
-    },
+    verified: image.verified,
+    declaredTotal: image.declaredTotal,
+    extraction: extraction
+      ? {
+          id: extraction.id,
+          engine: extraction.engine,
+          extractedTotal: extraction.extractedTotal,
+          extractedDate: extraction.extractedDate,
+          status: extraction.status,
+        }
+      : null,
   });
 });
 
@@ -237,5 +247,28 @@ export const confirmProofImage = asyncHandler<AuthenticatedRequest>(async (req, 
 });
 
 export const listProofImages = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  // Authenticated was the ONLY check here, so any signed-in account could
+  // enumerate another customer's receipts by errand id.
+  await proofImageService.assertMayViewProofs(req.params.id, req.user);
   res.json(await proofImageService.listProofImages(req.params.id));
+});
+
+// One image's bytes, for a viewer that is about to display it. Same object-level
+// check as the list — the customer whose errand it is, the rider who ran it, or
+// staff.
+export const getProofImage = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  await proofImageService.assertMayViewProofs(req.params.id, req.user);
+
+  const image = await proofImageService.getProofImage(
+    req.params.id,
+    Number(req.params.imageId)
+  );
+
+  res.json({
+    id: image.id,
+    kind: image.kind,
+    mimeType: image.mimeType,
+    capturedAt: image.capturedAt,
+    imageData: image.imageData,
+  });
 });

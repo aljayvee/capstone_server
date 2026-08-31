@@ -63,6 +63,10 @@ describe("password casing is preserved end to end", () => {
     expect(parsed.password).toBe("Astrowarden12");
   });
 
+  // bcryptjs is the pure-JS implementation, so one cost-10 hash plus four
+  // compares is genuinely several seconds of CPU on a loaded machine — right on
+  // vitest's 5s default, which made this the suite's one intermittent failure.
+  // The work is the point of the test, so it gets room rather than a lower cost.
   it("bcrypt rejects the same password in the wrong case", async () => {
     const hash = await bcrypt.hash("Astrowarden12", 10);
 
@@ -70,7 +74,7 @@ describe("password casing is preserved end to end", () => {
     await expect(bcrypt.compare("astrowarden12", hash)).resolves.toBe(false);
     await expect(bcrypt.compare("ASTROWARDEN12", hash)).resolves.toBe(false);
     await expect(bcrypt.compare("aSTROWARDEN12", hash)).resolves.toBe(false);
-  });
+  }, 20000);
 
   it("preserves spaces inside a password while trimming the edges", () => {
     // Edge whitespace is trimmed at registration too, so a password with

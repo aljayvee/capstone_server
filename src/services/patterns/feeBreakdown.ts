@@ -37,15 +37,17 @@ export interface CustomerFeeBreakdown {
   isFinal: boolean;
   calculatedAt: Date | null;
   /**
-   * Stops the dispatcher added beyond what the customer is charged for, and is
-   * therefore not paying a multi-store surcharge on.
+   * Stops the dispatcher pinned beyond what the customer originally selected
+   * at checkout, and is therefore now paying a multi-store surcharge on (see
+   * pricingStoreCount).
    *
-   * Zero on an ordinary errand. Above zero it is the reason a surcharge the
-   * dispatcher expects to see is absent — without it the fee panel simply omits
-   * the row, and the only person who can tell the difference between "correctly
-   * not charged" and "broken" is whoever wrote the pricing code.
+   * Zero on an ordinary errand. Above zero it is the reason the Multi-Store
+   * Surcharge row is higher than the customer's own checkout selection would
+   * predict — without it the fee panel just shows a bigger number with no
+   * explanation, and the only person who can tell "correctly charged for a
+   * split you made" from "broken" is whoever wrote the pricing code.
    */
-  absorbedStores: number;
+  extraChargedStores: number;
 }
 
 /** The persisted fields this reads. Structural so it accepts a Prisma errand. */
@@ -59,7 +61,8 @@ export interface PricedErrand {
   distanceFee: number | null;
   feeCalculatedAt: Date | null;
   routedAt: Date | null;
-  /** How many stores the CUSTOMER selected, and is charged for. */
+  /** How many stores the CUSTOMER selected — the floor of what they're charged
+   * for; the dispatcher's pins can raise it, see pricingStoreCount. */
   storeCount?: number | null;
   /** How many stops the dispatcher has actually pinned. */
   pinnedStops?: number | null;
@@ -93,6 +96,6 @@ export function buildFeeBreakdown(errand: PricedErrand): CustomerFeeBreakdown {
     // before any store is pinned, on a distance of zero.
     isFinal: errand.feeCalculatedAt !== null && errand.routedAt !== null,
     calculatedAt: errand.feeCalculatedAt,
-    absorbedStores: Math.max(0, (errand.pinnedStops ?? 0) - Math.max(1, errand.storeCount ?? 1)),
+    extraChargedStores: Math.max(0, (errand.pinnedStops ?? 0) - Math.max(1, errand.storeCount ?? 1)),
   };
 }

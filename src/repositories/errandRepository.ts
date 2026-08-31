@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma.js";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, ErrandStatus } from "@prisma/client";
 
 // Shared Prisma include shape for errand relations. firstName/lastName are selected
 // (not a stored `name` column — see 3NF note on the User model) and combined into a
@@ -14,9 +14,10 @@ export const ERRAND_INCLUDE = {
   pabiliItemRequests: true,
   pinpoints: {
     orderBy: { sequence: "asc" as const },
-    // Only for the geofence radius. attachErrandNames flattens it onto each
-    // pinpoint so a client never has to know stops have categories at all.
-    include: { category: { select: { geofenceRadiusMeters: true } } },
+    // The geofence radius and the category name. attachErrandNames flattens both
+    // onto each pinpoint so a client never has to know stops have categories at
+    // all — it just gets a radius to draw and a label to print.
+    include: { category: { select: { geofenceRadiusMeters: true, name: true } } },
   },
   // The recorded payout, where the errand has finished. attachErrandNames
   // prefers it over recomputing so a rider is never shown a different figure
@@ -79,12 +80,77 @@ export const errandRepository = {
     });
   },
 
-  findByRiderId(riderId: number) {
+  // Every option is optional and every default reproduces the original
+  // unbounded query, so existing callers are untouched. They exist because this
+  // returns the rider's ENTIRE history with the full ERRAND_INCLUDE join on it —
+  // fine for the handful of errands a rider is carrying, less fine after a year.
+  findByRiderId(
+    riderId: number,
+    opts: { status?: ErrandStatus[]; take?: number; skip?: number } = {}
+  ) {
     return prisma.errand.findMany({
-      where: { riderId },
+      where: {
+        riderId,
+        ...(opts.status?.length ? { status: { in: opts.status } } : {}),
+      },
       include: ERRAND_INCLUDE,
       orderBy: { createdAt: "desc" },
+      // Passed straight through: Prisma reads `undefined` as "no limit", which is
+      // the original behaviour. Spreading these conditionally instead turns the
+      // argument object into a union and silently drops the include payload from
+      // the inferred return type, which is what broke every caller downstream.
+      take: opts.take,
+      skip: opts.skip,
     });
+  },
+
+  /**
+   * Claims an errand for a rider, enforcing the concurrency cap in the SAME
+   * transaction that performs the write.
+   *
+   * assignRider used to read the candidates' active-errand counts and then write
+   * the assignment as two separate statements. Two dispatchers auto-assigning in
+   * the same second both read `2 < 3`, both passed, and both wrote — leaving one
+   * rider holding four errands, with nothing in the schema to catch it because
+   * the cap lived only in application memory.
+   *
+   * Serializable because the count and the write have to see one snapshot: a
+   * REPEATABLE READ count can still be stale by the time the update lands. The
+   * isolation cost is affordable here and nowhere else — assignment runs a few
+   * times a minute, so a retry is one extra round trip rather than a bottleneck.
+   *
+   * The status guard closes the other half of the race, where two dispatchers
+   * assign the SAME errand: only PENDING may become ASSIGNED (errandStateMachine),
+   * so the second update matches no rows instead of overwriting the first.
+   */
+  claimForRider(
+    errandId: string,
+    riderId: number,
+    maxActive: number
+  ): Promise<"CLAIMED" | "AT_CAPACITY" | "ERRAND_MOVED"> {
+    return prisma.$transaction(
+      async (tx) => {
+        const active = await tx.errand.count({
+          where: { riderId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } },
+        });
+        if (active >= maxActive) return "AT_CAPACITY" as const;
+
+        const { count } = await tx.errand.updateMany({
+          where: { id: errandId, status: "PENDING" },
+          data: { riderId, status: "ASSIGNED", assignedAt: new Date() },
+        });
+        return count === 1 ? ("CLAIMED" as const) : ("ERRAND_MOVED" as const);
+      },
+      { isolationLevel: "Serializable" }
+    );
+  },
+
+  // How many errands this ONE rider is already carrying, counting only those they
+  // have actually accepted. An ASSIGNED errand is an offer they have not answered
+  // yet, so it is deliberately not counted — otherwise a dispatcher could park
+  // three offers on a rider and lock them out of accepting any of them.
+  countInTransitForRider(riderId: number) {
+    return prisma.errand.count({ where: { riderId, status: "IN_TRANSIT" } });
   },
 
   // Counts in-progress (not yet DELIVERED/COMPLETED/CANCELLED) errands per rider in one
@@ -136,6 +202,62 @@ export const errandRepository = {
 
   // Feeds the Settlement report's grossRevenue figure — includes each completed errand's
   // real reconciled cash (SettlementRecord.collectedAmount) where one exists.
+  /**
+   * Everything an exception could be derived from, for one range.
+   *
+   * One query rather than six: the alternative is a round trip per signal and
+   * then stitching them by errand id in memory, which is slower and gets the
+   * rider's name wrong on whichever query forgot to include it.
+   */
+  findWithReconciliationEvidenceBetween(start: Date, end: Date) {
+    return prisma.errand.findMany({
+      where: { createdAt: { gte: start, lt: end } },
+      select: {
+        id: true,
+        createdAt: true,
+        totalCost: true,
+        estimatedCost: true,
+        status: true,
+        riderId: true,
+        rider: { select: { firstName: true, lastName: true } },
+        settlement: {
+          select: { collectedAmount: true, expectedAmount: true, variance: true, status: true, shortReason: true, settledAt: true },
+        },
+        pinpoints: {
+          select: {
+            id: true,
+            storeName: true,
+            mismatchDetectedAt: true,
+            observedPlace: { select: { name: true } },
+            items: { select: { id: true } },
+          },
+        },
+        proofImages: {
+          select: {
+            id: true,
+            kind: true,
+            pinpointId: true,
+            verified: true,
+            declaredTotal: true,
+            capturedAt: true,
+            extraction: { select: { extractedTotal: true, confirmedTotal: true } },
+          },
+        },
+        dwellObservations: { select: { pinpointId: true, dwellSeconds: true, stalled: true, departedAt: true } },
+        exceptionReviews: {
+          select: {
+            kind: true,
+            reason: true,
+            amountAtRisk: true,
+            resolvedAt: true,
+            reviewer: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
   findWithSettlementBetween(start: Date, end: Date) {
     return prisma.errand.findMany({
       where: {

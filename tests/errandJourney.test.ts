@@ -71,8 +71,10 @@ describe("customer orders that are not the tidy case", () => {
   });
 
   it("switches from flat to percentage exactly at the threshold", () => {
-    // The owner's rule: 50 flat below 3000, 10 percent at or above it.
-    expect(resolveHandlingFee(2999.99, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(50);
+    // The owner's rule: 50 flat below 3000, 10 percent at or above it. The
+    // basket is compared in whole pesos, so 2999.99 counts as 3000.
+    expect(resolveHandlingFee(2999, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(50);
+    expect(resolveHandlingFee(2999.99, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(300);
     expect(resolveHandlingFee(3000, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(300);
   });
 
@@ -80,12 +82,15 @@ describe("customer orders that are not the tidy case", () => {
     // Fast food is FLAT, grocery is PERCENT, and one order picked both.
     expect(resolveHandlingFee(5000, PAST_THE_GATE, ["FLAT", "PERCENT"], RATE)).toBe(500);
 
-    // The percentage now wins on EVERY qualifying basket, which is a
-    // consequence of where the gate sits rather than a rule of its own: nothing
-    // under ₱1,000 is charged at all, and 10% of ₱1,000 is already ₱100 against
-    // the ₱50 flat. A mixed grocery-and-fast-food order therefore always prices
-    // as a grocery run.
+    // On a basket that qualifies by VALUE the percentage wins, because 10% of
+    // ₱1,000 is already ₱100 against the ₱50 flat.
     expect(resolveHandlingFee(1000, PAST_THE_GATE, ["FLAT", "PERCENT"], RATE)).toBe(100);
+
+    // But on one that qualifies by LENGTH the flat fee wins: twenty-five cheap
+    // items is a trolley to push and a queue to stand in, and 10% of ₱200 does
+    // not pay for either. Both modes stay reachable, which is the point of
+    // taking the dearer rather than assuming one always leads.
+    expect(resolveHandlingFee(200, 25, ["FLAT", "PERCENT"], RATE)).toBe(50);
   });
 
   it("falls back to the threshold rule when no category resolves", () => {
@@ -119,15 +124,25 @@ const STOPS = [
 ];
 
 describe("what a dispatcher may change, and what it may cost the customer", () => {
-  it("splitting one category across two shops does not raise the fare", () => {
+  it("splitting one category across two shops now raises the fare to match", () => {
+    // Reversed at Sugo Express's direction: the company no longer absorbs the
+    // cost of a dispatcher's split, so pinning more stores than the customer
+    // selected bills for the extra one. See pricingStoreCount.ts for the
+    // trade-off this re-accepts.
     const quoted = price({ estimatedCost: 5000, storeCount: pricingStoreCount({ storeCount: 1, pinnedStops: 0 }) });
     const split = price({ estimatedCost: 5000, storeCount: pricingStoreCount({ storeCount: 1, pinnedStops: 2 }) });
-    expect(split.multiStoreFee).toBe(0);
-    expect(split.deliveryFee).toBe(quoted.deliveryFee);
+    expect(split.multiStoreFee).toBe(30);
+    expect(split.deliveryFee).toBe(quoted.deliveryFee + 30);
   });
 
   it("still charges for stores the customer chose themselves", () => {
     expect(price({ storeCount: pricingStoreCount({ storeCount: 3, pinnedStops: 3 }) }).multiStoreFee).toBe(60);
+  });
+
+  it("never lets pins undercut what the customer already selected", () => {
+    // Dispatcher consolidates three chosen categories into one shop — the
+    // customer's own floor still stands, not the smaller pin count.
+    expect(price({ storeCount: pricingStoreCount({ storeCount: 3, pinnedStops: 1 }) }).multiStoreFee).toBe(60);
   });
 
   it("pinning stores does move the distance fee, because a rider rides further", () => {
@@ -300,35 +315,44 @@ describe("what the rider is shown and paid", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// 4. WHAT THE UI IS TOLD ABOUT AN ABSORBED SPLIT
+// 4. WHAT THE UI IS TOLD ABOUT AN EXTRA-CHARGED SPLIT
 // ───────────────────────────────────────────────────────────────────────────
 
-describe("explaining a surcharge that is deliberately absent", () => {
-  it("reports the extra stops when a dispatcher splits a one-category order", () => {
-    const b = buildFeeBreakdown(errandRow({ storeCount: 1, pinnedStops: 2 }) as any);
-    expect(b.absorbedStores).toBe(1);
-    expect(b.fees.multiStoreFee).toBe(0);
+describe("explaining why the multi-store surcharge is bigger than checkout predicted", () => {
+  it("reports the extra stops, and the fee now reflects them", () => {
+    // Customer picked one category; the dispatcher pinned two shops to fulfil
+    // it. pricingStoreCount bills for 2, not 1 — see pricingStoreCount.ts for
+    // why this errand now pays for the split rather than the company
+    // absorbing it, as it once did.
+    const billedCount = pricingStoreCount({ storeCount: 1, pinnedStops: 2 });
+    const multiStoreFee = price({ storeCount: billedCount }).multiStoreFee;
+    const b = buildFeeBreakdown(errandRow({ storeCount: 1, pinnedStops: 2, multiStoreFee }) as any);
+    expect(b.extraChargedStores).toBe(1);
+    expect(b.fees.multiStoreFee).toBe(30);
   });
 
   it("reports nothing on an ordinary errand", () => {
-    expect(buildFeeBreakdown(errandRow({ storeCount: 2, pinnedStops: 2 }) as any).absorbedStores).toBe(0);
+    expect(buildFeeBreakdown(errandRow({ storeCount: 2, pinnedStops: 2 }) as any).extraChargedStores).toBe(0);
   });
 
   it("reports nothing before any store is pinned", () => {
-    expect(buildFeeBreakdown(errandRow({ storeCount: 1, pinnedStops: 0 }) as any).absorbedStores).toBe(0);
+    expect(buildFeeBreakdown(errandRow({ storeCount: 1, pinnedStops: 0 }) as any).extraChargedStores).toBe(0);
   });
 
   it("never goes negative when a dispatcher consolidates", () => {
-    // Customer chose three categories, dispatcher found one shop for all of it.
-    expect(buildFeeBreakdown(errandRow({ storeCount: 3, pinnedStops: 1 }) as any).absorbedStores).toBe(0);
+    // Customer chose three categories, dispatcher found one shop for all of
+    // it. pricingStoreCount still bills for 3 — the customer's own selection
+    // is always a floor — but that guarantee lives there, not here: this
+    // field only counts stops ABOVE what the customer chose.
+    expect(buildFeeBreakdown(errandRow({ storeCount: 3, pinnedStops: 1 }) as any).extraChargedStores).toBe(0);
   });
 
-  it("counts all three extra stops on the widest split", () => {
-    expect(buildFeeBreakdown(errandRow({ storeCount: 1, pinnedStops: 3 }) as any).absorbedStores).toBe(2);
+  it("counts the extra stops on the widest split", () => {
+    expect(buildFeeBreakdown(errandRow({ storeCount: 1, pinnedStops: 3 }) as any).extraChargedStores).toBe(2);
   });
 
   it("stays silent for an errand with no store data at all", () => {
     // Older rows, and slim projections that carry pricing but no stops.
-    expect(buildFeeBreakdown(errandRow() as any).absorbedStores).toBe(0);
+    expect(buildFeeBreakdown(errandRow() as any).extraChargedStores).toBe(0);
   });
 });

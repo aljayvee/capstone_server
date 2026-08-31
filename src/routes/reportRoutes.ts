@@ -5,6 +5,7 @@ import {
   getCommissionReport,
   getSettlementReport,
   getTransactionSummary,
+  getExceptionReport,
 } from "../controllers/reportController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { readLimiter } from "../middleware/rateLimiters.js";
@@ -19,5 +20,9 @@ router.get("/rider-performance", authenticateToken, requireRole(["OWNER"]), read
 router.get("/commission", authenticateToken, requireRole(["OWNER"]), readLimiter, getCommissionReport);
 router.get("/settlement", authenticateToken, requireRole(["OWNER"]), readLimiter, getSettlementReport);
 router.get("/transactions", authenticateToken, requireRole(["OWNER"]), readLimiter, getTransactionSummary);
+
+// Errands that did not reconcile, across the period — including the ones already
+// cleared, and by whom. Owner-only like every report above it.
+router.get("/exceptions", authenticateToken, requireRole(["OWNER"]), readLimiter, getExceptionReport);
 
 export default router;

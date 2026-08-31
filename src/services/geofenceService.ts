@@ -38,6 +38,12 @@ export interface GeofenceStop {
   departedAt: Date | null;
   /** This stop's own radius. Falls back to GEOFENCE_RADIUS_METERS when absent. */
   radiusMeters?: number | null;
+  /**
+   * How long a stop of this kind usually takes, at the 80th percentile. Used
+   * only to decide whether a completed dwell ran long; null where the category
+   * has no learned figure yet, in which case nothing is judged.
+   */
+  dwellP80Seconds?: number | null;
 }
 
 /** How close a rider must be for this particular stop to count as reached. */
@@ -165,6 +171,16 @@ export async function applyGeofenceTransitions(
     // same departure.
     const already = await dwellObservationRepository.existsForPinpoint(stop.id);
     if (!already && dwellSeconds > 0) {
+      // Whether this one ran long, decided as it is recorded.
+      //
+      // detectStalledStop already computes this while the rider is still inside
+      // the shop, but it fires mid-dwell — there is no observation yet to mark,
+      // so it emitted a socket event and returned, and the fact left no trace.
+      // Judging it here, at the moment the dwell completes, is what makes the
+      // pattern trendable afterwards.
+      const typical = stop.dwellP80Seconds ?? null;
+      const stalled = typical !== null && dwellSeconds > typical;
+
       await dwellObservationRepository.create({
         errandId,
         pinpointId: stop.id,
@@ -173,6 +189,7 @@ export async function applyGeofenceTransitions(
         dwellSeconds,
         arrivedAt: arrivedAt as Date,
         departedAt: departure.recordedAt,
+        stalled,
       });
     }
   }

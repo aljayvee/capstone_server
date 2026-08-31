@@ -15,6 +15,20 @@ export const MAX_PLAUSIBLE_SPEED_MPS = 30;
 // treating a parked rider's noise as a departure from a geofence.
 export const STATIONARY_SPEED_MPS = 0.5;
 
+/**
+ * Past this gap, the previous fix says nothing about where the rider should be
+ * now, so the speed check is skipped rather than applied to a stale anchor.
+ *
+ * A rider who was last seen an hour ago has legitimately been anywhere in the
+ * city since. Measuring "speed" across that gap does not test plausibility, it
+ * tests how long the app was closed — and because ingestBatch only advances its
+ * anchor on an ACCEPTED fix, one such rejection rejects the entire batch behind
+ * it, then the next batch, indefinitely: nothing is stored, so the stale anchor
+ * is still the latest point next time. That is a trail that dies silently and
+ * never recovers, which is the opposite of what a quality gate is for.
+ */
+export const MAX_ANCHOR_AGE_SECONDS = 5 * 60;
+
 export interface QualityCandidate {
   latitude: number;
   longitude: number;
@@ -56,6 +70,13 @@ export function evaluateFix(
   // there is no new information in it.
   if (elapsedSeconds <= 0) {
     return { accepted: false, reason: "out_of_order" };
+  }
+
+  // Stale anchor: nothing to compare against that means anything. Accuracy has
+  // already been checked, and that is the whole of what can honestly be said
+  // about a fix arriving after a long silence.
+  if (elapsedSeconds > MAX_ANCHOR_AGE_SECONDS) {
+    return { accepted: true };
   }
 
   const metres = haversineDistanceKm(candidate, previous) * 1000;

@@ -113,24 +113,34 @@ function feeForMode(
 /**
  * The size at which an errand starts carrying a handling fee at all.
  *
- * BOTH conditions must hold. An errand only counts as real shopping when it is
- * long enough to be a trolley AND valuable enough to be a meaningful float of
- * company cash — either one alone is still a quick pick-up.
+ * EITHER condition is enough. More than twenty units is a trolley and a long
+ * checkout queue whatever it cost; a thousand pesos is a meaningful float of
+ * the company's money whether it arrived as one item or thirty. Both are
+ * handling work, and neither implies the other.
  *
- * That is deliberately the generous reading for the customer. Fifteen sachets
- * of shampoo is a long list but barely any money; a ₱2,000 phone case is real
- * money but one thing off a shelf. Neither is the job this fee exists to cover.
+ * Below both it is a quick pick-up — a couple of meals, a box of paracetamol —
+ * and nothing is charged for handling.
  */
 /**
  * How far the base fee reaches before the per-km rate starts.
  *
- * Tightened from 2.0 km: most of Tacurong's downtown sits inside 2 km of
- * everything else, so almost no errand ever reached the distance fee and the
- * per-km rate was close to decorative.
+ * Fixed at 2.0 km, matching R_base in docs/errand_pricing_formula.md section 1.
+ *
+ * This was briefly tightened to 1.5 km on the reasoning that most of Tacurong's
+ * downtown sits inside 2 km of everything else, so almost no errand reached the
+ * distance fee. That is true and it is not the deciding factor: the published
+ * specification says 2.0 km, and the fare a customer can check against the rate
+ * card has to be the fare the server charges. Reverted deliberately.
+ *
+ * Deliberately a code constant rather than a RateConfig column — it is a rule
+ * about the shape of the formula, not a price. The owner edits prices; changing
+ * where the distance fee starts changes what the base fee MEANS, and that is a
+ * specification change. Published to clients via rateConfigService.PRICING_RULES
+ * so no surface has to hardcode its own copy.
  */
-export const BASE_FEE_DISTANCE_KM = 1.5;
+export const BASE_FEE_DISTANCE_KM = 2.0;
 
-export const HANDLING_ITEM_UNITS_THRESHOLD = 12;
+export const HANDLING_ITEM_UNITS_THRESHOLD = 20;
 export const HANDLING_AMOUNT_THRESHOLD = 1000;
 
 export function resolveHandlingFee(
@@ -141,9 +151,21 @@ export function resolveHandlingFee(
 ): number {
   if (estimatedCost <= 0) return 0;
 
+  // Thresholds are compared against the basket in whole pesos.
+  //
+  // A basket of 999.99 is a thousand pesos to anyone reading a receipt, and a
+  // centavo should not be what decides whether a fee applies. Rounding here
+  // matches how the delivery fee itself is charged, so every peso figure in
+  // this system means the same thing.
+  //
+  // Applied to the percentage switch as well, so the two thresholds cannot
+  // disagree about what "3,000" means. The percentage is then taken on the same
+  // rounded figure, which moves it by at most half a centavo.
+  const basket = Math.round(estimatedCost);
+
   // Nothing at all below the gate, whatever the category.
   const qualifies =
-    itemUnits > HANDLING_ITEM_UNITS_THRESHOLD && estimatedCost >= HANDLING_AMOUNT_THRESHOLD;
+    itemUnits > HANDLING_ITEM_UNITS_THRESHOLD || basket >= HANDLING_AMOUNT_THRESHOLD;
   if (!qualifies) return 0;
 
   // No resolvable category — a retired or test one, or a quote taken before any
@@ -158,7 +180,7 @@ export function resolveHandlingFee(
   // — so above the gate those categories price like everything else.
   const modes = declared.map((mode) => (mode === "NONE" ? ("THRESHOLD" as const) : mode));
 
-  return Math.max(...modes.map((mode) => feeForMode(estimatedCost, mode, rateConfig)));
+  return Math.max(...modes.map((mode) => feeForMode(basket, mode, rateConfig)));
 }
 
 // The single place every fee component is computed (Open/Closed: new fee
@@ -188,8 +210,12 @@ export class StandardPricingStrategy implements PricingStrategy {
         ? rateConfig.nonCodFeeHigh
         : rateConfig.nonCodFeeLow;
 
-    // The base fee covers the first stretch; the per-km rate starts beyond it.
-    const excessKm = Math.max(0, distanceKm - BASE_FEE_DISTANCE_KM);
+    // The base fee covers the first stretch; the per-km rate starts beyond it,
+    // billed in whole started kilometres — a rider who crosses into a new km
+    // travels it however little of it the errand needed, so a route 1 metre
+    // past the allowance costs the same excess as one 999 metres past it.
+    // Matches docs/errand_pricing_formula.md section 2.B.
+    const excessKm = Math.ceil(Math.max(0, distanceKm - BASE_FEE_DISTANCE_KM));
     const exactDistanceFee = excessKm * rateConfig.perKmRate;
 
     const exactDeliveryFee =
