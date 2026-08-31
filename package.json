@@ -2,6 +2,7 @@
   "name": "capstone-backend-server",
   "version": "1.0.0",
   "description": "Node.js Express MariaDB Backend Server for Capstone Project",
+  "license": "Apache-2.0",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
