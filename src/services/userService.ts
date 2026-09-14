@@ -111,7 +111,12 @@ export async function updateUser(userId: number, input: UpdateUserInput, actingU
   }
   if (input.phone !== undefined) updateData.phone = input.phone.trim();
   if (input.role !== undefined) updateData.role = input.role.toUpperCase();
-  if (input.status !== undefined) updateData.status = input.status;
+  if (input.status !== undefined) {
+    if (actingUserId === userId && input.status === "Inactive") {
+      throw new ServiceError(400, "You cannot deactivate your own account while logged in.");
+    }
+    updateData.status = input.status;
+  }
   if (actingUserId !== undefined) updateData.updatedBy = actingUserId;
 
   if (input.password && input.password.trim() !== "") {

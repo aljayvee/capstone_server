@@ -23,6 +23,8 @@ async function main() {
       phone: "09171234567",
       avatar: "AV",
       status: "Active",
+      profileCompleted: false,
+      emailVerified: false,
     },
   });
 
