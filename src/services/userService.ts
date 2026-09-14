@@ -110,7 +110,12 @@ export async function updateUser(userId: number, input: UpdateUserInput, actingU
     }
   }
   if (input.phone !== undefined) updateData.phone = input.phone.trim();
-  if (input.role !== undefined) updateData.role = input.role.toUpperCase();
+  if (input.role !== undefined) {
+    if (actingUserId === userId && input.role.toUpperCase() !== existingUser.role) {
+      throw new ServiceError(400, "You cannot change your own operational role while logged in.");
+    }
+    updateData.role = input.role.toUpperCase();
+  }
   if (input.status !== undefined) {
     if (actingUserId === userId && input.status === "Inactive") {
       throw new ServiceError(400, "You cannot deactivate your own account while logged in.");
