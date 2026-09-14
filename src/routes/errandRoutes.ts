@@ -6,6 +6,8 @@ import {
   listErrandsForRider,
   createErrand,
   claimErrand,
+  verifyErrand,
+  releaseErrand,
   acceptErrand,
   assignRider,
   updateStatus,
@@ -30,6 +32,13 @@ import { getRating, submitRating } from "../controllers/ratingController.js";
 import { submitSettlement } from "../controllers/settlementController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { userApiLimiter, readLimiter, trackingLimiter } from "../middleware/rateLimiters.js";
+import {
+  getPaymentLedger,
+  confirmUpfrontPayment,
+  confirmTopUp,
+  recordRefund,
+} from "../controllers/errandPaymentController.js";
+import { uploadPaymentProof, getPaymentProof } from "../controllers/paymentProofController.js";
 
 const router = Router();
 
@@ -124,6 +133,29 @@ router.post("/", authenticateToken, userApiLimiter, createErrand);
 // PATCH /api/errands/:id/claim - Claim an errand (Dispatcher)
 router.patch("/:id/claim", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), claimErrand);
 
+// PATCH /api/errands/:id/verify - the dispatcher has checked the items with the
+// customer and is taking the order on. Distinct from the claim above, which now
+// happens the moment they OPEN the request so that only one dispatcher is ever
+// in a customer's chat. Steps 1-4 stay shut until this stamps verifiedAt.
+router.patch(
+  "/:id/verify",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  verifyErrand
+);
+
+// PATCH /api/errands/:id/release - hands a request the dispatcher opened but did
+// not take back to the queue. Refused once verified: at that point the customer
+// has been told who their dispatcher is, and declining is the honest exit.
+router.patch(
+  "/:id/release",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  releaseErrand
+);
+
 // POST /api/errands/:id/accept - Rider accepts an errand assigned to them
 router.post("/:id/accept", authenticateToken, requireRole(["RIDER"]), userApiLimiter, acceptErrand);
 
@@ -212,6 +244,69 @@ router.get("/:id/payment-selection", authenticateToken, readLimiter, getPaymentS
 // PaymentModeSelectionModal.tsx in CustomerApp). Ownership + duplicate +
 // mode-availability checks all live in paymentSelectionService.ts.
 router.post("/:id/payment-selection", authenticateToken, userApiLimiter, confirmPaymentSelection);
+
+// ── the 50% downpayment plan ─────────────────────────────────────────────
+//
+// Money arrives on the company Facebook Page, outside this system, so every
+// write here records a PERSON attesting they saw it — hence OWNER/DISPATCHER
+// only. A rider must never be able to mark a customer's payment received: they
+// are the party standing to benefit from the goods being released.
+//
+// The read is open to anyone with a stake in the errand (ownership checked in
+// the controller): the customer needs to see what they owe, the rider needs the
+// figure to collect at the door.
+
+// ── the customer's own payment screenshot ────────────────────────────────
+//
+// Read by Cloud Vision and checked against the errand before it is stored: it
+// must carry a reference number, be for the amount owed, and be dated today.
+// The reading does not confirm the payment — a dispatcher still does that — it
+// makes their attestation an informed one.
+
+// POST /api/errands/:id/payment-proof - customer uploads their confirmation
+router.post(
+  "/:id/payment-proof",
+  authenticateToken,
+  requireRole(["CUSTOMER"]),
+  userApiLimiter,
+  uploadPaymentProof
+);
+
+// GET /api/errands/:id/payment-proof - what was read from it
+router.get("/:id/payment-proof", authenticateToken, readLimiter, getPaymentProof);
+
+// GET /api/errands/:id/payments - ledger, amount paid, balance due, plan state
+router.get("/:id/payments", authenticateToken, readLimiter, getPaymentLedger);
+
+// POST /api/errands/:id/payments/upfront - dispatcher confirms what was owed
+// before dispatch: half the goods on the 50% plan, the whole bill on GCash /
+// Bank Transfer / Card.
+router.post(
+  "/:id/payments/upfront",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  confirmUpfrontPayment
+);
+
+// POST /api/errands/:id/payments/top-up - dispatcher confirms the customer covered
+// a receipt that came in higher than they agreed to. Clears the goods-release hold.
+router.post(
+  "/:id/payments/top-up",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  confirmTopUp
+);
+
+// POST /api/errands/:id/payments/refund - money back, e.g. cancelled after downpayment
+router.post(
+  "/:id/payments/refund",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  recordRefund
+);
 
 // GET /api/errands/:id/rating - Existing rating for this errand, if any
 router.get("/:id/rating", authenticateToken, readLimiter, getRating);

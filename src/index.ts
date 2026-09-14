@@ -36,6 +36,10 @@ app.use(
       return callback(new Error("CORS policy violation: Origin not allowed"));
     },
     credentials: true,
+    // Without this the browser hides Content-Disposition from JS, and the report
+    // PDF downloads would have to guess their own filenames client-side rather
+    // than using the one the server built.
+    exposedHeaders: ["Content-Disposition"],
   })
 );
 

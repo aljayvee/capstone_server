@@ -4,11 +4,11 @@ import { StandardPricingStrategy } from "../src/services/patterns/pricingStrateg
 import type { RateConfigValues } from "../src/services/patterns/pricingStrategy.js";
 
 const RATES: RateConfigValues = {
-  baseFee: 50,
+  baseFee: 70,
   perKmRate: 10,
   multiStoreFeePerStore: 30,
   maxAdditionalStores: 2,
-  groceryFeeThreshold: 3000,
+  groceryFeeThreshold: 1001,
   groceryFeePercent: 10,
   groceryFeeFlat: 50,
   nonCodThreshold: 3000,
@@ -43,10 +43,12 @@ describe("grocery fee: flat below the threshold, percentage at or above", () => 
 
   it("charges the flat fee for a small basket", () => {
     // One predictable handling charge: a small basket is much the same work
-    // whatever it costs.
+    // whatever it costs. The owner's rule puts this at exactly ₱1,000; above
+    // that the percentage takes over.
     expect(fee(1000)).toBe(50);
-    expect(fee(1500)).toBe(50);
-    expect(fee(2999)).toBe(50);
+    // Under ₱1,000 the size gate can still admit a long list, and it pays the
+    // same flat fee.
+    expect(fee(800, 25)).toBe(50);
   });
 
   it("charges nothing at all for an order too small to be a shop", () => {
@@ -59,14 +61,16 @@ describe("grocery fee: flat below the threshold, percentage at or above", () => 
 
   it("charges the percentage once the basket reaches the threshold", () => {
     // A large basket ties up proportionally more company cash, so it scales.
-    expect(fee(3000)).toBe(300); // 3000 x 10%
+    expect(fee(2000)).toBe(200); // 2000 x 10%
     expect(fee(5000)).toBe(500);
     expect(fee(10000)).toBe(1000);
   });
 
-  it("switches at the threshold, not one peso either side of it", () => {
-    expect(fee(2999)).toBe(50); // flat
-    expect(fee(3000)).toBe(300); // percentage — the boundary is inclusive
+  it("switches at the threshold without a cliff", () => {
+    // ₱1,000 pays the flat fee and ₱1,001 pays ₱51, not ₱100.10: marginal
+    // relief means one peso of extra groceries can never cost ₱50 of extra fee.
+    expect(fee(1000)).toBe(50);
+    expect(fee(1001)).toBe(51);
   });
 
   it("charges nothing when there is no basket yet", () => {

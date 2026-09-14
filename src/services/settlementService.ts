@@ -1,14 +1,15 @@
 import { settlementRepository } from "../repositories/settlementRepository.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
+import { errandPaymentRepository } from "../repositories/errandPaymentRepository.js";
+import { riderCollectsCash, isDownpaymentPlan } from "./patterns/paymentModes.js";
+import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { ServiceError } from "./ServiceError.js";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-// Gated to COD errands only — if the confirmed payment mode isn't COD, no
-// cash changed hands, so there's nothing for the rider to reconcile.
 /**
  * Records the cash that came back.
  *
@@ -36,9 +37,19 @@ export async function submitSettlement(
   }
 
   const selection = await paymentSelectionRepository.findByErrandId(errandId);
-  const isCod = !selection || selection.paymentMode.name === "Cash on Delivery";
-  if (!isCod) {
-    throw new ServiceError(400, "This errand's payment mode isn't Cash on Delivery — there's no cash to settle.");
+
+  // The 50% downpayment plan DOES put cash in the rider's hands — the balance,
+  // collected at the door — so it settles like any other errand. Only a mode
+  // where the rider carries nothing has nothing to reconcile.
+  //
+  // This used to reject everything that was not Cash on Delivery outright, which
+  // was right while COD was the only reachable mode and wrong the moment it
+  // stopped being.
+  if (!riderCollectsCash(selection)) {
+    throw new ServiceError(
+      400,
+      "This errand's payment mode doesn't put cash in the rider's hands — there's nothing to settle."
+    );
   }
 
   const existing = await settlementRepository.findByErrandId(errandId);
@@ -46,7 +57,24 @@ export async function submitSettlement(
     throw new ServiceError(409, "This errand has already been settled.");
   }
 
-  const expectedAmount = errand.totalCost;
+  // What the rider is expected to hand back, which is not the same as the bill.
+  //
+  // On the downpayment plan the customer has already paid part of it through the
+  // Facebook Page, and that money never passes through the rider. Expecting the
+  // full totalCost would record every such errand as SHORT by exactly the
+  // downpayment — feeding CASH_VARIANCE exceptions and inflating shortageCount
+  // in riderPerformanceService, so riders doing exactly their job would read as
+  // chronic short-collectors.
+  const alreadyPaid = isDownpaymentPlan(selection)
+    ? summarisePaymentPlan({
+        goodsSubtotal: errand.estimatedCost,
+        grandTotal: errand.totalCost,
+        entries: await errandPaymentRepository.findAmountsByErrandId(errandId),
+        overagePending: false,
+      }).amountPaid
+    : 0;
+
+  const expectedAmount = round2(Math.max(0, errand.totalCost - alreadyPaid));
 
   // The server's figure wins unless the rider is explicitly reporting a
   // discrepancy. An amount sent alongside collectedInFull is ignored rather

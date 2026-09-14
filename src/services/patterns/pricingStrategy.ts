@@ -43,6 +43,15 @@ export interface PricingInput {
    * instead of throwing.
    */
   categoryModes?: HandlingFeeMode[];
+  /**
+   * The handling fee the customer already agreed to, if they have agreed to one.
+   *
+   * Resolved by the caller from `Errand.quotedHandlingFee`. Null or omitted
+   * means no ceiling, which is the behaviour that existed before ceilings did.
+   */
+  quotedHandlingCeiling?: number | null;
+  /** Which basket figure this pricing run is working from. */
+  handlingEvidence?: HandlingFeeEvidence;
 }
 
 export interface PriceBreakdown {
@@ -55,6 +64,11 @@ export interface PriceBreakdown {
   groceryFee: number;
   nonCodFee: number;
   distanceFee: number;
+  /**
+   * The reasoning behind groceryFee. Persisted by errandService.recalculateFee
+   * so the fee can account for itself long after it was computed.
+   */
+  handlingDecision: HandlingFeeDecision;
 }
 
 // Swappable at the call site (e.g. a future promo/surge strategy) — this is the
@@ -67,28 +81,77 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/** What one mode would charge for this basket. */
+/**
+ * Why a mode charged what it charged.
+ *
+ * `PERCENT_RELIEVED` is the percentage tier held down by marginal relief; see
+ * feeForMode. `CEILING` never appears here — it is applied by decideHandlingFee
+ * after every mode has had its say, because it is a fact about what the customer
+ * agreed to rather than about any one category.
+ */
+export type HandlingFeeTier =
+  | "UNPRICED"
+  | "BELOW_GATE"
+  | "NONE"
+  | "FLAT"
+  | "PERCENT"
+  | "PERCENT_RELIEVED"
+  | "CEILING";
+
+interface ModeOutcome {
+  fee: number;
+  tier: HandlingFeeTier;
+  /** The relief ceiling that applied, or null where relief has no meaning. */
+  reliefCap: number | null;
+}
+
+/** What one mode would charge for this basket, and on what reasoning. */
 function feeForMode(
   estimatedCost: number,
   mode: HandlingFeeMode,
   rateConfig: RateConfigValues
-): number {
+): ModeOutcome {
+  const percentFee = estimatedCost * (rateConfig.groceryFeePercent / 100);
+
   switch (mode) {
     case "NONE":
-      return 0;
+      return { fee: 0, tier: "NONE", reliefCap: null };
     case "FLAT":
-      return rateConfig.groceryFeeFlat;
+      return { fee: rateConfig.groceryFeeFlat, tier: "FLAT", reliefCap: null };
     case "PERCENT":
-      return estimatedCost * (rateConfig.groceryFeePercent / 100);
+      // No crossover, so nothing to relieve: this mode is a percentage at every
+      // basket size by definition.
+      return { fee: percentFee, tier: "PERCENT", reliefCap: null };
     case "THRESHOLD":
-    default:
+    default: {
       // Flat below the threshold, percentage at or above it. A small basket is
       // roughly the same work whatever it costs, so it pays one predictable
       // handling fee; a large one ties up proportionally more of the company's
       // cash, so it scales.
-      return estimatedCost >= rateConfig.groceryFeeThreshold
-        ? estimatedCost * (rateConfig.groceryFeePercent / 100)
-        : rateConfig.groceryFeeFlat;
+      if (estimatedCost < rateConfig.groceryFeeThreshold) {
+        return { fee: rateConfig.groceryFeeFlat, tier: "FLAT", reliefCap: null };
+      }
+
+      // Marginal relief across the crossover.
+      //
+      // A bare switch is a cliff: with a ₱1,001 threshold, a ₱1,000 basket paid
+      // ₱50 and a ₱1,001 basket paid ₱100.10 — fifty pesos for one peso of
+      // groceries. Nobody can be told that with a straight face, and a customer
+      // one peso the wrong side of it is being punished for arithmetic they
+      // cannot see.
+      //
+      // So the fee may never climb faster than the basket did. Just past the
+      // threshold the flat fee grows peso for peso with the basket, and the
+      // plain percentage resumes as soon as it is the cheaper of the two —
+      // where 0.1b = flat + (b - reliefFloor), about ₱1,055 on live rates.
+      // The result is monotonic and has no step in it.
+      const reliefFloor = rateConfig.groceryFeeThreshold - 1;
+      const reliefCap = rateConfig.groceryFeeFlat + (estimatedCost - reliefFloor);
+
+      return reliefCap < percentFee
+        ? { fee: reliefCap, tier: "PERCENT_RELIEVED", reliefCap }
+        : { fee: percentFee, tier: "PERCENT", reliefCap };
+    }
   }
 }
 
@@ -143,13 +206,83 @@ export const BASE_FEE_DISTANCE_KM = 2.0;
 export const HANDLING_ITEM_UNITS_THRESHOLD = 20;
 export const HANDLING_AMOUNT_THRESHOLD = 1000;
 
-export function resolveHandlingFee(
-  estimatedCost: number,
-  itemUnits: number,
-  categoryModes: HandlingFeeMode[] | undefined,
-  rateConfig: RateConfigValues
-): number {
-  if (estimatedCost <= 0) return 0;
+/**
+ * Which basket figure the decision was taken on, strongest evidence first.
+ *
+ * Mirrors the evidence ladder in categoryRevenueAllocation.buildWeights(): the
+ * question "what is this basket actually worth?" has several answers of
+ * different quality, and which one was used is part of the answer.
+ *
+ * A rider's unverified word may lower a bill but must never raise one — that is
+ * enforced in decideHandlingFee via the ceiling, not here.
+ */
+export type HandlingFeeEvidence = "RECEIPT_CONFIRMED" | "RIDER_DECLARED" | "CUSTOMER_ESTIMATE";
+
+export interface HandlingFeeInput {
+  estimatedCost: number;
+  itemUnits: number;
+  categoryModes: HandlingFeeMode[] | undefined;
+  rateConfig: RateConfigValues;
+  /**
+   * The fee the customer already agreed to, if they have agreed to one.
+   *
+   * The customer is never billed more handling fee than this. `markItemsPurchased`
+   * overwrites estimatedCost with the real receipt total AFTER the rider has
+   * bought the goods, so there is no moment left in which to ask them to consent
+   * to a bigger number — the dispatcher has to secure that agreement out of band,
+   * and until they do, this holds the bill where the customer left it.
+   */
+  quotedCeiling?: number | null;
+  evidence?: HandlingFeeEvidence;
+}
+
+/** A handling fee, and the complete reasoning behind it. */
+export interface HandlingFeeDecision {
+  fee: number;
+  /** The mode that won. Where several categories apply, the most expensive. */
+  mode: HandlingFeeMode;
+  tier: HandlingFeeTier;
+  basket: number;
+  evidence: HandlingFeeEvidence;
+  /** What the rules produced before the ceiling was considered. */
+  computed: number;
+  reliefCap: number | null;
+  quotedCeiling: number | null;
+  ceilingApplied: boolean;
+  decidedAt: Date;
+}
+
+/**
+ * The handling fee, with its reasoning attached.
+ *
+ * Returns a record rather than a number because "why ₱50 and not 10%?" is a
+ * question the dispatcher, the owner and the customer all end up asking, and
+ * until now nothing could answer it — the fee arrived as a bare figure with no
+ * account of the mode, the basket, the evidence or the tier behind it.
+ *
+ * Pure. Every fact it needs is passed in; errandService.recalculateFee is the
+ * one caller responsible for gathering them and persisting what comes back.
+ */
+export function decideHandlingFee(input: HandlingFeeInput): HandlingFeeDecision {
+  const { estimatedCost, itemUnits, categoryModes, rateConfig } = input;
+  const evidence = input.evidence ?? "CUSTOMER_ESTIMATE";
+  const quotedCeiling = input.quotedCeiling ?? null;
+  const decidedAt = new Date();
+
+  const base = {
+    basket: 0,
+    evidence,
+    reliefCap: null,
+    quotedCeiling,
+    ceilingApplied: false,
+    decidedAt,
+  };
+
+  // Zero means "the customer has not costed their items", not "a small
+  // purchase" — a quote taken before then must not carry a handling fee.
+  if (estimatedCost <= 0) {
+    return { ...base, fee: 0, mode: "NONE", tier: "UNPRICED", computed: 0 };
+  }
 
   // Thresholds are compared against the basket in whole pesos.
   //
@@ -159,28 +292,81 @@ export function resolveHandlingFee(
   // this system means the same thing.
   //
   // Applied to the percentage switch as well, so the two thresholds cannot
-  // disagree about what "3,000" means. The percentage is then taken on the same
+  // disagree about what "1,001" means. The percentage is then taken on the same
   // rounded figure, which moves it by at most half a centavo.
   const basket = Math.round(estimatedCost);
 
   // Nothing at all below the gate, whatever the category.
   const qualifies =
     itemUnits > HANDLING_ITEM_UNITS_THRESHOLD || basket >= HANDLING_AMOUNT_THRESHOLD;
-  if (!qualifies) return 0;
+  if (!qualifies) {
+    return { ...base, basket, fee: 0, mode: "NONE", tier: "BELOW_GATE", computed: 0 };
+  }
 
   // No resolvable category — a retired or test one, or a quote taken before any
   // category is known. THRESHOLD is what this always did before modes existed.
-  const declared = categoryModes && categoryModes.length > 0 ? categoryModes : ["THRESHOLD" as const];
-
-  // Past the gate, a category marked NONE stops being exempt.
   //
-  // Fast Food and Pharmacy carry no handling fee because the ordinary order
-  // from them is two meals or one prescription. A twenty-item Jollibee run for
-  // an office is not that order, and the exemption was never meant to cover it
-  // — so above the gate those categories price like everything else.
-  const modes = declared.map((mode) => (mode === "NONE" ? ("THRESHOLD" as const) : mode));
+  // NONE, by contrast, means no handling fee at any basket size. This used to
+  // coerce NONE to THRESHOLD above the gate, on the reasoning that a twenty-item
+  // Jollibee run for an office is not the two-meal order the exemption was
+  // written for. That reasoning still holds on its own terms, and is
+  // deliberately reversed: the owner scopes this fee to groceries ("an
+  // additional fee will be charged for groceries"), and "groceries only" cannot
+  // hold while every exempt category re-prices the moment a basket clears
+  // ₱1,000. A category the owner marked exempt is exempt. A large fast-food
+  // order still pays base, distance and multi-store fees — the costs it
+  // actually creates.
+  const declared =
+    categoryModes && categoryModes.length > 0 ? categoryModes : (["THRESHOLD"] as const);
 
-  return Math.max(...modes.map((mode) => feeForMode(basket, mode, rateConfig)));
+  // The most expensive applicable mode wins. Items carry no individual price, so
+  // a mixed basket cannot be split between categories — see the note in
+  // categoryFeeModes.ts on why this stays keyed to what the customer selected.
+  let winner: HandlingFeeMode = declared[0];
+  let outcome = feeForMode(basket, winner, rateConfig);
+  for (const mode of declared.slice(1)) {
+    const candidate = feeForMode(basket, mode, rateConfig);
+    if (candidate.fee > outcome.fee) {
+      winner = mode;
+      outcome = candidate;
+    }
+  }
+
+  const computed = outcome.fee;
+
+  // The ceiling is the last word, because it is the only input here the customer
+  // themselves agreed to.
+  if (quotedCeiling !== null && computed > quotedCeiling) {
+    return {
+      ...base,
+      basket,
+      fee: quotedCeiling,
+      mode: winner,
+      tier: "CEILING",
+      computed,
+      reliefCap: outcome.reliefCap,
+      ceilingApplied: true,
+    };
+  }
+
+  return {
+    ...base,
+    basket,
+    fee: computed,
+    mode: winner,
+    tier: outcome.tier,
+    computed,
+    reliefCap: outcome.reliefCap,
+  };
+}
+
+export function resolveHandlingFee(
+  estimatedCost: number,
+  itemUnits: number,
+  categoryModes: HandlingFeeMode[] | undefined,
+  rateConfig: RateConfigValues
+): number {
+  return decideHandlingFee({ estimatedCost, itemUnits, categoryModes, rateConfig }).fee;
 }
 
 // The single place every fee component is computed (Open/Closed: new fee
@@ -198,7 +384,15 @@ export class StandardPricingStrategy implements PricingStrategy {
     const additionalStores = Math.min(Math.max(storeCount - 1, 0), rateConfig.maxAdditionalStores);
     const multiStoreFee = additionalStores * rateConfig.multiStoreFeePerStore;
 
-    const groceryFee = resolveHandlingFee(estimatedCost, itemUnits, input.categoryModes, rateConfig);
+    const handlingDecision = decideHandlingFee({
+      estimatedCost,
+      itemUnits,
+      categoryModes: input.categoryModes,
+      rateConfig,
+      quotedCeiling: input.quotedHandlingCeiling,
+      evidence: input.handlingEvidence,
+    });
+    const groceryFee = handlingDecision.fee;
 
     // Only applies once a confirmed payment mode isn't COD — currently
     // unreachable in practice (see paymentMethodStrategy.ts's
@@ -265,6 +459,9 @@ export class StandardPricingStrategy implements PricingStrategy {
       groceryFee: round2(groceryFee),
       nonCodFee: round2(nonCodFee),
       distanceFee: round2(distanceFee),
+      // Rounded to match the fee actually charged above, so the record and the
+      // bill cannot disagree about the figure they are both describing.
+      handlingDecision: { ...handlingDecision, fee: round2(handlingDecision.fee) },
     };
   }
 }

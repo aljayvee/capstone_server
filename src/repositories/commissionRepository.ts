@@ -43,6 +43,18 @@ export const commissionRepository = {
     });
   },
 
+  // Every rider's payout total in ONE query. totalsForRider below answers the
+  // same question for a single rider; calling it per rider to build a fleet
+  // table is a query per row, which is what this exists to avoid.
+  sumByRiderBetween(start: Date, end: Date) {
+    return prisma.riderCommission.groupBy({
+      by: ["riderId"],
+      where: { computedAt: { gte: start, lt: end } },
+      _sum: { riderShare: true },
+      _count: { _all: true },
+    });
+  },
+
   totalsForRider(riderId: number, start: Date, end: Date) {
     return prisma.riderCommission.aggregate({
       where: { riderId, computedAt: { gte: start, lt: end } },

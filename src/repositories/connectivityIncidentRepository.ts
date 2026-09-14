@@ -31,4 +31,26 @@ export const connectivityIncidentRepository = {
       data: { reconnectedAt: new Date() },
     });
   },
+
+  // Drops per rider in a range, for the Rider Performance report. Two groupBys
+  // rather than fetching rows: the report needs counts, and a rider on a bad
+  // route can generate a great many incidents.
+  countByRiderBetween(start: Date, end: Date) {
+    return prisma.connectivityIncident.groupBy({
+      by: ["riderId"],
+      where: { disconnectedAt: { gte: start, lt: end } },
+      _count: { _all: true },
+    });
+  },
+
+  // Drops that never came back. Reported beside the total because a connection
+  // that recovered in nine seconds and one that never returned are the same row
+  // until you look at this column.
+  countUnresolvedByRiderBetween(start: Date, end: Date) {
+    return prisma.connectivityIncident.groupBy({
+      by: ["riderId"],
+      where: { disconnectedAt: { gte: start, lt: end }, reconnectedAt: null },
+      _count: { _all: true },
+    });
+  },
 };

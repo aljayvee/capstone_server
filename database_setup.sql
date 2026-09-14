@@ -1,4 +1,28 @@
 -- ============================================================================
+-- SUPERSEDED — DO NOT RUN, AND DO NOT READ THIS AS THE SCHEMA.
+--
+-- This is the original hand-written DDL from the design document. The live
+-- schema is `prisma/schema.prisma`, applied through `prisma/migrations/` with
+-- `npm run prisma:migrate`. The two diverged long ago:
+--
+--   * Column naming: this file is snake_case (`base_fee`); the live tables are
+--     camelCase (`baseFee`), because Prisma maps table names but not columns.
+--   * `rate_configs` here still has `service_fee_percent` and `night_surcharge`,
+--     which migration 20260820090000 DROPPED, and is missing every fee column
+--     the system actually bills on — multiStoreFeePerStore, groceryFee*,
+--     nonCod*, maxAdditionalStores.
+--   * `base_fee DEFAULT 50` is not the live fare. The live base fee is ₱70 and
+--     the column deliberately has NO default: the database must never invent a
+--     price (see the comment on RateConfig.baseFee in schema.prisma).
+--   * Whole domains added since are absent: errand_payments, proof images,
+--     dwell observations, exception reviews, rider presence, routing columns.
+--
+-- Kept only as the historical record of what the design document specified.
+-- For pricing as it actually works, see docs/errand_pricing_formula.md in the
+-- web repo.
+-- ============================================================================
+
+-- ============================================================================
 -- Sugo Express Errand Management System - Complete MariaDB Database Schema DDL
 -- Document Reference: Mobile-based_Errand_Service_System_Document_Polishing.docx
 -- Database Engine: MariaDB / MySQL 8.0+ (InnoDB, utf8mb4)

@@ -1,0 +1,16 @@
+-- The handling-fee crossover moves from ₱3,000 to ₱1,001.
+--
+-- The owner's rule is "₱50 at ₱1,000, 10% from ₱1,001". The comparison in
+-- pricingStrategy.feeForMode is `>=`, and the size gate admits baskets from
+-- ₱1,000, so a threshold of 1001 expresses that rule exactly.
+--
+-- At ₱3,000 the live config was charging ₱50 where the rule says ₱300; every
+-- basket from ₱1,001 to ₱2,999 was under-charged by up to ₱250.
+--
+-- Crossing the threshold does not produce a ₱50 step: marginal relief in
+-- decideHandlingFee holds the fee down until the plain percentage is cheaper,
+-- around ₱1,055.
+--
+-- This changes the column DEFAULT only. Every writer (seed, rateConfigRepository
+-- .upsert) supplies the value explicitly, so the live row is updated separately.
+ALTER TABLE `rate_configs` MODIFY `groceryFeeThreshold` DOUBLE NOT NULL DEFAULT 1001;

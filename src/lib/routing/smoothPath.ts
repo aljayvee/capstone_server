@@ -20,8 +20,22 @@ import { haversineDistanceKm, type GeoPoint } from "../geo.js";
  * engine reported them; this changes only what is drawn.
  */
 
-/** How far back from a corner the curve begins, at most. Tight curb radius to keep 90-degree street turns crisp and on-road. */
-export const TURN_RADIUS_METERS = 3;
+/**
+ * How far back from a corner the curve begins, at most.
+ *
+ * Ten metres, not three. Three was safe to the point of being invisible: on a
+ * 90-degree turn a quadratic Bézier passes about 0.35 x this distance inside the
+ * corner, so a 3 m radius moved the drawn line barely a metre — well under a
+ * pixel at the zoom the rider actually navigates at, which left every junction
+ * looking like a hard mitred angle. Ten puts the sweep at roughly a lane width
+ * inside the corner, which is both visible and about where a rider genuinely
+ * takes the turn.
+ *
+ * MAX_SEGMENT_SHARE below is what keeps this safe as the radius grows: on a
+ * short block the cut collapses to a fraction of the block regardless of this
+ * number, so a big radius cannot swallow a small street.
+ */
+export const TURN_RADIUS_METERS = 10;
 
 /**
  * Never consume more than this share of a segment, so a curve cannot swallow a
@@ -32,8 +46,15 @@ const MAX_SEGMENT_SHARE = 0.15;
 /** Below this the vertex is not a turn, and rounding it would only add points. */
 const MIN_TURN_DEGREES = 15;
 
-/** Points drawn along each corner. Four is smooth at city zoom and cheap. */
-const ARC_STEPS = 4;
+/**
+ * Points drawn along each corner.
+ *
+ * Six rather than four, because the arc is now long enough for four to read as
+ * two visible facets instead of a curve. Two extra points per corner — on a
+ * route with a dozen turns that is 24 points, against the ~130 the engine
+ * already returns.
+ */
+const ARC_STEPS = 6;
 
 const metresBetween = (a: GeoPoint, b: GeoPoint) => haversineDistanceKm(a, b) * 1000;
 

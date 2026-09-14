@@ -24,8 +24,18 @@ const errand = (over: Record<string, any> = {}): any => ({
   proofImages: [],
   dwellObservations: [],
   exceptionReviews: [],
+  // An ordinary COD errand: no downpayment ledger, no receipt overage. The
+  // downpayment cases below override these.
+  payments: [],
+  paymentSelection: null,
+  overageEscalatedAt: null,
+  overageResolvedAt: null,
+  quotedHandlingBasket: null,
   ...over,
 });
+
+/** The catalogue name, exactly as payment_modes holds it. */
+const DOWNPAYMENT_SELECTION = { paymentMode: { name: "Non-COD — 50% Downpayment" } };
 
 const kinds = (list: ReturnType<typeof exceptionsFor>) => list.map((e) => e.kind).sort();
 
@@ -266,5 +276,154 @@ describe("an errand that went wrong in several ways at once", () => {
     });
 
     expect(kinds(exceptionsFor(bad))).toEqual(["CASH_VARIANCE", "UNVERIFIED_PURCHASE", "WRONG_BRANCH"]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// THE DOWNPAYMENT PLAN
+//
+// Two ways it fails, and they are not the same emergency. Goods held is a rider
+// standing still right now; an uncollected balance is money already gone.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("goods held for an overage the customer never approved", () => {
+  const held = (over: Record<string, any> = {}) =>
+    errand({
+      status: "IN_TRANSIT",
+      estimatedCost: 1200,
+      quotedHandlingBasket: 1000,
+      overageEscalatedAt: T("2026-08-25T01:40:00Z"),
+      paymentSelection: DOWNPAYMENT_SELECTION,
+      payments: [{ kind: "UPFRONT", amount: 500 }],
+      ...over,
+    });
+
+  it("raises the amount the customer has not agreed to", () => {
+    const found = exceptionsFor(held());
+    const overage = found.find((e) => e.kind === "OVERAGE_PENDING");
+
+    expect(overage?.amountAtRisk).toBe(200);
+    expect(overage?.detail).toContain("Goods held");
+  });
+
+  it("ages from when the hold was raised, not when the errand was placed", () => {
+    // The queue ranks by amount then by age; an overage dated to the errand
+    // would look older than it is and outrank a genuinely stale one.
+    expect(exceptionsFor(held())[0]?.occurredAt).toEqual(T("2026-08-25T01:40:00Z"));
+  });
+
+  it("goes quiet once the customer covers it", () => {
+    const resolved = held({
+      overageResolvedAt: T("2026-08-25T02:00:00Z"),
+      payments: [
+        { kind: "UPFRONT", amount: 500 },
+        { kind: "TOP_UP", amount: 200 },
+      ],
+    });
+
+    expect(kinds(exceptionsFor(resolved))).not.toContain("OVERAGE_PENDING");
+  });
+
+  it("raises again when a second receipt overruns after the first was settled", () => {
+    // A resolution older than the escalation it is meant to clear belongs to the
+    // previous round. Treating it as current would silently release the goods.
+    const reEscalated = held({
+      overageResolvedAt: T("2026-08-25T01:20:00Z"),
+      overageEscalatedAt: T("2026-08-25T01:40:00Z"),
+    });
+
+    expect(kinds(exceptionsFor(reEscalated))).toContain("OVERAGE_PENDING");
+  });
+});
+
+describe("delivered without the balance", () => {
+  it("raises what is still outstanding", () => {
+    const unpaid = errand({
+      status: "DELIVERED",
+      totalCost: 1120,
+      paymentSelection: DOWNPAYMENT_SELECTION,
+      payments: [{ kind: "UPFRONT", amount: 500 }],
+    });
+
+    const found = exceptionsFor(unpaid).find((e) => e.kind === "UNPAID_BALANCE");
+    expect(found?.amountAtRisk).toBe(620);
+  });
+
+  it("counts the cash the rider actually settled", () => {
+    const settled = errand({
+      status: "DELIVERED",
+      totalCost: 1120,
+      paymentSelection: DOWNPAYMENT_SELECTION,
+      payments: [{ kind: "UPFRONT", amount: 500 }],
+      settlement: {
+        collectedAmount: 620, expectedAmount: 620, variance: 0,
+        status: "MATCHED", shortReason: null, settledAt: T("2026-08-25T02:00:00Z"),
+      },
+    });
+
+    expect(kinds(exceptionsFor(settled))).not.toContain("UNPAID_BALANCE");
+  });
+
+  it("nets a refund off what was paid", () => {
+    const refunded = errand({
+      status: "DELIVERED",
+      totalCost: 1120,
+      paymentSelection: DOWNPAYMENT_SELECTION,
+      payments: [
+        { kind: "UPFRONT", amount: 500 },
+        { kind: "REFUND", amount: 500 },
+      ],
+    });
+
+    expect(exceptionsFor(refunded).find((e) => e.kind === "UNPAID_BALANCE")?.amountAtRisk).toBe(1120);
+  });
+
+  it("says nothing about an errand still in flight", () => {
+    // Every downpayment errand has an outstanding balance until the rider
+    // reaches the door. Flagging those would drown the queue in normality.
+    const inFlight = errand({
+      status: "IN_TRANSIT",
+      totalCost: 1120,
+      paymentSelection: DOWNPAYMENT_SELECTION,
+      payments: [{ kind: "UPFRONT", amount: 500 }],
+    });
+
+    expect(kinds(exceptionsFor(inFlight))).not.toContain("UNPAID_BALANCE");
+  });
+
+  it("ignores an ordinary COD errand, which has no ledger", () => {
+    expect(kinds(exceptionsFor(errand({ status: "DELIVERED" })))).not.toContain("UNPAID_BALANCE");
+  });
+});
+
+describe("a mode that captures no payment at all", () => {
+  // GCash / PayMaya, Bank Transfer and Card have no gateway and no ledger. They
+  // record nothing and cannot be settled, so a delivered one used to be
+  // invisible in every queue: goods gone, no money, nobody told.
+  it.each(["GCash / PayMaya", "Bank Transfer", "Debit/Credit Card"])(
+    "flags a delivered %s errand with nothing recorded",
+    (mode) => {
+      const ghost = errand({
+        status: "DELIVERED",
+        totalCost: 1120,
+        paymentSelection: { paymentMode: { name: mode } },
+      });
+
+      const found = exceptionsFor(ghost).find((e) => e.kind === "UNPAID_BALANCE");
+      expect(found?.amountAtRisk).toBe(1120);
+      expect(found?.detail).toContain("captures no payment");
+    }
+  );
+
+  it("leaves COD to the settlement report", () => {
+    // An unsettled COD errand already shows as awaiting collection there.
+    // Raising it here too would say the same thing twice.
+    const cod = errand({
+      status: "DELIVERED",
+      totalCost: 1120,
+      paymentSelection: { paymentMode: { name: "Cash on Delivery" } },
+    });
+
+    expect(kinds(exceptionsFor(cod))).not.toContain("UNPAID_BALANCE");
   });
 });

@@ -58,6 +58,24 @@ type EvidenceRow = Awaited<
  * resolution. The dispatcher's queue filters them out; the owner's report keeps
  * them, because "who cleared this and what did they say" is the part with teeth.
  */
+/**
+ * Whether an escalation has since been cleared.
+ *
+ * A later escalation beats an earlier resolution, so a second overage on the
+ * same errand is not silently treated as already handled. Mirrors
+ * errandPaymentService.isOveragePending, which is the one the gate consults —
+ * kept as its own copy here because this module must stay free of service
+ * imports to remain a pure rule.
+ */
+function isOverageResolved(errand: {
+  overageEscalatedAt: Date | null;
+  overageResolvedAt: Date | null;
+}): boolean {
+  if (!errand.overageResolvedAt) return false;
+  if (!errand.overageEscalatedAt) return true;
+  return errand.overageResolvedAt >= errand.overageEscalatedAt;
+}
+
 export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
   const found: ErrandException[] = [];
   const riderName = nameOf(errand.rider);
@@ -144,6 +162,62 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
         "MISSING_RECEIPT",
         0,
         `${stop.items.length} item(s) at ${stop.storeName} with no receipt or declaration.`,
+        errand.createdAt
+      );
+    }
+  }
+
+  // ── goods held for an overage nobody has arranged ────────────────────────
+  //
+  // The most urgent thing this list can carry: a rider is standing still with
+  // the company's goods, and the customer has agreed to none of it. Ages from
+  // when it was raised, so a queue read top-down surfaces the oldest hold.
+  if (errand.overageEscalatedAt && !isOverageResolved(errand)) {
+    const overage = round2(errand.estimatedCost - (errand.quotedHandlingBasket ?? errand.estimatedCost));
+    push(
+      "OVERAGE_PENDING",
+      overage,
+      `Receipt came to ₱${round2(errand.estimatedCost)} against ₱${round2(errand.quotedHandlingBasket ?? 0)} agreed — ` +
+        `₱${round2(overage)} the customer has not approved. Goods held.`,
+      errand.overageEscalatedAt
+    );
+  }
+
+  // ── delivered, and the money never came ──────────────────────────────────
+  //
+  // Only for FINISHED errands: an outstanding balance mid-errand is the ordinary
+  // state of every downpayment errand, and flagging those would drown the queue.
+  //
+  // Scoped to non-COD, because a COD errand's money is the settlement's job —
+  // an unsettled one already shows as `awaitingCollection` in the settlement
+  // report, and raising it here too would say the same thing twice.
+  //
+  // This deliberately covers the modes with NO ledger behind them — GCash /
+  // PayMaya, Bank Transfer, Card. Those capture nothing, record nothing and
+  // cannot be settled, so a delivered one was previously invisible everywhere:
+  // goods out of the door, no money, and nothing in any queue saying so. If
+  // those modes are switched on without a ledger, this is the only thing that
+  // notices.
+  const finishedErrand = errand.status === "DELIVERED" || errand.status === "COMPLETED";
+  const modeName = errand.paymentSelection?.paymentMode.name ?? null;
+  const isCod = modeName === null || modeName === "Cash on Delivery";
+
+  if (finishedErrand && !isCod) {
+    const paid = errand.payments.reduce(
+      (sum, e) => sum + (e.kind === "REFUND" ? -e.amount : e.amount),
+      0
+    );
+    const outstanding = round2(errand.totalCost - paid - (errand.settlement?.collectedAmount ?? 0));
+
+    if (outstanding > 0) {
+      push(
+        "UNPAID_BALANCE",
+        outstanding,
+        paid > 0
+          ? `Delivered with ₱${round2(outstanding)} still outstanding — ` +
+              `₱${round2(paid)} paid up front against a ₱${round2(errand.totalCost)} bill.`
+          : `Delivered on ${modeName} with nothing recorded against a ` +
+              `₱${round2(errand.totalCost)} bill. This mode captures no payment.`,
         errand.createdAt
       );
     }

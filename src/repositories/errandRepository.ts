@@ -23,6 +23,15 @@ export const ERRAND_INCLUDE = {
   // prefers it over recomputing so a rider is never shown a different figure
   // from the one they were actually paid.
   commission: true,
+  // The downpayment ledger, so attachErrandNames can derive the payment plan
+  // onto every errand response the same way it derives the fee breakdown.
+  //
+  // Rides along on the errand rather than needing its own fetch, because the two
+  // surfaces that most need it — the rider's cash panel and their advance
+  // button — already have the errand and nothing else. A client that had to ask
+  // separately would show a stale balance for as long as the second request took.
+  payments: { select: { kind: true, amount: true } },
+  paymentSelection: { select: { paymentMode: { select: { name: true } } } },
   dispatchLogs: {
     include: { dispatcher: { select: { firstName: true, lastName: true } } },
     orderBy: { dispatchedAt: "desc" as const },
@@ -186,6 +195,55 @@ export const errandRepository = {
     });
   },
 
+  /**
+   * Everything the Sales and Commission reports need to attribute money to real
+   * merchant categories, for one range.
+   *
+   * Replaces groupByCategoryBetween below as the category source. That method
+   * groups on `Errand.category`, which errandValidators pins to the literal
+   * "Pabili" — so the report had a category dimension with a cardinality of one.
+   * The real store type lives on the stops and the items, which is why this
+   * pulls rows rather than aggregating in SQL.
+   *
+   * The where clause is deliberately IDENTICAL to aggregateBetween above. That
+   * is what lets the allocated per-category figures reconcile to the headline
+   * totals exactly; two windows that differ by one errand would put the report
+   * permanently out of balance with itself.
+   *
+   * `proofImages` selects the amounts and never `imageData` — that column is
+   * LongText, and pulling it here would move megabytes per errand for numbers
+   * that occupy a few bytes.
+   */
+  findForCategoryAllocationBetween(start: Date, end: Date) {
+    return prisma.errand.findMany({
+      where: {
+        createdAt: { gte: start, lt: end },
+        status: { in: ["DELIVERED", "COMPLETED"] },
+      },
+      select: {
+        id: true,
+        totalCost: true,
+        deliveryFee: true,
+        tip: true,
+        estimatedCost: true,
+        // Preferred over recomputing when present, so a payout already recorded
+        // for a rider cannot be restated by a later report run.
+        commission: { select: { riderShare: true, businessShare: true } },
+        pabiliItemRequests: { select: { storeCategory: true, quantity: true } },
+        pabiliDetails: { select: { storeCategory: true, quantity: true } },
+        pinpoints: { select: { id: true, category: { select: { name: true, status: true } } } },
+        proofImages: {
+          where: { kind: { in: ["RECEIPT", "NO_RECEIPT"] } },
+          select: {
+            pinpointId: true,
+            declaredTotal: true,
+            extraction: { select: { confirmedTotal: true } },
+          },
+        },
+      },
+    });
+  },
+
   // Category breakdown for the Sales report. Groups on whatever `category` values
   // exist strictly for realized/completed errands.
   groupByCategoryBetween(start: Date, end: Date) {
@@ -219,6 +277,15 @@ export const errandRepository = {
         estimatedCost: true,
         status: true,
         riderId: true,
+        // The downpayment plan's two failure modes: goods held for an overage
+        // nobody has arranged, and a delivery that happened without the balance
+        // being collected. Both are money the business fronted and has not got
+        // back, which is exactly what this report is for.
+        overageEscalatedAt: true,
+        overageResolvedAt: true,
+        quotedHandlingBasket: true,
+        payments: { select: { kind: true, amount: true } },
+        paymentSelection: { select: { paymentMode: { select: { name: true } } } },
         rider: { select: { firstName: true, lastName: true } },
         settlement: {
           select: { collectedAmount: true, expectedAmount: true, variance: true, status: true, shortReason: true, settledAt: true },
@@ -304,6 +371,59 @@ export const errandRepository = {
     });
   },
 
+  /**
+   * Finished errands with the lifecycle stamps the rider metrics actually need.
+   *
+   * Replaces findFinishedBetween above for the Rider Performance report, which
+   * derived its one timing figure from `updatedAt - createdAt`. That span starts
+   * when the CUSTOMER placed the order — before any rider saw it — and ends
+   * whenever the row was last touched, which a rating or a settlement written
+   * after delivery silently extends. `acceptedAt -> deliveredAt` is the interval
+   * a rider is actually answerable for.
+   *
+   * The three OR branches are mutually exclusive, so nothing is counted twice,
+   * and the last one keeps pre-timestamp legacy rows visible rather than
+   * collapsing every rider who worked before those columns existed to zero.
+   */
+  findRiderPerformanceBetween(start: Date, end: Date) {
+    return prisma.errand.findMany({
+      where: {
+        status: { in: ["DELIVERED", "COMPLETED"] },
+        OR: [
+          { deliveredAt: { gte: start, lt: end } },
+          { deliveredAt: null, completedAt: { gte: start, lt: end } },
+          { deliveredAt: null, completedAt: null, updatedAt: { gte: start, lt: end } },
+        ],
+      },
+      select: {
+        id: true,
+        riderId: true,
+        assignedAt: true,
+        acceptedAt: true,
+        deliveredAt: true,
+        completedAt: true,
+        updatedAt: true,
+        createdAt: true,
+        etaHighAt: true,
+        etaIsDegraded: true,
+      },
+    });
+  },
+
+  /**
+   * The denominator for a rider's cancellation rate: errands that actually
+   * reached them, whatever became of those errands afterwards.
+   *
+   * Windowed on assignedAt rather than createdAt because the question is about
+   * work handed to a rider in the period, not orders placed in it.
+   */
+  findReachedRiderBetween(start: Date, end: Date) {
+    return prisma.errand.findMany({
+      where: { riderId: { not: null }, assignedAt: { gte: start, lt: end } },
+      select: { riderId: true, status: true },
+    });
+  },
+
   // Unchecked* input types are used here (not the relation-based CreateInput/UpdateInput)
   // because callers pass scalar foreign keys directly (customerId, riderId), matching the
   // original inline handlers this was migrated from.
@@ -334,5 +454,34 @@ export const dispatchLogRepository = {
 
   create(errandId: string, dispatcherId: number) {
     return prisma.dispatchLog.create({ data: { errandId, dispatcherId } });
+  },
+
+  /**
+   * Records that the claiming dispatcher has verified the order and accepted it.
+   *
+   * Scoped to the dispatcher as well as the errand so a second dispatcher can
+   * never stamp someone else's review, and `verifiedAt: null` so re-accepting an
+   * already-accepted errand is a no-op rather than moving the timestamp — the
+   * moment the customer was told "accepted" is the moment that counts.
+   */
+  markVerified(errandId: string, dispatcherId: number) {
+    return prisma.dispatchLog.updateMany({
+      where: { errandId, dispatcherId, verifiedAt: null },
+      data: { verifiedAt: new Date() },
+    });
+  },
+
+  /**
+   * Hands a claimed-but-unverified errand back to the queue.
+   *
+   * Deletes rather than tombstones: a dispatcher who opened a request and
+   * decided not to take it did not dispatch anything, and leaving the row would
+   * make `dispatchLogs.length > 0` — the claim test everywhere else — report an
+   * errand as claimed while it sits in the open queue.
+   */
+  deleteUnverifiedForErrand(errandId: string, dispatcherId: number) {
+    return prisma.dispatchLog.deleteMany({
+      where: { errandId, dispatcherId, verifiedAt: null },
+    });
   },
 };

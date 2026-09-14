@@ -1,0 +1,19 @@
+-- The fare the customer agreed to, frozen at confirmation.
+--
+-- quotedHandlingFee already protects one component of the delivery fee. The
+-- rest of it had none, and recalculateFee re-measures the road on every call —
+-- including the one markItemsPurchased makes when a rider uploads a receipt.
+--
+-- Distance is billed in whole started kilometres (ceil(distanceKm - 2) x rate),
+-- so it is a step function. The same Tacurong leg measures 2716 m on Google,
+-- 2724 m as stored and 2756 m on OSRM: a 40 m spread for an identical route.
+-- Near a kilometre boundary that ordinary variance moves the fare by a whole
+-- ₱10. A customer quoted ₱90 was charged ₱80 exactly this way, 35 seconds after
+-- the route was re-measured, with nobody deciding it.
+--
+-- Frozen rather than capped. A ceiling would still have let ₱90 fall to ₱80,
+-- and the complaint is that the number moved at all after it was agreed.
+--
+-- Nullable, and null means "not agreed yet, price it live" — so every errand
+-- that predates this column keeps the behaviour it already had.
+ALTER TABLE `errands` ADD COLUMN `quotedDeliveryFee` DOUBLE NULL;

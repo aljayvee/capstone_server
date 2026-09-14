@@ -47,9 +47,19 @@ async function main() {
   // Flipping one to Active later (once its gateway integration exists) is then
   // a data change, not a code change.
   const paymentModes: Array<{ name: string; status: "Active" | "Inactive" }> = [
+    // Cash at the door.
     { name: "Cash on Delivery", status: "Active" },
-    { name: "GCash / PayMaya", status: "Inactive" },
-    { name: "Bank Transfer", status: "Inactive" },
+
+    // The two non-COD channels. Both settle on the company's Facebook Page —
+    // the customer sends money, a dispatcher sees it arrive and vouches for it —
+    // and both run on the SAME arrangement: 50% of the goods before a rider is
+    // sent, the balance in cash at the door. Universally, without exception,
+    // which is why there is no plan-kind to record anywhere.
+    { name: "GCash / PayMaya", status: "Active" },
+    { name: "Bank Transfer", status: "Active" },
+
+    // No gateway, and no Facebook Page path either — there is no way to actually
+    // pay by card, so offering it would strand whoever picked it.
     { name: "Debit/Credit Card", status: "Inactive" },
   ];
   for (const mode of paymentModes) {

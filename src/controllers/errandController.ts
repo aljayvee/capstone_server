@@ -101,6 +101,18 @@ export const claimErrand = asyncHandler<AuthenticatedRequest>(async (req, res: R
   res.json(errand);
 });
 
+/** The dispatcher has verified the order with the customer and is taking it on. */
+export const verifyErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const errand = await errandService.verifyErrand(req.params.id, req.user!.id);
+  res.json(errand);
+});
+
+/** Puts a request the dispatcher opened but did not take back into the queue. */
+export const releaseErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const errand = await errandService.releaseErrand(req.params.id, req.user!.id);
+  res.json(errand);
+});
+
 export const acceptErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   // occurredAt is set by a rider flushing an action they took while offline, so
   // the record reflects when it happened rather than when the signal came back.

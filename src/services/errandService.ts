@@ -2,8 +2,9 @@ import { errandRepository, dispatchLogRepository } from "../repositories/errandR
 import { pinpointRepository, type PinpointInput } from "../repositories/pinpointRepository.js";
 import { pabiliItemRepository } from "../repositories/pabiliItemRepository.js";
 import { pabiliDetailRepository, type PabiliDetailInput } from "../repositories/pabiliDetailRepository.js";
-import { pricingStoreCount } from "./patterns/pricingStoreCount.js";
+import { pricingStoreCount, distinctStopCount } from "./patterns/pricingStoreCount.js";
 import { smoothPath } from "../lib/routing/smoothPath.js";
+import { fareAfterAgreement } from "./patterns/agreedFare.js";
 import { GEOFENCE_RADIUS_METERS } from "./geofenceService.js";
 import { decodePolyline, encodePolyline } from "../lib/routing/polyline.js";
 import { rateConfigRepository } from "../repositories/rateConfigRepository.js";
@@ -28,13 +29,22 @@ import * as routingProvider from "../lib/routing/resilientRoutingService.js";
 import { isWithinServiceArea } from "../lib/serviceArea.js";
 import { POSITION_FRESHNESS_MS } from "./etaService.js";
 import * as commissionService from "./commissionService.js";
+// Namespace import, deliberately: errandPaymentService calls back into
+// recalculateFee, so the two form a cycle. Both sides only reach across inside
+// function bodies, never at module top level, which is the same shape
+// proofImageService already uses.
+import * as errandPaymentService from "./errandPaymentService.js";
 import { buildFeeBreakdown, type CustomerFeeBreakdown, type PricedErrand } from "./patterns/feeBreakdown.js";
 import { modesForCategoryNames, resolveCategoryModes } from "./patterns/categoryFeeModes.js";
+import { resolveHandlingEvidence } from "./patterns/handlingEvidence.js";
+import { isCodSelection, hasPaymentLedger } from "./patterns/paymentModes.js";
+import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { buildRiderEarnings, type EarningErrand } from "./patterns/riderEarnings.js";
 import { whereRiderBecomesFree, dispatchCostSeconds } from "./patterns/dispatchCost.js";
 import type { GeoPoint } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma.js";
+import type { Prisma } from "@prisma/client";
 
 /**
  * How many accepted errands one rider may carry at once.
@@ -80,6 +90,47 @@ function withCustomerName(customer: CustomerRelation) {
 // the only place that can guarantee the customer, the dispatcher and the rider
 // are shown the same figures. The raw fee columns stay on the payload too, so
 // existing consumers are unaffected.
+/**
+ * The payment plan for one errand, where it has one.
+ *
+ * Derived rather than fetched: the ledger rows ride along on ERRAND_INCLUDE, so
+ * this stays synchronous and attachErrandNames — which every errand response
+ * already passes through — can attach it without becoming async.
+ *
+ * Null unless the errand is actually on the downpayment plan. Every COD errand
+ * gets null, and a client that sees null behaves exactly as it did before any of
+ * this existed.
+ */
+function derivePaymentPlan(errand: unknown) {
+  const row = errand as {
+    estimatedCost?: number;
+    totalCost?: number;
+    status?: string;
+    overageEscalatedAt?: Date | null;
+    overageResolvedAt?: Date | null;
+    payments?: Array<{ kind: string; amount: number }>;
+    paymentSelection?: { paymentMode: { name: string } } | null;
+  };
+
+  if (!hasPaymentLedger(row.paymentSelection) || typeof row.totalCost !== "number") {
+    return null;
+  }
+
+  const escalated = row.overageEscalatedAt ?? null;
+  const resolved = row.overageResolvedAt ?? null;
+  const overagePending = escalated ? !resolved || resolved < escalated : false;
+
+  const summary = summarisePaymentPlan({
+    goodsSubtotal: row.estimatedCost ?? 0,
+    grandTotal: row.totalCost,
+    entries: (row.payments ?? []) as Array<{ kind: never; amount: number }>,
+    overagePending,
+    cancelled: row.status === "CANCELLED",
+  });
+
+  return { ...summary, hasLedger: true };
+}
+
 export function attachErrandNames<
   T extends {
     customer?: CustomerRelation;
@@ -120,6 +171,13 @@ export function attachErrandNames<
       ...log,
       dispatcher: withPersonName(log.dispatcher),
     })),
+    // Where this errand's money stands, on the same terms as feeBreakdown: one
+    // server-derived shape, so the customer's balance, the dispatcher's panel
+    // and the rider's cash step cannot disagree about what is owed.
+    //
+    // Null for every COD errand, which is almost all of them — a client seeing
+    // null behaves exactly as it did before this existed.
+    paymentPlan: derivePaymentPlan(errand),
     // Only for payloads that actually carry pricing — some callers pass slim
     // projections, and inventing a zeroed breakdown for those would be worse
     // than omitting it.
@@ -434,7 +492,10 @@ export async function recalculateFee(errandId: string) {
   // actually pinned — see pricingStoreCount for the trade-off this accepts.
   const storeCount = pricingStoreCount({
     storeCount: errand.storeCount,
-    pinnedStops: (errand.pinpoints || []).length,
+    // DISTINCT stops, not row count. The same shop pinned twice is one stop of
+    // rider time, and billing it as two added a multi-store fee to a fare the
+    // customer had already agreed to.
+    pinnedStops: distinctStopCount(errand.pinpoints),
   });
   const destination =
     errand.deliveryLatitude != null && errand.deliveryLongitude != null
@@ -455,11 +516,16 @@ export async function recalculateFee(errandId: string) {
   const distanceKm = routed?.distanceKm ?? totalRouteDistanceKm(stops, destination);
 
   const selection = await paymentSelectionRepository.findByErrandId(errandId);
-  const isCod = !selection || selection.paymentMode.name === "Cash on Delivery";
+  const isCod = isCodSelection(selection);
 
   // Prefers the pinned stops' categories over the customer's original picks —
   // once a dispatcher has chosen actual stores, those are what the rider visits.
   const categoryModes = await resolveCategoryModes(errandId);
+
+  // How good the basket figure is, and what the customer already agreed to pay
+  // for handling it. The ceiling is null until they confirm the breakdown (see
+  // confirmOrder), which is the same as the behaviour that came before.
+  const handlingEvidence = await resolveHandlingEvidence(errandId);
 
   const breakdown = defaultPricingStrategy.calculate(
     {
@@ -472,9 +538,53 @@ export async function recalculateFee(errandId: string) {
       distanceKm,
       isCod,
       categoryModes,
+      quotedHandlingCeiling: errand.quotedHandlingFee,
+      handlingEvidence,
     },
     rateConfig
   );
+
+  // The fare stops moving once the customer has agreed to it.
+  //
+  // This function re-measures the road on every call, and markItemsPurchased
+  // calls it when the rider uploads a receipt. Distance is billed in whole
+  // started kilometres, so it is a step function: the same leg measuring 2716 m
+  // on Google and 2756 m on OSRM can land either side of a kilometre boundary
+  // and move the fare ₱10 with nobody deciding it. That is how a customer quoted
+  // ₱90 came to be charged ₱80, 35 seconds after a re-measurement.
+  //
+  // The item money is NOT frozen with it. A receipt that beats the estimate is
+  // the customer's to pay and checkReceiptOverage's to stop; what they agreed
+  // was the FARE, and that is the only thing held here.
+  const fare = fareAfterAgreement({
+    agreedFare: errand.quotedDeliveryFee,
+    livePrice: { deliveryFee: breakdown.deliveryFee, totalCost: breakdown.totalCost },
+    estimatedCost: errand.estimatedCost,
+    tip: errand.tip,
+  });
+
+  const fareIsAgreed = fare.frozen;
+  const effectiveDeliveryFee = fare.deliveryFee;
+  const effectiveTotalCost = fare.totalCost;
+
+  // Components are kept as stamped rather than recomputed, because they are the
+  // account of the agreed fare — a freshly derived set would explain a bill the
+  // customer was never charged, and the four are documented to sum to it.
+  const components = fareIsAgreed
+    ? {
+        multiStoreFee: errand.multiStoreFee,
+        groceryFee: errand.groceryFee,
+        nonCodFee: errand.nonCodFee,
+        distanceFee: errand.distanceFee,
+        handlingFeeDecision: errand.handlingFeeDecision as Prisma.InputJsonValue,
+      }
+    : {
+        multiStoreFee: breakdown.multiStoreFee,
+        groceryFee: breakdown.groceryFee,
+        nonCodFee: breakdown.nonCodFee,
+        distanceFee: breakdown.distanceFee,
+        handlingFeeDecision: breakdown.handlingDecision as unknown as Prisma.InputJsonValue,
+      };
 
   // Short-circuit only when there is genuinely nothing new to write. The fare
   // can legitimately be unchanged while the route data is being recorded for the
@@ -487,13 +597,13 @@ export async function recalculateFee(errandId: string) {
   // the total happens to match — otherwise an errand priced before the component
   // columns existed would never acquire one.
   const breakdownRecorded = errand.feeCalculatedAt !== null;
-  if (breakdown.totalCost === errand.totalCost && routeUnchanged && breakdownRecorded) {
+  if (effectiveTotalCost === errand.totalCost && routeUnchanged && breakdownRecorded) {
     return attachErrandNames(errand);
   }
 
   const updatedErrand = await errandRepository.update(errandId, {
-    deliveryFee: breakdown.deliveryFee,
-    totalCost: breakdown.totalCost,
+    deliveryFee: effectiveDeliveryFee,
+    totalCost: effectiveTotalCost,
 
     // The components behind deliveryFee. StandardPricingStrategy has always
     // returned these and this function has always discarded them, which left the
@@ -503,10 +613,9 @@ export async function recalculateFee(errandId: string) {
     //
     // estimatedCost is deliberately absent: it is the customer's item money, not
     // a fee, and it must never be folded into one.
-    multiStoreFee: breakdown.multiStoreFee,
-    groceryFee: breakdown.groceryFee,
-    nonCodFee: breakdown.nonCodFee,
-    distanceFee: breakdown.distanceFee,
+    //
+    // Held at their stamped values once the fare is agreed — see above.
+    ...components,
     feeCalculatedAt: new Date(),
     // Persist what the fare was actually billed on. Previously distance was
     // computed here and thrown away, leaving no record of why a customer was
@@ -524,11 +633,11 @@ export async function recalculateFee(errandId: string) {
   });
 
   // Keep customer transaction amount in sync with the live errand total
-  await customerTransactionRepository.updateAmountByErrandId(errandId, breakdown.totalCost);
+  await customerTransactionRepository.updateAmountByErrandId(errandId, effectiveTotalCost);
 
   const errandWithNames = attachErrandNames(updatedErrand);
   eventPublisher.emit("order:updated", errandWithNames);
-  void notificationService.notifyFeeUpdated(errand.customerId, errandId, breakdown.totalCost);
+  void notificationService.notifyFeeUpdated(errand.customerId, errandId, effectiveTotalCost);
   return errandWithNames;
 }
 
@@ -600,6 +709,88 @@ export async function claimErrand(errandId: string, dispatcherId: number) {
     }
   })();
 
+  return errandWithNames;
+}
+
+/**
+ * The dispatcher has checked the order with the customer and is taking it on.
+ *
+ * Separate from claiming because opening a queued request now claims it — one
+ * dispatcher in a customer's chat at a time — which leaves a window where an
+ * errand is claimed but the items have not been verified. Steps 1-4 stay shut
+ * until this stamps `verifiedAt`.
+ *
+ * Only the claiming dispatcher may verify: the claim is what makes them the
+ * person the customer has been talking to.
+ */
+export async function verifyErrand(errandId: string, dispatcherId: number) {
+  const log = await dispatchLogRepository.findLatestByErrandId(errandId);
+  if (!log) {
+    throw new ServiceError(409, "This order has not been opened for review yet.");
+  }
+  if (log.dispatcherId !== dispatcherId) {
+    const claimant = `${log.dispatcher.firstName} ${log.dispatcher.lastName}`.trim();
+    throw new ServiceError(403, `Access denied: this order is being reviewed by ${claimant}.`);
+  }
+
+  // Idempotent — updateMany with `verifiedAt: null` matches nothing the second
+  // time, so a double-click cannot move the moment the customer was told.
+  await dispatchLogRepository.markVerified(errandId, dispatcherId);
+
+  const updated = await errandRepository.findById(errandId);
+  const errandWithNames = updated ? attachErrandNames(updated) : updated;
+  eventPublisher.emit("order:updated", errandWithNames);
+  return errandWithNames;
+}
+
+/**
+ * Puts a request the dispatcher opened but did not take back into the queue.
+ *
+ * The counterpart to opening-as-claiming: without it, a dispatcher who looks at
+ * a request and decides it is not theirs to handle would strand it, since
+ * nothing else clears a dispatch log.
+ *
+ * Refuses once the order has been verified. After that the customer has been
+ * told who their dispatcher is and work has begun — abandoning it silently would
+ * leave them talking to nobody. Cancelling is the honest exit at that point, and
+ * that is what declining already does.
+ */
+export async function releaseErrand(errandId: string, dispatcherId: number) {
+  const errand = await errandRepository.findByIdBasic(errandId);
+  if (!errand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+  if (errand.riderId !== null) {
+    throw new ServiceError(409, "A rider is already assigned to this order.");
+  }
+
+  const log = await dispatchLogRepository.findLatestByErrandId(errandId);
+  if (!log) {
+    throw new ServiceError(409, "This order is already in the queue.");
+  }
+  if (log.dispatcherId !== dispatcherId) {
+    const claimant = `${log.dispatcher.firstName} ${log.dispatcher.lastName}`.trim();
+    throw new ServiceError(403, `Access denied: this order is being reviewed by ${claimant}.`);
+  }
+  if (log.verifiedAt !== null) {
+    throw new ServiceError(
+      409,
+      "This order has already been accepted. Decline it instead so the customer is told why."
+    );
+  }
+
+  const { count } = await dispatchLogRepository.deleteUnverifiedForErrand(errandId, dispatcherId);
+  if (count === 0) {
+    throw new ServiceError(409, "This order is no longer yours to return.");
+  }
+
+  // Back to AVAILABLE so the queue shows it again. Done after the log delete so
+  // a failure here cannot leave an unclaimed errand hidden from every dispatcher.
+  await errandRepository.update(errandId, { status: "AVAILABLE" });
+
+  const updated = await errandRepository.findById(errandId);
+  const errandWithNames = updated ? attachErrandNames(updated) : updated;
+  eventPublisher.emit("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -988,7 +1179,36 @@ export async function confirmOrder(errandId: string, customerId: number) {
     throw new ServiceError(404, "Errand not found");
   }
 
-  const errandWithNames = attachErrandNames(errand);
+  // Stamp what the customer is agreeing to, so nothing can quietly bill them
+  // more handling fee than this later.
+  //
+  // markItemsPurchased overwrites estimatedCost with the real receipt total —
+  // AFTER the rider has bought the goods, when there is no longer any moment in
+  // which to ask for consent. Before this ceiling existed, a ₱1,000 estimate
+  // ringing up at ₱1,200 moved the fee from ₱50 to ₱120 with nobody deciding it.
+  //
+  // Re-stamped on every confirmation, so a dispatcher's item revision that the
+  // customer approves legitimately raises the ceiling. It is agreement that
+  // moves it, never arithmetic.
+  // The whole fare is stamped too, not just the handling component.
+  //
+  // The ceiling above protected one part of the bill while the rest stayed live,
+  // and recalculateFee re-measures the road on every call — so a routing engine
+  // answering 40 m differently could still move the fare across a whole-kilometre
+  // boundary after the customer had agreed to it. Stamped unconditionally,
+  // because a fare exists whether or not a handling fee was ever computed.
+  //
+  // Re-stamped on every confirmation, exactly like the ceiling: a dispatcher's
+  // revision the customer approves legitimately sets a new fare. It is agreement
+  // that moves it, never arithmetic.
+  const stamp: Prisma.ErrandUpdateInput = { quotedDeliveryFee: errand.deliveryFee };
+  if (errand.groceryFee !== null) {
+    stamp.quotedHandlingBasket = errand.estimatedCost;
+    stamp.quotedHandlingFee = errand.groceryFee;
+  }
+  const confirmed = await errandRepository.update(errandId, stamp);
+
+  const errandWithNames = attachErrandNames(confirmed);
   eventPublisher.emit("order:confirmed", { errandId, customerId, confirmedAt: new Date() });
   eventPublisher.emit("order:updated", errandWithNames);
   return errandWithNames;
@@ -1169,6 +1389,15 @@ export async function markItemsPurchased(
 
   await errandRepository.update(errandId, updateData);
 
+  // The real total is known for the first time here — and unavoidably after the
+  // rider has already paid for the goods. If it beat what the customer agreed
+  // to, this is the moment to stop rather than to bill them for a number they
+  // never saw. The handling-fee ceiling holds their bill steady meanwhile; this
+  // holds the goods.
+  if (receiptTotal !== undefined && receiptTotal > 0) {
+    await errandPaymentService.checkReceiptOverage(errandId, receiptTotal);
+  }
+
   // Recalculate fees with the verified receipt subtotal to accurately apply groceryFee from rate_configs
   const errandWithNames = await recalculateFee(errandId);
   eventPublisher.emit("order:updated", errandWithNames);
@@ -1238,6 +1467,20 @@ export async function updateStatus(
   }
 
   assertValidTransition(errand.status as unknown as ErrandStatusValue, normalized);
+
+  // The goods-release gate.
+  //
+  // DELIVERED is the moment the items leave the rider's hands, and the only
+  // moment the company's exposure becomes unrecoverable. On the downpayment plan
+  // that must not happen while the customer's downpayment is unconfirmed, or
+  // while a receipt overage they never agreed to is still being sorted out.
+  //
+  // Sits here rather than in the rider app because a client-side gate is a
+  // suggestion. The app has its own copy (errandGate.ts) so the rider sees a
+  // reason instead of a bare 409 — but this is the one that decides.
+  if (normalized === "DELIVERED") {
+    await errandPaymentService.assertGoodsReleasable(errandId);
+  }
 
   // Stamp the terminal transitions. Delivery duration used to be derived from
   // `updatedAt - createdAt`, which silently became wrong the moment anything

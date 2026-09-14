@@ -27,4 +27,26 @@ export const riderLoginSessionRepository = {
       data: { logoutAt, durationSeconds },
     });
   },
+
+  /**
+   * Sessions that overlap a range, for the Rider Performance report's
+   * errands-per-active-hour figure.
+   *
+   * Includes still-open sessions (`logoutAt: null`) that began before the window
+   * closed. A rider mid-shift when the report is run has real hours on the clock
+   * and excluding them would divide their completed errands by a smaller number,
+   * flattering exactly the riders whose day is not yet finished. The caller
+   * clamps an open session's end to the window rather than counting it whole.
+   */
+  findOverlappingBetween(start: Date, end: Date) {
+    return prisma.riderLoginSession.findMany({
+      where: {
+        OR: [
+          { logoutAt: { gte: start, lt: end } },
+          { logoutAt: null, loginAt: { lt: end } },
+        ],
+      },
+      select: { riderId: true, loginAt: true, logoutAt: true, durationSeconds: true },
+    });
+  },
 };

@@ -31,7 +31,34 @@ export const pinpointsBodySchema = z.object({
   pinpoints: z
     .array(pinpointSchema)
     .min(1, "At least one pinpoint is required.")
-    .max(3, "Maximum 3 pinpoints allowed per errand."),
+    .max(3, "Maximum 3 pinpoints allowed per errand.")
+    // The same catalogue place twice is provably one shop, and it used to be
+    // accepted silently and then billed as two. Refused here rather than only
+    // in the browser, because a client guard does nothing for a request that
+    // does not come from our dispatcher screen.
+    //
+    // Only the PROVABLE case. Two pins that are merely near each other are left
+    // alone on purpose: two real shops can share a building, the dispatcher
+    // screen already warns at 40 m and lets them override it deliberately, and
+    // the fee side refuses to double-charge for anything provably identical
+    // (see distinctStopCount).
+    .superRefine((pinpoints, ctx) => {
+      const seen = new Map<string, number>();
+      pinpoints.forEach((pin, index) => {
+        const placeId = pin.placeId?.trim();
+        if (!placeId) return;
+        const firstIndex = seen.get(placeId);
+        if (firstIndex === undefined) {
+          seen.set(placeId, index);
+          return;
+        }
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "placeId"],
+          message: `"${pin.storeName}" is already pinned as stop ${firstIndex + 1}.`,
+        });
+      });
+    }),
 });
 
 export type PinpointInput = z.infer<typeof pinpointSchema>;

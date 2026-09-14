@@ -16,11 +16,11 @@ import { buildRiderEarnings } from "../src/services/patterns/riderEarnings.js";
 const PAST_THE_GATE = 20;
 
 const RATE = {
-  baseFee: 67,
+  baseFee: 70,
   perKmRate: 10,
   multiStoreFeePerStore: 30,
   maxAdditionalStores: 2,
-  groceryFeeThreshold: 3000,
+  groceryFeeThreshold: 1001,
   groceryFeePercent: 10,
   groceryFeeFlat: 50,
   nonCodThreshold: 1000,
@@ -56,7 +56,7 @@ describe("customer orders that are not the tidy case", () => {
     // a rider still rides, but there are no goods to handle.
     const b = price({ estimatedCost: 0 });
     expect(b.groceryFee).toBe(0);
-    expect(b.deliveryFee).toBe(67);
+    expect(b.deliveryFee).toBe(70);
   });
 
   it("never charges for more stores than the system allows", () => {
@@ -71,11 +71,13 @@ describe("customer orders that are not the tidy case", () => {
   });
 
   it("switches from flat to percentage exactly at the threshold", () => {
-    // The owner's rule: 50 flat below 3000, 10 percent at or above it. The
-    // basket is compared in whole pesos, so 2999.99 counts as 3000.
-    expect(resolveHandlingFee(2999, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(50);
-    expect(resolveHandlingFee(2999.99, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(300);
-    expect(resolveHandlingFee(3000, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(300);
+    // The owner's rule: ₱50 flat at ₱1,000, 10 percent from ₱1,001. The basket
+    // is compared in whole pesos, so ₱1,000.99 counts as ₱1,001.
+    expect(resolveHandlingFee(1000, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(50);
+    expect(resolveHandlingFee(1000.99, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(51);
+    // Marginal relief holds the first pesos past the crossover down; by ₱2,000
+    // the plain percentage has long since taken over.
+    expect(resolveHandlingFee(2000, PAST_THE_GATE, ["THRESHOLD"], RATE)).toBe(200);
   });
 
   it("charges the dearer mode when the chosen categories disagree", () => {
@@ -95,7 +97,7 @@ describe("customer orders that are not the tidy case", () => {
 
   it("falls back to the threshold rule when no category resolves", () => {
     // A retired category, or one renamed since the order was placed.
-    expect(resolveHandlingFee(1500, PAST_THE_GATE, [], RATE)).toBe(50);
+    expect(resolveHandlingFee(1500, PAST_THE_GATE, [], RATE)).toBe(150);
     expect(resolveHandlingFee(5000, PAST_THE_GATE, [], RATE)).toBe(500);
   });
 

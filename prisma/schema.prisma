@@ -61,6 +61,7 @@ model User {
   ratingsReceived         Rating[]
   notifications           Notification[]
   paymentEnabledErrands   Errand[]                 @relation("PaymentEnabledBy")
+  paymentsConfirmed       ErrandPayment[]          @relation("ErrandPaymentsConfirmed")
   connectivityIncidents   ConnectivityIncident[]
   settlements             SettlementRecord[]
   proofImages             ErrandProofImage[]
@@ -174,6 +175,7 @@ model CustomerAccount {
   verificationCodes       EmailVerificationCode[]
   accountModificationLogs AccountModificationLog[]
   passwordResetAttempts   PasswordResetAttempt[]
+  proofImages             ErrandProofImage[]
 
   @@map("customer_accounts")
 }
@@ -379,6 +381,21 @@ model Errand {
   // Mirrors paymentEnabledAt's nullable-timestamp-as-gate pattern.
   itemsPurchasedAt DateTime?
 
+  // The receipt came in higher than the customer agreed to, and the goods are
+  // being held until the office arranges the difference.
+  //
+  // Stamped by markItemsPurchased when the real receipt total clears the agreed
+  // basket by more than OVERAGE_ESCALATION_PESOS, cleared when a dispatcher
+  // confirms a TOP_UP covering it. While escalated and unresolved, the rider
+  // cannot advance the errand to DELIVERED: the company has fronted more money
+  // than the downpayment covers, and handing the goods over would be the moment
+  // that becomes unrecoverable.
+  //
+  // Same nullable-timestamp-as-gate pattern as paymentEnabledAt and
+  // itemsPurchasedAt above.
+  overageEscalatedAt DateTime?
+  overageResolvedAt  DateTime?
+
   // Lifecycle timestamps. Before these existed the only way to measure how long
   // a delivery took was `updatedAt - createdAt`, which is wrong the moment
   // anything touches the row after delivery. Dwell learning and on-time
@@ -415,6 +432,50 @@ model Errand {
   distanceFee     Float?
   feeCalculatedAt DateTime?
 
+  // What the customer agreed the handling fee would be, and on what basket.
+  //
+  // Stamped when they confirm the itemised breakdown, and never exceeded after.
+  // markItemsPurchased overwrites estimatedCost with the REAL receipt total —
+  // after the rider has already bought the goods, so there is no moment left in
+  // which to ask the customer to consent to a bigger number. Without a ceiling a
+  // ₱1,000 estimate ringing up at ₱1,200 silently became ₱120 against an agreed
+  // ₱50. The ceiling is a one-way ratchet: a smaller real basket still lowers
+  // the fee.
+  //
+  // Null on errands confirmed before this existed, and on errands not yet
+  // confirmed — decideHandlingFee treats null as "no ceiling", which is exactly
+  // the behaviour that came before.
+  quotedHandlingBasket Float?
+  quotedHandlingFee    Float?
+
+  // The whole fare the customer agreed to, stamped when they confirm.
+  //
+  // The handling ceiling above protects one component. The rest of the fare had
+  // no such protection, and recalculateFee re-measures the road on every call —
+  // including the one markItemsPurchased makes when the rider uploads a receipt.
+  // Distance is billed in whole started kilometres, so an ordinary difference
+  // between routing engines (the same Tacurong leg measures 2716 m on Google,
+  // 2724 m stored, 2756 m on OSRM) can cross a kilometre boundary and move the
+  // fare by a whole ₱10 with nobody deciding it. A customer quoted ₱90 was
+  // charged ₱80 that way; the same mechanism charges ₱100 just as easily.
+  //
+  // Frozen rather than capped: the figure the customer agreed to is the figure
+  // they pay. A ceiling would still have let ₱90 fall to ₱80, which is the
+  // mismatch this exists to stop.
+  //
+  // Null on errands confirmed before this existed, and on errands not yet
+  // confirmed — recalculateFee treats null as "not agreed yet, price it live",
+  // which is exactly the behaviour that came before.
+  quotedDeliveryFee Float?
+
+  // Why the handling fee is what it is: mode, tier, basket, evidence, what the
+  // rule alone produced, the relief cap, the ceiling, and which one won.
+  //
+  // "Why ₱50 and not 10%?" is a question the dispatcher, the owner and the
+  // customer all end up asking, and the fee used to arrive as a bare figure with
+  // no account of itself. See patterns/pricingStrategy.decideHandlingFee.
+  handlingFeeDecision Json?
+
   // ETA is stored as a range, never a single number: an errand includes time
   // standing in a queue, which is inherently uncertain. See services/etaService.ts.
   etaLowAt      DateTime?
@@ -432,6 +493,7 @@ model Errand {
   pinpoints             ErrandPinpoint[]
   transaction           CustomerTransaction?
   paymentSelection      PaymentSelection?
+  payments         ErrandPayment[]
   rating                Rating?
   connectivityIncidents ConnectivityIncident[]
   settlement            SettlementRecord?
@@ -600,6 +662,19 @@ model DispatchLog {
   notes        String?
   dispatchedAt DateTime @default(now())
 
+  // When the dispatcher finished verifying the order WITH the customer and
+  // accepted it — distinct from dispatchedAt, which is when they merely opened
+  // it and took it out of the queue.
+  //
+  // Two boundaries, because opening a request now locks it: a claimed errand may
+  // be sitting in review with items still being checked, and Steps 1-4 must stay
+  // shut until someone has actually said the order is good. Errand.status cannot
+  // carry this — PENDING already means both things.
+  //
+  // Null on every existing row, which is correct: nothing claimed before this
+  // shipped went through a verification step.
+  verifiedAt   DateTime?
+
   @@map("dispatch_logs")
 }
 
@@ -668,7 +743,14 @@ model RateConfig {
   // The two column names describe what the values ARE (a percentage, a flat
   // amount), not where they apply — so inverting which side each governs needed
   // no data change. See StandardPricingStrategy for the applied rule.
-  groceryFeeThreshold Float @default(3000)
+  //
+  // 1001, not 1000: the owner's rule is "₱50 at ₱1,000, 10% from ₱1,001", and
+  // the comparison is `>=`. The size gate in pricingStrategy.ts admits baskets
+  // from ₱1,000, so the flat tier is exactly the ₱1,000 basket plus any long
+  // list under it. Crossing the threshold does NOT produce a ₱50 step —
+  // marginal relief holds the fee down until the plain percentage is the
+  // cheaper of the two, around ₱1,055. See decideHandlingFee.
+  groceryFeeThreshold Float @default(1001)
   groceryFeePercent   Float @default(10)
   groceryFeeFlat      Float @default(50)
 
@@ -676,9 +758,17 @@ model RateConfig {
   // COD — currently unreachable in practice (see paymentMethodStrategy.ts's
   // UnavailableStrategy) but modeled now so a future GCash/Bank/Card
   // integration needs no further pricing change.
+  // The owner's rule: ₱15 on a purchase of ₱3,000 or more, nothing below it.
+  //
+  // These were ₱50 above and ₱15 below — the two amounts the wrong way round,
+  // charging the larger purchase more than the rule allows and the smaller one a
+  // fee it never owed. The column names describe WHERE each applies, not their
+  // size, so nothing about the naming caught it, and the owner portal rendered
+  // no inputs for them at all until recently — a fee nobody could see was a fee
+  // nobody could notice was wrong. rateConfigValidators now refuses High < Low.
   nonCodThreshold Float @default(3000)
-  nonCodFeeHigh   Float @default(50)
-  nonCodFeeLow    Float @default(15)
+  nonCodFeeHigh   Float @default(15)
+  nonCodFeeLow    Float @default(0)
 
   updatedAt DateTime @updatedAt
 
@@ -773,6 +863,52 @@ model PaymentSelection {
   confirmedAt   DateTime    @default(now())
 
   @@map("payment_selections")
+}
+
+// What a customer actually paid, and when somebody confirmed it.
+//
+// A LEDGER, not a set of columns on Errand, because the amounts here are facts
+// about money that arrived and must never be restated. The downpayment is taken
+// off the ESTIMATED basket before the rider buys anything, and
+// markItemsPurchased later overwrites estimatedCost with the real receipt total
+// — so a derived "half of estimatedCost" would silently change after the
+// customer had already paid it. A row cannot change under them.
+//
+// It also gives the awkward cases somewhere to live instead of a special case:
+// a TOP_UP when the receipt came in high, a REFUND when an errand is cancelled
+// after the downpayment landed.
+enum ErrandPaymentKind {
+  // Whatever the customer pays before a rider is sent, through the company's
+  // Facebook Page. On the 50% plan that is half the goods; on GCash / Bank
+  // Transfer / Card it is the whole bill. One kind, because it is the same act
+  // — money arriving out-of-band that a dispatcher has to vouch for — and the
+  // amount owed is a property of the PLAN, not of the payment.
+  UPFRONT
+  TOP_UP // an overage the customer agreed to after the receipt came in higher
+  FINAL  // the balance, collected in cash by the rider at the door
+  REFUND // money returned, e.g. a cancellation after money had already arrived
+}
+
+model ErrandPayment {
+  id       String            @id @default(uuid())
+  errandId String
+  errand   Errand            @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  kind     ErrandPaymentKind
+  amount   Float
+
+  // Who attested the money arrived, and when.
+  //
+  // Payment lands on the company's Facebook Page, outside this system — there is
+  // no gateway callback to trust, only a person saying they saw it. Recording
+  // WHICH person is the whole control: an attestation nobody signed is a figure
+  // with no one accountable for it.
+  confirmedByUserId Int
+  confirmedBy       User     @relation("ErrandPaymentsConfirmed", fields: [confirmedByUserId], references: [id])
+  confirmedAt       DateTime @default(now())
+  note              String?  @db.VarChar(255)
+
+  @@index([errandId])
+  @@map("errand_payments")
 }
 
 // 14. Ratings Table (3NF: one customer rating per errand, tied to the rider
@@ -876,6 +1012,10 @@ enum ProofImageKind {
   // the OCR path is skipped entirely; the amount comes from the rider and is
   // marked unverified because nothing else can corroborate it.
   NO_RECEIPT
+  // The CUSTOMER's own payment confirmation, uploaded from their phone when
+  // they pay through the Facebook Page on a non-COD plan. The only kind not
+  // captured by a rider — see ErrandProofImage.customerId.
+  PAYMENT_PROOF
 }
 
 enum ImageClarityVerdict {
@@ -901,8 +1041,16 @@ model ErrandProofImage {
   // at the customer's address rather than at any store.
   pinpointId Int?
   pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
-  riderId  Int
-  rider    User            @relation(fields: [riderId], references: [id])
+  // Who captured this. Exactly one of the two is set.
+  //
+  // riderId was required, because every proof used to be a rider's: a receipt,
+  // a handover photo. A customer's payment screenshot is evidence for the same
+  // errand and belongs in the same table — same OCR path, same clarity scoring,
+  // same viewing rules — but it has no rider behind it.
+  riderId  Int?
+  rider    User?           @relation(fields: [riderId], references: [id])
+  customerId Int?
+  customer   CustomerAccount? @relation(fields: [customerId], references: [id])
 
   kind      ProofImageKind
   imageData String         @db.LongText
@@ -969,6 +1117,13 @@ model ReceiptExtraction {
   extractedDate  DateTime?
   confidence     Float?
   status         OcrStatus @default(NEEDS_REVIEW)
+
+  // Only a payment confirmation carries these. The reference is what makes a
+  // payment findable again on the company's Facebook Page or bank statement —
+  // an amount with no reference is a screenshot of nothing, so uploads without
+  // one are rejected rather than stored.
+  referenceNo   String? @db.VarChar(40)
+  transactionId String? @db.VarChar(40)
 
   // What the rider actually accepted. Null until they confirm.
   confirmedTotal Float?

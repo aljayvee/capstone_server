@@ -22,7 +22,15 @@ export type ExceptionKind =
   /** A stop with items and no proof of any kind behind it. */
   | "MISSING_RECEIPT"
   /** Dwell far past what this kind of shop usually takes. */
-  | "STALLED_STOP";
+  | "STALLED_STOP"
+  /**
+   * The receipt beat what the customer agreed to, and nobody has arranged the
+   * difference yet. The rider is standing still holding the company's goods —
+   * this ages into urgency faster than anything else in the list.
+   */
+  | "OVERAGE_PENDING"
+  /** Delivered on the downpayment plan without the balance being collected. */
+  | "UNPAID_BALANCE";
 
 /**
  * Below this, a money exception is noise.
@@ -53,6 +61,13 @@ export const MATERIALITY_PESOS = 20;
 const MONEY_KINDS: ReadonlySet<ExceptionKind> = new Set<ExceptionKind>([
   "CASH_VARIANCE",
   "RECEIPT_DIVERGENCE",
+  // Both are money the business has fronted and not recovered, so both are
+  // subject to the materiality floor — a ₱5 balance is not worth a queue entry.
+  // In practice they clear it easily: OVERAGE_PENDING cannot even be raised
+  // below ₱20 (see paymentLedger.OVERAGE_ESCALATION_PESOS), and an unpaid
+  // balance carries the delivery fee at minimum.
+  "OVERAGE_PENDING",
+  "UNPAID_BALANCE",
 ]);
 
 export function isMoneyException(kind: ExceptionKind): boolean {

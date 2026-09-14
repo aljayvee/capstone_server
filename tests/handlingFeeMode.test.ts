@@ -6,13 +6,13 @@ import {
   type RateConfigValues,
 } from "../src/services/patterns/pricingStrategy.js";
 
-// Mirrors the live rate_configs row.
+// Mirrors the live rate_configs row: ₱50 flat at ₱1,000, 10% from ₱1,001.
 const RATES: RateConfigValues = {
-  baseFee: 67,
+  baseFee: 70,
   perKmRate: 10,
   multiStoreFeePerStore: 30,
   maxAdditionalStores: 2,
-  groceryFeeThreshold: 3000,
+  groceryFeeThreshold: 1001,
   groceryFeePercent: 10,
   groceryFeeFlat: 50,
   nonCodThreshold: 3000,
@@ -35,13 +35,21 @@ describe("handling fee per mode", () => {
     { mode: "FLAT" as const, basket: 9000, expected: 50 },
     { mode: "PERCENT" as const, basket: 1500, expected: 150 },
     { mode: "PERCENT" as const, basket: 9000, expected: 900 },
-    // NONE is an exemption for ordinary orders, not an absolute one: these rows
-    // are all past the size gate, where it stops applying. Its exempting
-    // behaviour is covered in "the size gate" below.
-    { mode: "NONE" as const, basket: 1500, expected: 50 },
-    { mode: "NONE" as const, basket: 9000, expected: 900 },
-    { mode: "THRESHOLD" as const, basket: 2999, expected: 50 },
-    { mode: "THRESHOLD" as const, basket: 3000, expected: 300 },
+    // NONE is absolute: a category the owner marked exempt pays nothing at any
+    // basket size. These rows are past the size gate and still charge zero.
+    //
+    // This reversed a prior rule that coerced NONE to THRESHOLD above the gate.
+    // The owner scopes the handling fee to groceries, and "groceries only"
+    // cannot hold if every exempt category re-prices the moment a basket clears
+    // ₱1,000. See resolveHandlingFee.
+    { mode: "NONE" as const, basket: 1500, expected: 0 },
+    { mode: "NONE" as const, basket: 9000, expected: 0 },
+    { mode: "THRESHOLD" as const, basket: 1000, expected: 50 },
+    // Just past the crossover marginal relief holds the fee down; the plain
+    // percentage resumes above ~₱1,055. See the relief block in
+    // handlingFeeDecision.test.ts.
+    { mode: "THRESHOLD" as const, basket: 1001, expected: 51 },
+    { mode: "THRESHOLD" as const, basket: 2000, expected: 200 },
   ])("$mode on a ₱$basket basket charges ₱$expected", ({ mode, basket, expected }) => {
     expect(fee(basket, [mode])).toBe(expected);
   });
@@ -64,12 +72,20 @@ describe("mixed-category errands", () => {
     expect(fee(5000, ["FLAT", "THRESHOLD"])).toBe(500);
   });
 
-  it("stops exempting a NONE category once the order is big enough", () => {
-    // Fast Food and Pharmacy are NONE, but the exemption covers the ordinary
-    // order from them — two meals, one prescription. A 20-unit run past the
-    // gate prices like any other shop.
-    expect(fee(2000, ["NONE"])).toBe(50);
+  it("keeps exempting a NONE category however big the order", () => {
+    // Fast Food and Pharmacy are NONE and stay NONE. A large fast-food order
+    // still pays base, distance and multi-store fees — the costs it actually
+    // creates — but no handling fee, because the owner scoped that fee to
+    // groceries.
+    expect(fee(2000, ["NONE"])).toBe(0);
+  });
+
+  it("still charges when a NONE category is mixed with a charging one", () => {
+    // A pharmacy stop (NONE) alongside a supermarket stop (FLAT) is
+    // substantially a grocery run, and Math.max picks the charging mode. The
+    // exemption covers a category, not a whole errand that merely touches it.
     expect(fee(2000, ["NONE", "FLAT"])).toBe(50);
+    expect(fee(2000, ["FLAT", "NONE"])).toBe(50); // order must not matter
   });
 });
 
@@ -81,8 +97,8 @@ describe("fallbacks", () => {
     // Pins the pre-existing behaviour. 8 live rows still carry a retired "test1"
     // storeCategory that resolves to nothing — they must price as they always
     // have rather than throwing or going free.
-    expect(fee(2999, modes)).toBe(50);
-    expect(fee(3000, modes)).toBe(300);
+    expect(fee(1000, modes)).toBe(50);
+    expect(fee(2000, modes)).toBe(200);
   });
 
   it("charges nothing for a basket that has not been priced yet", () => {
@@ -149,15 +165,15 @@ describe("the size gate", () => {
   });
 
   it("still switches to the percentage on a big basket", () => {
-    expect(fee(2999, ["THRESHOLD"], 3)).toBe(50);
-    expect(fee(3000, ["THRESHOLD"], 3)).toBe(300);
+    expect(fee(1000, ["THRESHOLD"], 3)).toBe(50);
+    expect(fee(2000, ["THRESHOLD"], 3)).toBe(200);
   });
 
   it("rounds at the percentage switch too, so both thresholds agree", () => {
-    // ₱2,999.99 is three thousand pesos on a receipt, and the two thresholds
-    // must not disagree about what a peso figure means.
-    expect(fee(2999.49, ["THRESHOLD"], 3)).toBe(50);
-    expect(fee(2999.5, ["THRESHOLD"], 3)).toBe(300);
+    // ₱1,000.50 is ₱1,001 on a receipt, and the size gate and the percentage
+    // switch must not disagree about what a peso figure means.
+    expect(fee(1000.49, ["THRESHOLD"], 3)).toBe(50);
+    expect(fee(1000.5, ["THRESHOLD"], 3)).toBe(51);
   });
 
   it("exempts a fast-food order of the size people actually place", () => {

@@ -1,4 +1,13 @@
+import type { ProofImageKind } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+
+// The kinds that carry a purchase amount. TRANSFER and PROOF_OF_DELIVERY do
+// not, and PROOF_OF_DELIVERY has no stop attached at all.
+//
+// Declared out here rather than inline: WITH_REPORT_DETAILS below is `as const`,
+// which would make this array readonly, and Prisma's enum filter takes a mutable
+// one. Mirrors proofImageService.confirmedReceiptTotal, which sums the same two.
+const RECEIPT_KINDS: ProofImageKind[] = ["RECEIPT", "NO_RECEIPT"];
 
 const WITH_ERRAND_DETAILS = {
   errand: {
@@ -12,16 +21,39 @@ const WITH_ERRAND_DETAILS = {
 
 // Transaction Summary report needs rider name, customer name, and full errand
 // context in one shot — a superset of WITH_ERRAND_DETAILS above.
+//
+// `Errand.category` is deliberately NOT selected: errandValidators pins it to
+// the literal "Pabili", so as a report column it said nothing. The merchant
+// category is resolved instead from the same evidence the Sales report uses —
+// receipts, then items, then pinned stops — which is why the item and pinpoint
+// relations are pulled here. Loading them with the transaction is one query;
+// resolving them afterwards would be three per row.
 const WITH_REPORT_DETAILS = {
   errand: {
     select: {
       id: true,
-      category: true,
+      status: true,
       pickupAddress: true,
       deliveryAddress: true,
       deliveryFee: true,
       estimatedCost: true,
       rider: { select: { firstName: true, lastName: true } },
+      // The live payment method. CustomerTransaction.paymentMethod is written
+      // once at creation and defaults to COD; PaymentSelection is what a
+      // dispatcher actually confirms with the customer.
+      paymentMode: { select: { name: true } },
+      paymentSelection: { select: { paymentMode: { select: { name: true } } } },
+      pabiliItemRequests: { select: { storeCategory: true, quantity: true } },
+      pabiliDetails: { select: { storeCategory: true, quantity: true } },
+      pinpoints: { select: { id: true, category: { select: { name: true, status: true } } } },
+      proofImages: {
+        where: { kind: { in: RECEIPT_KINDS } },
+        select: {
+          pinpointId: true,
+          declaredTotal: true,
+          extraction: { select: { confirmedTotal: true } },
+        },
+      },
     },
   },
   customer: { select: { information: { select: { firstName: true, lastName: true } } } },

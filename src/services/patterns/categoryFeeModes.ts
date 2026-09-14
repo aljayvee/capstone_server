@@ -81,6 +81,26 @@ export async function modesForCategoryNames(names: string[]): Promise<HandlingFe
   return dedupe(categories.map((c) => c.handlingFeeMode as HandlingFeeMode));
 }
 
+/**
+ * The names of every Active merchant category, as a set.
+ *
+ * Revenue attribution (see categoryRevenueAllocation.ts) has to decide whether a
+ * free-text `storeCategory` still means anything. It lives here rather than
+ * there because this file already owns the rule that inactive categories carry
+ * no authority — modesForCategoryNames above filters on exactly this — and
+ * splitting that rule across two modules is how the two come to disagree.
+ *
+ * One query per report rather than one per errand: the caller resolves the whole
+ * period's rows against a single set.
+ */
+export async function activeCategoryNameSet(): Promise<Set<string>> {
+  const categories = await prisma.merchantCategory.findMany({
+    where: { status: "Active" },
+    select: { name: true },
+  });
+  return new Set(categories.map((c) => c.name));
+}
+
 function dedupe<T>(values: T[]): T[] {
   return [...new Set(values)];
 }

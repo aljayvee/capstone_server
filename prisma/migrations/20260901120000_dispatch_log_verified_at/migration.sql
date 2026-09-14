@@ -1,0 +1,17 @@
+-- Separates "a dispatcher opened this" from "a dispatcher accepted this".
+--
+-- Opening a queued request now claims it, so that one dispatcher is ever in a
+-- customer's chat while items are being verified. That makes `dispatchedAt`
+-- ambiguous on its own: a claimed errand may be mid-review with availability
+-- still being checked, or fully accepted and moving through dispatch.
+--
+-- `Errand.status` cannot carry the difference — PENDING already means both, and
+-- widening the enum would change the meaning of every existing row and every
+-- query that reads it.
+--
+-- NULL on all existing rows is the correct backfill: nothing claimed before this
+-- shipped passed through a verification step, and the UI treats NULL as
+-- "not yet accepted", which is exactly what those errands were.
+--
+-- Data-safe: additive, nullable, no default, no rewrite of existing rows.
+ALTER TABLE `dispatch_logs` ADD COLUMN `verifiedAt` DATETIME(3) NULL;
