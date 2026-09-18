@@ -53,10 +53,67 @@ io.attach(httpServer);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  res.json({
+  const healthData = {
     status: "online",
     message: "Node.js Express MariaDB Backend Server is running (Strict Security Standard Enabled)",
     timestamp: new Date().toISOString(),
+  };
+
+  if (req.accepts("html")) {
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>API Health Status | SUGO Express</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0F2035; color: #F8FAFC; padding: 2rem; }
+          .container { max-w-2xl mx-auto bg-[#0B132B] p-6 rounded-xl border border-slate-800 shadow-lg mt-10; max-width: 600px; margin: 0 auto; }
+          .status { display: inline-block; padding: 0.25rem 0.75rem; background-color: rgba(16, 185, 129, 0.15); color: #34D399; border-radius: 9999px; font-weight: bold; font-size: 0.875rem; margin-bottom: 1rem; border: 1px solid rgba(16, 185, 129, 0.3); }
+          h1 { margin-top: 0; font-size: 1.5rem; }
+          p { color: #94A3B8; line-height: 1.5; }
+          .timestamp { margin-top: 1.5rem; font-size: 0.875rem; color: #64748B; font-family: monospace; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="status">🟢 System Online</div>
+          <h1>SUGO Express API Gateway</h1>
+          <p>${healthData.message}</p>
+          <div class="timestamp">Last Updated: ${healthData.timestamp}</div>
+        </div>
+      </body>
+      </html>
+    `);
+  } else {
+    res.json(healthData);
+  }
+});
+
+// SSE Stream for real-time health updates
+app.get("/api/health/stream", (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+  });
+
+  const sendUpdate = () => {
+    const data = JSON.stringify({
+      status: "online",
+      message: "System is operating normally",
+      timestamp: new Date().toISOString(),
+      connections: Object.keys(io.sockets.sockets).length
+    });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  sendUpdate();
+  const interval = setInterval(sendUpdate, 5000);
+
+  req.on("close", () => {
+    clearInterval(interval);
   });
 });
 

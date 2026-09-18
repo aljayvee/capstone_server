@@ -8,8 +8,9 @@ import {
   verifyLoginOtp,
   resendLoginOtp,
 } from "../controllers/authController.js";
+import { issueFirebaseToken } from "../controllers/firebaseAuthController.js";
 import { authenticateToken } from "../middleware/auth.js";
-import { loginLimiter, verificationLimiter } from "../middleware/rateLimiters.js";
+import { loginLimiter, verificationLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
 
 const router = Router();
 
@@ -26,5 +27,14 @@ router.post("/auth/resend-login-otp", verificationLimiter, resendLoginOtp);
 
 router.post("/auth/refresh", refresh);
 router.post("/auth/logout", authenticateToken, logout);
+
+// POST /api/auth/firebase-token - a Firebase identity for an existing session.
+//
+// Called once after sign-in, and again only if the client finds itself without
+// a Firebase session (a cold start, or a sign-out). userApiLimiter rather than
+// loginLimiter: this is a post-authentication exchange, not a credential guess,
+// and putting it on the sign-in budget would let a reconnect loop lock a user
+// out of logging back in.
+router.post("/auth/firebase-token", authenticateToken, userApiLimiter, issueFirebaseToken);
 
 export default router;

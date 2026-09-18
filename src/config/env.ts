@@ -170,3 +170,20 @@ export const ROAD_DETOUR_FACTOR = Number(process.env.ROAD_DETOUR_FACTOR) || 1.48
 // Average achievable speed on Tacurong city streets (tricycle/motorcycle traffic),
 // used only to synthesise a duration when no routing engine is reachable.
 export const FALLBACK_AVG_SPEED_KMH = Number(process.env.FALLBACK_AVG_SPEED_KMH) || 25;
+
+// --- Firebase Admin (real-time authentication) ------------------------------
+//
+// Credentials for minting Firebase custom tokens, so Realtime Database security
+// rules can require `auth != null` instead of standing wide open. Supply ONE of
+// the two: a path to the service-account JSON downloaded from the Firebase
+// Console, or that same JSON inline for environments that only pass env vars.
+//
+// Both blank disables token minting. The rest of the API keeps running and the
+// real-time features degrade with a visible error, which is the behaviour this
+// whole change exists to guarantee — a misconfigured convenience must never
+// take the server down with it.
+//
+// NEVER commit the service account. It is a private key with full project
+// authority, unlike the public client config that ships in the app bundles.
+export const FIREBASE_SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "";
+export const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";

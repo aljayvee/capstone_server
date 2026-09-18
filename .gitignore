@@ -23,3 +23,10 @@ Thumbs.db
 # OSRM routing graph + downloaded OSM extracts (rebuilt via gis/build-graph.ps1)
 gis/data/
 gis/verified-places.geojson
+
+# Firebase Admin service accounts. These are private keys with full project
+# authority, unlike the public client config that ships in the app bundles.
+# Never commit one: anyone holding it can read and write the entire Realtime
+# Database regardless of the security rules.
+*firebase-adminsdk*.json
+firebase-service-account*.json

@@ -1,0 +1,95 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "riders": {
+      ".read": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')",
+
+      "$riderId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === 'rider_' + $riderId",
+
+        "latitude": {
+          ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+        },
+        "longitude": {
+          ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+        },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "heading": { ".validate": "newData.isNumber()" },
+        "onDuty": { ".validate": "newData.isBoolean()" },
+        "online": { ".validate": "newData.isBoolean()" },
+        "batteryLevel": { ".validate": "newData.isNumber()" },
+        "activeErrandId": { ".validate": "newData.isString()" },
+        "status": {
+          ".validate": "newData.isString() && newData.val().matches(/^(AVAILABLE|BUSY|DISCONNECTED|OFF_DUTY)$/)"
+        }
+      }
+    },
+
+    "locations": {
+      "customers": {
+        "$customerId": {
+          ".read": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER' || auth.uid === 'customer_' + $customerId)",
+          ".write": "auth != null && auth.uid === 'customer_' + $customerId",
+
+          "latitude": {
+            ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+          },
+          "longitude": {
+            ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+          }
+        }
+      }
+    },
+
+    "chats": {
+      "$errandId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+
+        "presence": {
+          "customer": { ".write": "auth != null && auth.token.role === 'CUSTOMER'" },
+          "dispatcher": {
+            ".write": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')"
+          }
+        },
+
+        "typing": {
+          "customer": { ".write": "auth != null && auth.token.role === 'CUSTOMER'" },
+          "dispatcher": {
+            ".write": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')"
+          }
+        },
+
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['timestamp'])",
+            "timestamp": { ".validate": "newData.isNumber()" },
+            "senderId": { ".validate": "newData.isString()" }
+          }
+        }
+      }
+    },
+
+    "rider_chats": {
+      "$errandId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+
+        "dispatcherMeta": {
+          ".write": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')"
+        },
+
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['timestamp'])",
+            "timestamp": { ".validate": "newData.isNumber()" },
+            "senderId": { ".validate": "newData.isString()" }
+          }
+        }
+      }
+    }
+  }
+}

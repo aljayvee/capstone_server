@@ -30,6 +30,7 @@
     "expo-server-sdk": "^3.15.0",
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.1",
+    "firebase-admin": "^14.4.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "lru-cache": "^11.5.2",
