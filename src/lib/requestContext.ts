@@ -50,3 +50,27 @@ export function getDeviceId(req: Request): string | null {
   if (!value || typeof value !== "string") return null;
   return value.slice(0, 80);
 }
+
+export function parseDeviceInfo(userAgent: string | null, deviceHint?: string | null): string {
+  if (deviceHint) return deviceHint;
+  if (!userAgent) return "Unknown Device";
+
+  let browser = "Browser";
+  if (/edg/i.test(userAgent)) browser = "Edge";
+  else if (/opr|opera/i.test(userAgent)) browser = "Opera";
+  else if (/chrome|crios/i.test(userAgent)) browser = "Chrome";
+  else if (/firefox|fxios/i.test(userAgent)) browser = "Firefox";
+  else if (/safari/i.test(userAgent)) browser = "Safari";
+
+  let os = "Unknown OS";
+  if (/windows nt 10\.0/i.test(userAgent)) os = "Windows 10/11";
+  else if (/windows nt 6\.3/i.test(userAgent)) os = "Windows 8.1";
+  else if (/windows nt 6\.1/i.test(userAgent)) os = "Windows 7";
+  else if (/windows/i.test(userAgent)) os = "Windows";
+  else if (/macintosh|mac os x/i.test(userAgent)) os = "macOS";
+  else if (/android/i.test(userAgent)) os = "Android";
+  else if (/iphone|ipad|ipod/i.test(userAgent)) os = "iOS";
+  else if (/linux/i.test(userAgent)) os = "Linux";
+
+  return `${browser} on ${os}`;
+}

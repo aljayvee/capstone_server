@@ -840,6 +840,24 @@ model UserSession {
   @@map("user_sessions")
 }
 
+model AccountLoginLog {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  role          String    @db.VarChar(20)
+  ipAddress     String    @db.VarChar(64)
+  userAgent     String    @db.VarChar(300)
+  deviceInfo    String?   @db.VarChar(120)
+  status        String    @db.VarChar(32)
+  sessionId     String?   @db.VarChar(36)
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+  revokedReason String?   @db.VarChar(64)
+
+  @@index([userId, role])
+  @@index([createdAt])
+  @@map("account_login_logs")
+}
+
 model TokenBlocklist {
   id        Int      @id @default(autoincrement())
   token     String   @unique @db.VarChar(500)

@@ -17,10 +17,12 @@ import type { AuthResult, LoginOutcome } from "../services/authService.js";
 import * as loginNotificationService from "../services/loginNotificationService.js";
 import type { LoginChannel } from "../services/loginNotificationService.js";
 import type { LoginChallenge } from "../services/loginChallengeService.js";
-import { getClientIp, getDeviceHint, getDeviceId, getUserAgent } from "../lib/requestContext.js";
+import { getClientIp, getDeviceHint, getDeviceId, getUserAgent, parseDeviceInfo } from "../lib/requestContext.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import * as riderPresenceService from "../services/riderPresenceService.js";
 import * as sessionService from "../services/sessionService.js";
+import { notifySessionRevoked } from "../lib/socket.js";
+import { prisma } from "../lib/prisma.js";
 
 import { REFRESH_SESSION_TTL_MS } from "../config/env.js";
 
@@ -126,8 +128,55 @@ function respondWithOutcome(req: Request, res: Response, outcome: LoginOutcome, 
 }
 
 export const login = asyncHandler(async (req, res) => {
-  const { username, password } = parseOrThrow(loginSchema, req.body);
+  const { username, password, confirmTakeover } = parseOrThrow(loginSchema, req.body);
   const outcome = await authService.loginGeneral(username, password);
+
+  if (outcome.kind === "AUTHENTICATED") {
+    const role = outcome.user.role?.toUpperCase();
+    if (role === "OWNER" || role === "DISPATCHER") {
+      const activeSession = await sessionService.findActiveStaffSession(outcome.user.id, role);
+      if (activeSession) {
+        if (!confirmTakeover) {
+          return res.status(200).json({
+            anotherDeviceActive: true,
+            existingSession: {
+              ipAddress: activeSession.ipAddress || "Unknown IP",
+              deviceInfo: parseDeviceInfo(activeSession.userAgent),
+              lastUsedAt: activeSession.lastUsedAt,
+              createdAt: activeSession.createdAt,
+            },
+          });
+        }
+
+        // Takeover confirmed: revoke previous session(s) and emit real-time notice to previous device
+        await sessionService.revokeOtherSessions(
+          outcome.user.id,
+          "USER",
+          outcome.result.sessionId,
+          "SUPERSEDED_BY_ANOTHER_DEVICE"
+        );
+        notifySessionRevoked(outcome.user.id, {
+          reason: "SUPERSEDED_BY_ANOTHER_DEVICE",
+          newDevice: {
+            ipAddress: getClientIp(req) || "Unknown IP",
+            deviceInfo: parseDeviceInfo(getUserAgent(req)),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    }
+
+    void sessionService.recordLoginLog({
+      userId: outcome.user.id,
+      role: outcome.user.role,
+      ipAddress: getClientIp(req) || "Unknown IP",
+      userAgent: getUserAgent(req) || "Unknown",
+      deviceInfo: parseDeviceInfo(getUserAgent(req)),
+      status: "SUCCESS",
+      sessionId: outcome.result.sessionId,
+    });
+  }
+
   respondWithOutcome(req, res, outcome, "WEB_PORTAL");
 });
 
@@ -147,6 +196,34 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
   const { challengeToken, code } = parseOrThrow(verifyLoginOtpSchema, req.body);
   const { result, user, audience } = await authService.completeLoginOtp(challengeToken, code);
   loginNotificationService.sendLoginAlert(user, loginContext(req, audience));
+
+  if (audience === "WEB_PORTAL" && (user.role === "OWNER" || user.role === "DISPATCHER")) {
+    await sessionService.revokeOtherSessions(
+      user.id,
+      "USER",
+      result.sessionId,
+      "SUPERSEDED_BY_ANOTHER_DEVICE"
+    );
+    notifySessionRevoked(user.id, {
+      reason: "SUPERSEDED_BY_ANOTHER_DEVICE",
+      newDevice: {
+        ipAddress: getClientIp(req) || "Unknown IP",
+        deviceInfo: parseDeviceInfo(getUserAgent(req)),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  void sessionService.recordLoginLog({
+    userId: user.id,
+    role: user.role,
+    ipAddress: getClientIp(req) || "Unknown IP",
+    userAgent: getUserAgent(req) || "Unknown",
+    deviceInfo: parseDeviceInfo(getUserAgent(req)),
+    status: "SUCCESS",
+    sessionId: result.sessionId,
+  });
+
   await respondWithAuth(req, res, 200, "Login successful", result);
 });
 
@@ -268,9 +345,87 @@ export const logout = asyncHandler<AuthenticatedRequest>(async (req, res) => {
   }
 
   if (req.user?.id) {
+    void sessionService.recordLoginLog({
+      userId: req.user.id,
+      role: req.user.role,
+      ipAddress: getClientIp(req) || "Unknown IP",
+      userAgent: getUserAgent(req) || "Unknown",
+      deviceInfo: parseDeviceInfo(getUserAgent(req)),
+      status: "LOGOUT",
+      sessionId: refreshToken ? authService.sessionIdFromRefreshToken(refreshToken) : null,
+      revokedReason: "USER_LOGOUT",
+    });
     void riderPresenceService.closeLoginSession(req.user.id);
   }
 
   res.clearCookie("refreshToken");
   res.status(200).json({ message: "Logged out successfully." });
+});
+
+export const getActiveSessions = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const userId = req.user!.id;
+  const role = req.user!.role;
+  const subjectType = sessionService.subjectTypeForRole(role);
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  const currentSessionId = refreshToken ? authService.sessionIdFromRefreshToken(refreshToken) : null;
+
+  const sessions = await sessionService.listActiveSessions(userId, subjectType);
+  const formatted = sessions.map((s) => ({
+    id: s.id,
+    ipAddress: s.ipAddress || "Unknown IP",
+    deviceInfo: parseDeviceInfo(s.userAgent),
+    createdAt: s.createdAt,
+    lastUsedAt: s.lastUsedAt,
+    isCurrent: currentSessionId ? s.id === currentSessionId : false,
+  }));
+
+  res.status(200).json({ sessions: formatted });
+});
+
+export const revokeSessionById = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const userId = req.user!.id;
+  const { sessionId } = req.params;
+
+  const session = await prisma.userSession.findFirst({
+    where: { id: sessionId, subjectId: userId, revokedAt: null },
+  });
+  if (!session) {
+    return res.status(404).json({ error: "Session not found or already ended." });
+  }
+
+  await sessionService.revokeSession(sessionId, "REVOKED_BY_USER");
+  notifySessionRevoked(userId, { reason: "REVOKED_BY_USER" });
+
+  res.status(200).json({ message: "Session signed out successfully." });
+});
+
+export const revokeOtherSessionsHandler = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const userId = req.user!.id;
+  const role = req.user!.role;
+  const subjectType = sessionService.subjectTypeForRole(role);
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  const currentSessionId = refreshToken ? authService.sessionIdFromRefreshToken(refreshToken) : null;
+
+  if (!currentSessionId) {
+    return res.status(400).json({ error: "Cannot identify current session." });
+  }
+
+  const count = await sessionService.revokeOtherSessions(
+    userId,
+    subjectType,
+    currentSessionId,
+    "REVOKED_ALL_OTHERS"
+  );
+  notifySessionRevoked(userId, { reason: "REVOKED_ALL_OTHERS" });
+
+  res.status(200).json({ message: `Signed out ${count} other device(s).` });
+});
+
+export const getLoginLogs = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const userId = req.user!.id;
+  const role = req.user!.role;
+  const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+
+  const logs = await sessionService.getAccountLoginLogs(userId, role, limit);
+  res.status(200).json({ logs });
 });

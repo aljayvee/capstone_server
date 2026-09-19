@@ -97,6 +97,101 @@ export async function revokeAllForSubject(
   return result.count;
 }
 
+/** Finds any currently unrevoked, unexpired session for a staff member (OWNER/DISPATCHER) */
+export async function findActiveStaffSession(subjectId: number, role: string) {
+  const normalizedRole = role.toUpperCase();
+  if (normalizedRole !== "OWNER" && normalizedRole !== "DISPATCHER") {
+    return null;
+  }
+  return prisma.userSession.findFirst({
+    where: {
+      subjectId,
+      subjectType: "USER",
+      role: normalizedRole,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { lastUsedAt: "desc" },
+  });
+}
+
+/** Lists all active sessions for a subject */
+export async function listActiveSessions(subjectId: number, subjectType: SubjectType) {
+  return prisma.userSession.findMany({
+    where: {
+      subjectId,
+      subjectType,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { lastUsedAt: "desc" },
+  });
+}
+
+/** Revokes all active sessions for a subject except the specified session */
+export async function revokeOtherSessions(
+  subjectId: number,
+  subjectType: SubjectType,
+  keepSessionId: string,
+  reason: string
+): Promise<number> {
+  const result = await prisma.userSession.updateMany({
+    where: {
+      subjectId,
+      subjectType,
+      id: { not: keepSessionId },
+      revokedAt: null,
+    },
+    data: {
+      revokedAt: new Date(),
+      revokedReason: reason.slice(0, 64),
+    },
+  });
+  return result.count;
+}
+
+/** Records an entry in account_login_logs for audit tracking */
+export async function recordLoginLog(data: {
+  userId: number;
+  role: string;
+  ipAddress: string;
+  userAgent: string;
+  deviceInfo?: string | null;
+  status: string;
+  sessionId?: string | null;
+  revokedReason?: string | null;
+}): Promise<void> {
+  try {
+    await prisma.accountLoginLog.create({
+      data: {
+        userId: data.userId,
+        role: data.role.toUpperCase(),
+        ipAddress: data.ipAddress.slice(0, 64),
+        userAgent: data.userAgent.slice(0, 300),
+        deviceInfo: data.deviceInfo?.slice(0, 120) ?? null,
+        status: data.status.slice(0, 32),
+        sessionId: data.sessionId?.slice(0, 36) ?? null,
+        revokedReason: data.revokedReason?.slice(0, 64) ?? null,
+      },
+    });
+  } catch (err) {
+    // Non-fatal: an audit failure must never break sign-in or session flows
+    console.error("[SessionService] Failed to record login log:", err);
+  }
+}
+
+/** Retrieves recent login audit history for a user */
+export async function getAccountLoginLogs(userId: number, role: string, limit = 50) {
+  return prisma.accountLoginLog.findMany({
+    where: {
+      userId,
+      role: role.toUpperCase(),
+    },
+    orderBy: { createdAt: "desc" },
+    take: Math.min(limit, 100),
+  });
+}
+
 /**
  * Decide whether the presented token is the session's current one.
  *

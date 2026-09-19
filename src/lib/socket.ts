@@ -43,6 +43,7 @@ interface AuthenticatedSocketData {
 // carry a rider's live position and ETA.
 export const rooms = {
   role: (role: string) => `role:${role.toUpperCase()}`,
+  user: (userId: number) => `user:${userId}`,
   rider: (riderId: number) => `rider:${riderId}`,
   customer: (customerId: number) => `customer:${customerId}`,
   errand: (errandId: string) => `errand:${errandId}`,
@@ -103,10 +104,13 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
   // Identity-scoped rooms, joined once at connect. An anonymous socket joins
   // nothing and therefore receives only the legacy global broadcasts.
   const { userId, role } = socket.data;
-  if (userId !== undefined && role) {
-    socket.join(rooms.role(role));
-    if (role === "RIDER") socket.join(rooms.rider(userId));
-    if (role === "CUSTOMER") socket.join(rooms.customer(userId));
+  if (userId !== undefined) {
+    socket.join(rooms.user(userId));
+    if (role) {
+      socket.join(rooms.role(role));
+      if (role === "RIDER") socket.join(rooms.rider(userId));
+      if (role === "CUSTOMER") socket.join(rooms.customer(userId));
+    }
   }
 
   // Per-errand channel, joined on request and only after the same ownership
@@ -153,3 +157,7 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
     }
   });
 });
+
+export function notifySessionRevoked(userId: number, payload: { reason: string; newDevice?: unknown }): void {
+  io.to(rooms.user(userId)).emit("session:revoked", payload);
+}

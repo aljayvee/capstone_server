@@ -9,6 +9,7 @@ const nonEmptyTrimmed = (label: string) => z.string().trim().min(1, `${label} mu
 export const loginSchema = z.object({
   username: nonEmptyTrimmed("Username or email"),
   password: nonEmptyTrimmed("Password"),
+  confirmTakeover: z.boolean().optional(),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 

@@ -7,6 +7,10 @@ import {
   completeLoginProfile,
   verifyLoginOtp,
   resendLoginOtp,
+  getActiveSessions,
+  revokeSessionById,
+  revokeOtherSessionsHandler,
+  getLoginLogs,
 } from "../controllers/authController.js";
 import { issueFirebaseToken } from "../controllers/firebaseAuthController.js";
 import { authenticateToken } from "../middleware/auth.js";
@@ -27,6 +31,12 @@ router.post("/auth/resend-login-otp", verificationLimiter, resendLoginOtp);
 
 router.post("/auth/refresh", refresh);
 router.post("/auth/logout", authenticateToken, logout);
+
+// Account Session Governance & Audit Logs
+router.get("/account/sessions", authenticateToken, userApiLimiter, getActiveSessions);
+router.delete("/account/sessions/:sessionId", authenticateToken, userApiLimiter, revokeSessionById);
+router.post("/account/sessions/revoke-others", authenticateToken, userApiLimiter, revokeOtherSessionsHandler);
+router.get("/account/login-logs", authenticateToken, userApiLimiter, getLoginLogs);
 
 // POST /api/auth/firebase-token - a Firebase identity for an existing session.
 //
