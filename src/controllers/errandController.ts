@@ -262,7 +262,8 @@ export const listProofImages = asyncHandler<AuthenticatedRequest>(async (req, re
   // Authenticated was the ONLY check here, so any signed-in account could
   // enumerate another customer's receipts by errand id.
   await proofImageService.assertMayViewProofs(req.params.id, req.user);
-  res.json(await proofImageService.listProofImages(req.params.id));
+  const kind = typeof req.query.kind === "string" ? req.query.kind : undefined;
+  res.json(await proofImageService.listProofImages(req.params.id, kind));
 });
 
 // One image's bytes, for a viewer that is about to display it. Same object-level

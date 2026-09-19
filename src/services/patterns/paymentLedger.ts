@@ -68,6 +68,25 @@ function round2(value: number): number {
 }
 
 /**
+ * An escalation raised and not since cleared.
+ *
+ * Lives in this dependency-free pattern module rather than errandPaymentService
+ * (which pulls in errandService and, through it, the routing/JWT-config chain)
+ * so a small, pure predicate doesn't drag a heavy import graph into anything
+ * that only wants to know whether an overage is pending.
+ */
+export function isOveragePending(errand: {
+  overageEscalatedAt: Date | null;
+  overageResolvedAt: Date | null;
+}): boolean {
+  if (!errand.overageEscalatedAt) return false;
+  if (!errand.overageResolvedAt) return true;
+  // Re-escalation after an earlier resolution: the later stamp wins, so a second
+  // overage on the same errand is not silently treated as already handled.
+  return errand.overageResolvedAt < errand.overageEscalatedAt;
+}
+
+/**
  * Where an errand's money currently stands.
  *
  * Pure, so the arithmetic can be tested without a database and so every surface

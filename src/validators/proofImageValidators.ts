@@ -7,7 +7,19 @@ import { z } from "zod";
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"] as const;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
-export const PROOF_IMAGE_KINDS = ["RECEIPT", "TRANSFER", "PROOF_OF_DELIVERY", "NO_RECEIPT"] as const;
+export const PROOF_IMAGE_KINDS = [
+  "RECEIPT",
+  "TRANSFER",
+  "PROOF_OF_DELIVERY",
+  "NO_RECEIPT",
+  // The rider's photo of the customer's GCash/Maya receipt at the door —
+  // read with the same reference-number/amount/same-day rigor as the
+  // customer's own upload (see patterns/transferValidation.ts).
+  "RIDER_BALANCE_PROOF",
+  // The rider's photo of physical cash in hand. No OCR — declaredTotal is
+  // the whole figure, exactly like NO_RECEIPT.
+  "CASH_COLLECTED",
+] as const;
 
 export const proofImageUploadSchema = z.object({
   kind: z.enum(PROOF_IMAGE_KINDS),

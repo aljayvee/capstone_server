@@ -26,7 +26,12 @@ function round2(value: number): number {
 export async function submitSettlement(
   errandId: string,
   riderId: number,
-  input: { collectedInFull?: boolean; collectedAmount?: number; shortReason?: string }
+  input: {
+    collectedInFull?: boolean;
+    collectedAmount?: number;
+    shortReason?: string;
+    proofImageId?: number;
+  }
 ) {
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) {
@@ -96,5 +101,6 @@ export async function submitSettlement(
     status,
     // Only meaningful on a shortfall; a matched settlement has nothing to explain.
     shortReason: status === "SHORT" ? input.shortReason?.trim() || null : null,
+    proofImageId: input.proofImageId ?? null,
   });
 }

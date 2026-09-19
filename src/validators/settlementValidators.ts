@@ -15,6 +15,11 @@ export const submitSettlementSchema = z.object({
     .nonnegative("collectedAmount must be zero or positive.")
     .optional(),
   shortReason: z.string().trim().min(1).max(300).optional(),
+
+  // The photo the rider took backing this settlement — cash in hand, or a
+  // GCash/Maya receipt shown at the door. Optional: the id only exists once
+  // the corresponding proof-image upload has already succeeded.
+  proofImageId: z.coerce.number().int().positive().optional(),
 });
 
 export type SubmitSettlementInput = z.infer<typeof submitSettlementSchema>;

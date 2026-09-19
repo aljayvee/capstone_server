@@ -9,6 +9,8 @@ export interface CreateSettlementData {
   status: string;
   /** Why the cash came back short. Only set on a SHORT settlement. */
   shortReason?: string | null;
+  /** The photo (cash-in-hand or GCash/Maya receipt) backing this settlement. */
+  proofImageId?: number | null;
 }
 
 export const settlementRepository = {

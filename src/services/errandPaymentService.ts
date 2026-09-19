@@ -1,3 +1,4 @@
+import { prisma } from "../lib/prisma.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { errandPaymentRepository } from "../repositories/errandPaymentRepository.js";
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
@@ -5,6 +6,7 @@ import { hasPaymentLedger } from "./patterns/paymentModes.js";
 import {
   summarisePaymentPlan,
   OVERAGE_ESCALATION_PESOS,
+  isOveragePending,
   type PaymentPlanSummary,
 } from "./patterns/paymentLedger.js";
 import { ServiceError } from "./ServiceError.js";
@@ -66,17 +68,10 @@ async function loadPlan(errandId: string) {
   return { errand, selection, entries, summary };
 }
 
-/** An escalation raised and not since cleared. */
-export function isOveragePending(errand: {
-  overageEscalatedAt: Date | null;
-  overageResolvedAt: Date | null;
-}): boolean {
-  if (!errand.overageEscalatedAt) return false;
-  if (!errand.overageResolvedAt) return true;
-  // Re-escalation after an earlier resolution: the later stamp wins, so a second
-  // overage on the same errand is not silently treated as already handled.
-  return errand.overageResolvedAt < errand.overageEscalatedAt;
-}
+// isOveragePending now lives in patterns/paymentLedger.ts (re-exported below)
+// — a pure, dependency-free home so importing it doesn't drag this service's
+// (and errandService's) heavier import graph along for the ride.
+export { isOveragePending };
 
 export async function getPaymentLedger(errandId: string): Promise<PaymentLedgerView> {
   const { errand, selection, entries, summary } = await loadPlan(errandId);
@@ -113,6 +108,34 @@ function assertHasLedger(selection: Parameters<typeof hasPaymentLedger>[0]) {
   }
 }
 
+/**
+ * The photo a dispatcher is looking at when they confirm — checked rather
+ * than trusted, since a stale client could name a photo from a different
+ * errand, or one that already backs a different payment (the DB's own
+ * @unique constraint would refuse that too, but as a raw constraint error
+ * instead of a reason the dispatcher can act on).
+ */
+async function assertProofImageAvailable(
+  errandId: string,
+  proofImageId: number | undefined
+): Promise<number | undefined> {
+  if (!proofImageId) return undefined;
+
+  const image = await prisma.errandProofImage.findUnique({
+    where: { id: proofImageId },
+    select: { errandId: true, payment: { select: { id: true } } },
+  });
+
+  if (!image || image.errandId !== errandId) {
+    throw new ServiceError(404, "That photo does not belong to this errand.");
+  }
+  if (image.payment) {
+    throw new ServiceError(409, "That photo already backs a different confirmed payment.");
+  }
+
+  return proofImageId;
+}
+
 function assertAmountMatches(amount: number, due: number, what: string) {
   if (amount <= 0) {
     throw new ServiceError(400, `The ${what} has to be more than ₱0.`);
@@ -135,7 +158,7 @@ function assertAmountMatches(amount: number, due: number, what: string) {
 export async function confirmUpfrontPayment(
   errandId: string,
   confirmedByUserId: number,
-  input: { amount: number; note?: string }
+  input: { amount: number; note?: string; proofImageId?: number }
 ) {
   const { selection, summary } = await loadPlan(errandId);
   assertHasLedger(selection);
@@ -145,6 +168,7 @@ export async function confirmUpfrontPayment(
   }
 
   assertAmountMatches(input.amount, summary!.dueUpFront, "payment");
+  const proofImageId = await assertProofImageAvailable(errandId, input.proofImageId);
 
   await errandPaymentRepository.create({
     errandId,
@@ -152,10 +176,54 @@ export async function confirmUpfrontPayment(
     amount: input.amount,
     confirmedByUserId,
     note: input.note?.trim() || null,
+    proofImageId,
   });
 
   const view = await getPaymentLedger(errandId);
   eventPublisher.emitToErrand(errandId, "errand:upfront_confirmed", view);
+  return view;
+}
+
+/**
+ * The customer paid the balance (what's left after the upfront half, or the
+ * whole bill on a GCash/Bank Transfer plan) electronically instead of the
+ * rider collecting it in cash at the door.
+ *
+ * Recorded as a FINAL entry — a kind the schema already had, unused until now.
+ * summarisePaymentPlan already folds FINAL into amountPaid, so this one row is
+ * the whole fix: balanceDue and state recompute to SETTLED with no further
+ * bookkeeping, and a rider's later cash settlement nets against it on its own.
+ */
+export async function confirmBalancePayment(
+  errandId: string,
+  confirmedByUserId: number,
+  input: { amount: number; note?: string; proofImageId?: number }
+) {
+  const { selection, summary } = await loadPlan(errandId);
+  assertHasLedger(selection);
+
+  if (await errandPaymentRepository.findOneOfKind(errandId, "FINAL")) {
+    throw new ServiceError(409, "The balance on this errand is already confirmed.");
+  }
+
+  if (summary!.state !== "AWAITING_BALANCE") {
+    throw new ServiceError(409, "There's no outstanding balance to confirm on this errand.");
+  }
+
+  assertAmountMatches(input.amount, summary!.balanceDue, "balance");
+  const proofImageId = await assertProofImageAvailable(errandId, input.proofImageId);
+
+  await errandPaymentRepository.create({
+    errandId,
+    kind: "FINAL",
+    amount: input.amount,
+    confirmedByUserId,
+    note: input.note?.trim() || null,
+    proofImageId,
+  });
+
+  const view = await getPaymentLedger(errandId);
+  eventPublisher.emitToErrand(errandId, "errand:balance_confirmed", view);
   return view;
 }
 

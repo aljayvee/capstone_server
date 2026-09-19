@@ -54,6 +54,27 @@ const WITH_REPORT_DETAILS = {
           extraction: { select: { confirmedTotal: true } },
         },
       },
+      // The confirmed ledger row (UPFRONT/FINAL/TOP_UP/REFUND) and, where one
+      // exists, the exact photo that justified it — the customer's own upload,
+      // or a rider's door-side RIDER_BALANCE_PROOF. Lets the report show a
+      // reference number and say whose evidence backed the money, not just
+      // that it arrived.
+      payments: {
+        select: {
+          kind: true,
+          amount: true,
+          confirmedByUserId: true,
+          confirmedBy: { select: { firstName: true, lastName: true } },
+          proofImage: {
+            select: {
+              riderId: true,
+              customerId: true,
+              capturedAt: true,
+              extraction: { select: { referenceNo: true, transactionId: true } },
+            },
+          },
+        },
+      },
     },
   },
   customer: { select: { information: { select: { firstName: true, lastName: true } } } },

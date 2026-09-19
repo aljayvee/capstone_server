@@ -5,6 +5,7 @@ import { parseOrThrow } from "../validators/validate.js";
 import {
   confirmUpfrontSchema,
   confirmTopUpSchema,
+  confirmBalanceSchema,
   recordRefundSchema,
 } from "../validators/errandPaymentValidators.js";
 import * as errandPaymentService from "../services/errandPaymentService.js";
@@ -49,6 +50,12 @@ export const confirmUpfrontPayment = asyncHandler<AuthenticatedRequest>(async (r
 export const confirmTopUp = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(confirmTopUpSchema, req.body);
   const ledger = await errandPaymentService.confirmTopUp(req.params.id, req.user!.id, input);
+  res.json({ success: true, ledger });
+});
+
+export const confirmBalancePayment = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(confirmBalanceSchema, req.body);
+  const ledger = await errandPaymentService.confirmBalancePayment(req.params.id, req.user!.id, input);
   res.json({ success: true, ledger });
 });
 

@@ -13,8 +13,16 @@ const confirmationBase = {
   note: z.string().trim().max(255).optional(),
 };
 
-export const confirmUpfrontSchema = z.object(confirmationBase);
+// The specific photo (the customer's own upload, or a rider's door-side
+// RIDER_BALANCE_PROOF) the dispatcher is looking at when confirming — only
+// upfront and balance confirmations are ever backed by one of these.
+const proofBackedFields = {
+  proofImageId: z.coerce.number().int().positive().optional(),
+};
+
+export const confirmUpfrontSchema = z.object({ ...confirmationBase, ...proofBackedFields });
 export const confirmTopUpSchema = z.object(confirmationBase);
+export const confirmBalanceSchema = z.object({ ...confirmationBase, ...proofBackedFields });
 
 export const recordRefundSchema = z.object({
   ...confirmationBase,
@@ -29,4 +37,5 @@ export const recordRefundSchema = z.object({
 
 export type ConfirmUpfrontInput = z.infer<typeof confirmUpfrontSchema>;
 export type ConfirmTopUpInput = z.infer<typeof confirmTopUpSchema>;
+export type ConfirmBalanceInput = z.infer<typeof confirmBalanceSchema>;
 export type RecordRefundInput = z.infer<typeof recordRefundSchema>;

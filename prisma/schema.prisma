@@ -907,6 +907,13 @@ model ErrandPayment {
   confirmedAt       DateTime @default(now())
   note              String?  @db.VarChar(255)
 
+  // The exact photo that justified this attestation, where one exists. @unique
+  // so a single photo can never be stretched to back two different payments —
+  // the same anti-reuse guarantee the OCR's same-day check gives at upload time,
+  // enforced again at the database layer.
+  proofImageId Int?              @unique
+  proofImage   ErrandProofImage? @relation(fields: [proofImageId], references: [id], onDelete: SetNull)
+
   @@index([errandId])
   @@map("errand_payments")
 }
@@ -992,6 +999,12 @@ model SettlementRecord {
   // what this line records, and it is the first thing an investigation asks.
   shortReason     String?  @db.VarChar(300)
 
+  // The photo the rider took of the cash (or the GCash/Maya receipt, on a
+  // ledger errand) that backs this settlement. @unique for the same reason as
+  // ErrandPayment.proofImageId — one photo, one settlement.
+  proofImageId Int?              @unique
+  proofImage   ErrandProofImage? @relation(fields: [proofImageId], references: [id], onDelete: SetNull)
+
   settledAt       DateTime @default(now())
 
   @@index([riderId])
@@ -1013,9 +1026,18 @@ enum ProofImageKind {
   // marked unverified because nothing else can corroborate it.
   NO_RECEIPT
   // The CUSTOMER's own payment confirmation, uploaded from their phone when
-  // they pay through the Facebook Page on a non-COD plan. The only kind not
-  // captured by a rider — see ErrandProofImage.customerId.
+  // they pay through the Facebook Page on a non-COD plan.
   PAYMENT_PROOF
+  // The RIDER's photo of the customer's GCash/Maya receipt, taken at the door
+  // when the customer shows it in person instead of (or in addition to)
+  // uploading it themselves. Read by Cloud Vision with the same reference
+  // number / amount / same-day rigor PAYMENT_PROOF gets — see
+  // patterns/transferValidation.ts, shared by both.
+  RIDER_BALANCE_PROOF
+  // The RIDER's photo of physical cash in hand, for every cash collection —
+  // ordinary COD, or a GCash/Maya customer who pays cash instead at the door.
+  // No OCR: the rider's own typed figure is the amount, same as NO_RECEIPT.
+  CASH_COLLECTED
 }
 
 enum ImageClarityVerdict {
@@ -1076,7 +1098,19 @@ model ErrandProofImage {
   // every other kind, which carry their figure on the extraction instead.
   declaredTotal Float?
 
+  // When a later upload replaced this one. Null means this is the CURRENT
+  // proof for its (errandId, kind) — queries that want "the live one" filter
+  // on supersededAt: null, exactly like they used to filter on the row simply
+  // existing, back when a reupload deleted the old row outright instead of
+  // marking it. Superseded rows are kept rather than deleted now: a rejected
+  // or replaced screenshot is itself evidence in a fraud dispute, and the new
+  // report (ErrandPayment.proofImage) needs history, not just whatever is
+  // current right now, to stay trustworthy.
+  supersededAt DateTime?
+
   extraction ReceiptExtraction?
+  payment    ErrandPayment?
+  settlement SettlementRecord?
 
   @@index([errandId])
   @@index([riderId])

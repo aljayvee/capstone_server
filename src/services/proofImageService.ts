@@ -4,6 +4,11 @@ import { eventPublisher } from "../lib/eventPublisher.js";
 import { readText, configuredEngines } from "../lib/ocr/resilientOcrService.js";
 import { parseReceipt } from "../lib/ocr/receiptParser.js";
 import { errandRepository } from "../repositories/errandRepository.js";
+import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
+import { errandPaymentRepository } from "../repositories/errandPaymentRepository.js";
+import { hasPaymentLedger } from "./patterns/paymentModes.js";
+import { summarisePaymentPlan, isOveragePending } from "./patterns/paymentLedger.js";
+import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import * as errandService from "./errandService.js";
 import type { ProofImageUploadInput } from "../validators/proofImageValidators.js";
@@ -58,7 +63,7 @@ export async function uploadProofImage(
   riderId: number,
   input: ProofImageUploadInput
 ) {
-  await assertRidersOwnErrand(errandId, riderId);
+  const errand = await assertRidersOwnErrand(errandId, riderId);
 
   const base64 = stripDataUri(input.imageData);
 
@@ -111,6 +116,118 @@ export async function uploadProofImage(
     // `extraction: null` rather than absent, so every caller sees one shape
     // whatever kind was uploaded.
     return { ...declared, clarityVerdict: null, extraction: null };
+  }
+
+  // Physical cash in hand — every cash collection now, ordinary COD or a
+  // GCash/Maya customer paying cash instead of showing a receipt. Same
+  // declared-figure shape as NO_RECEIPT, but this is money collected at
+  // delivery, not goods bought at a shop, so it never feeds
+  // markItemsPurchased — that total is about the basket, not the payment.
+  if (input.kind === "CASH_COLLECTED") {
+    if (!input.declaredTotal || input.declaredTotal <= 0) {
+      throw new ServiceError(400, "Enter what the customer handed you.");
+    }
+
+    const declared = await prisma.errandProofImage.create({
+      data: {
+        errandId,
+        riderId,
+        pinpointId: null,
+        kind: "CASH_COLLECTED",
+        imageData: base64,
+        mimeType: input.mimeType,
+        byteSize: input.fileSize,
+        verified: false,
+        declaredTotal: input.declaredTotal,
+      },
+    });
+
+    logger.info(
+      `Errand ${errandId}: rider ${riderId} photographed ₱${input.declaredTotal} collected in cash.`
+    );
+
+    return { ...declared, clarityVerdict: null, extraction: null };
+  }
+
+  // The rider's photo of the CUSTOMER's GCash/Maya receipt, shown at the door
+  // instead of (or alongside) the customer's own upload. Goes through the same
+  // fraud check the customer's own upload gets — reference number, amount
+  // against the live balance, same calendar day — via the shared validator
+  // both paths call, so tightening one path can never silently leave the
+  // other one weaker.
+  //
+  // Always reads through Cloud Vision — never `input.deviceText`. TRANSFER
+  // prefers on-device text because that path is a shopping-receipt
+  // convenience; this one exists specifically to be an independently-read
+  // check on money, so it always pays for the real read.
+  if (input.kind === "RIDER_BALANCE_PROOF") {
+    const selection = await paymentSelectionRepository.findByErrandId(errandId);
+    if (!hasPaymentLedger(selection)) {
+      throw new ServiceError(409, "This errand is cash on delivery — there's no balance to confirm.");
+    }
+
+    const entries = await errandPaymentRepository.findAmountsByErrandId(errandId);
+    const plan = summarisePaymentPlan({
+      goodsSubtotal: errand.estimatedCost,
+      grandTotal: errand.totalCost,
+      entries,
+      overagePending: isOveragePending(errand),
+    });
+
+    if (plan.state !== "AWAITING_BALANCE") {
+      throw new ServiceError(409, "There's no outstanding balance to confirm on this errand.");
+    }
+
+    const ocr = await readText(base64);
+    if (!ocr) {
+      const engineAvailable = configuredEngines().length > 0;
+      throw new ServiceError(
+        engineAvailable ? 422 : 503,
+        engineAvailable
+          ? "We couldn't read that photo. Make sure the whole confirmation is in frame and try again."
+          : "Receipt scanning is unavailable right now. Please try again in a moment."
+      );
+    }
+
+    const parsed = validateTransferReceipt({
+      ocrText: ocr.text,
+      dueAmount: plan.balanceDue,
+      dueLabel: "balance",
+    });
+
+    const image = await prisma.errandProofImage.create({
+      data: {
+        errandId,
+        riderId,
+        pinpointId: null,
+        kind: "RIDER_BALANCE_PROOF",
+        imageData: base64,
+        mimeType: input.mimeType,
+        byteSize: input.fileSize,
+        clarityScore: parsed.characterCount,
+        clarityVerdict: parsed.characterCount > 300 ? "SHARP" : "ACCEPTABLE",
+        extraction: {
+          create: {
+            engine: ocr.engine,
+            rawText: ocr.text,
+            extractedTotal: parsed.amount,
+            extractedDate: parsed.transactionDate,
+            referenceNo: parsed.referenceNo,
+            transactionId: parsed.transactionId,
+            confidence: ocr.confidence,
+            status: "OK",
+          },
+        },
+      },
+      include: { extraction: true },
+    });
+
+    logger.info(
+      `Errand ${errandId}: rider ${riderId} photographed the customer's balance receipt — ` +
+        `ref ${parsed.referenceNo}, ₱${parsed.amount}.`
+    );
+
+    return image;
   }
 
   // A doorstep photo has nothing to read either, and no amount attached to it.
@@ -358,23 +475,34 @@ export async function getProofImage(errandId: string, imageId: number) {
   return image;
 }
 
-export function listProofImages(errandId: string) {
+export function listProofImages(errandId: string, kind?: string) {
   return prisma.errandProofImage.findMany({
-    where: { errandId },
+    where: { errandId, ...(kind ? { kind: kind as any } : {}) },
     // The blob is deliberately omitted: a list of five receipts would otherwise
     // be two megabytes of base64 nobody asked for. Fetch one by id to see it.
     select: {
       id: true,
       kind: true,
       pinpointId: true,
+      riderId: true,
+      customerId: true,
       mimeType: true,
       byteSize: true,
       clarityVerdict: true,
       capturedAt: true,
       verified: true,
       declaredTotal: true,
+      supersededAt: true,
       extraction: {
-        select: { extractedTotal: true, confirmedTotal: true, status: true, engine: true },
+        select: {
+          extractedTotal: true,
+          confirmedTotal: true,
+          status: true,
+          engine: true,
+          referenceNo: true,
+          transactionId: true,
+          extractedDate: true,
+        },
       },
     },
     orderBy: { capturedAt: "asc" },

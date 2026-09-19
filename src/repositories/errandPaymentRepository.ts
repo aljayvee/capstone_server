@@ -41,6 +41,8 @@ export const errandPaymentRepository = {
     amount: number;
     confirmedByUserId: number;
     note?: string | null;
+    /** The photo (customer's or rider's) that justified this attestation. */
+    proofImageId?: number | null;
   }) {
     return prisma.errandPayment.create({
       data,

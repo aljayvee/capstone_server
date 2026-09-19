@@ -36,6 +36,7 @@ import {
   getPaymentLedger,
   confirmUpfrontPayment,
   confirmTopUp,
+  confirmBalancePayment,
   recordRefund,
 } from "../controllers/errandPaymentController.js";
 import { uploadPaymentProof, getPaymentProof } from "../controllers/paymentProofController.js";
@@ -297,6 +298,17 @@ router.post(
   requireRole(["OWNER", "DISPATCHER"]),
   userApiLimiter,
   confirmTopUp
+);
+
+// POST /api/errands/:id/payments/balance - dispatcher confirms the customer
+// paid the remaining balance electronically (GCash / Bank Transfer), instead
+// of the rider collecting it in cash at the door.
+router.post(
+  "/:id/payments/balance",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  confirmBalancePayment
 );
 
 // POST /api/errands/:id/payments/refund - money back, e.g. cancelled after downpayment

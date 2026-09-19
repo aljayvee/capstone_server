@@ -512,6 +512,14 @@ export async function getTransactionSummary(request: ReportRequest) {
     const { weights } = buildWeights(toCategoryEvidence(t.errand), activeNames);
     const categories = [...weights.keys()].sort();
 
+    // The ledger entry that IS the payment — UPFRONT on a half-payment plan,
+    // FINAL once the balance lands, whichever exists. TOP_UP/REFUND are
+    // adjustments to that payment, not the payment itself, so they're
+    // excluded here (they still count in the ledger a dispatcher sees).
+    const paymentEntry =
+      t.errand.payments?.find((p) => p.kind === "UPFRONT" || p.kind === "FINAL") ?? null;
+    const proof = paymentEntry?.proofImage ?? null;
+
     return {
       transactionId: t.id,
       errandId: t.errandId,
@@ -532,6 +540,18 @@ export async function getTransactionSummary(request: ReportRequest) {
       paymentMethod: canonicalPaymentMethod(
         t.errand.paymentSelection?.paymentMode.name ?? t.errand.paymentMode?.name ?? t.paymentMethod
       ),
+      // The GCash/Maya reference and transaction id read off whichever photo
+      // backed the payment — null on COD (no ledger entry to point at) or
+      // where the confirmation predates this pairing existing.
+      paymentReferenceNo: proof?.extraction?.referenceNo ?? null,
+      paymentTransactionId: proof?.extraction?.transactionId ?? null,
+      paymentConfirmedBy: paymentEntry?.confirmedBy
+        ? `${paymentEntry.confirmedBy.firstName} ${paymentEntry.confirmedBy.lastName}`.trim()
+        : null,
+      // Whose photo it was — the customer's own upload, or a rider's
+      // door-side photo of the customer's receipt. Exactly one of
+      // customerId/riderId is ever set on a proof image.
+      paymentEvidenceSource: proof ? (proof.customerId ? "customer" : "rider") : null,
       // The errand's own lifecycle state. This is the status column that carries
       // information — see paymentStatus below for the one that does not.
       status: t.errand.status,

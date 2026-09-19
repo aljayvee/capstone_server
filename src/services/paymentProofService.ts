@@ -2,12 +2,12 @@ import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
 import { readText, configuredEngines } from "../lib/ocr/resilientOcrService.js";
-import { parseTransfer, isSameDay, calendarDayOf } from "../lib/ocr/transferParser.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
 import { errandPaymentRepository } from "../repositories/errandPaymentRepository.js";
 import { hasPaymentLedger } from "./patterns/paymentModes.js";
-import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
+import { summarisePaymentPlan, isOveragePending } from "./patterns/paymentLedger.js";
+import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import type { PaymentProofUploadInput } from "../validators/paymentProofValidators.js";
 
@@ -26,25 +26,8 @@ import type { PaymentProofUploadInput } from "../validators/paymentProofValidato
  * that does not line up is refused before it can be mistaken for evidence.
  */
 
-/** Below this many recognised characters, the shot is unusable rather than odd. */
-const MIN_LEGIBLE_CHARACTERS = 40;
-
-/** How far the read amount may sit from what is owed. */
-const AMOUNT_TOLERANCE_PESOS = 1;
-
 function stripDataUri(data: string): string {
   return data.replace(/^data:[^;]+;base64,/, "");
-}
-
-/**
- * Money as a customer reads it.
- *
- * `toFixed(2)` alone renders ₱1,120 as "1120.00" — legible to a parser, harder
- * for a person comparing it against the figure on their phone, which is the
- * entire job of these messages.
- */
-function peso(amount: number): string {
-  return `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export async function uploadPaymentProof(
@@ -71,8 +54,27 @@ export async function uploadPaymentProof(
     goodsSubtotal: errand.estimatedCost,
     grandTotal: errand.totalCost,
     entries,
-    overagePending: false,
+    // Was hardcoded false, so this endpoint never actually knew an overage was
+    // pending — a customer could upload a proof re-validated against dueUpFront
+    // (the already-paid figure) while OVERAGE_PENDING should have blocked it.
+    overagePending: isOveragePending(errand),
   });
+
+  // What's actually due right now, per the real ledger state — not always
+  // dueUpFront. AWAITING_UPFRONT and AWAITING_BALANCE are the only two states
+  // a customer-submitted receipt can ever settle; the rest either already have
+  // no balance (SETTLED/REFUNDED) or are blocked on something a receipt can't
+  // resolve (OVERAGE_PENDING, which needs a top-up attestation instead).
+  const target =
+    plan.state === "AWAITING_UPFRONT"
+      ? { due: plan.dueUpFront, label: "payment" }
+      : plan.state === "AWAITING_BALANCE"
+        ? { due: plan.balanceDue, label: "balance" }
+        : null;
+
+  if (!target) {
+    throw new ServiceError(409, "There's nothing currently due to upload a receipt for.");
+  }
 
   const base64 = stripDataUri(input.imageData);
 
@@ -90,65 +92,20 @@ export async function uploadPaymentProof(
     );
   }
 
-  const parsed = parseTransfer(ocr.text);
+  const parsed = validateTransferReceipt({ ocrText: ocr.text, dueAmount: target.due, dueLabel: target.label });
 
-  if (parsed.characterCount < MIN_LEGIBLE_CHARACTERS) {
-    throw new ServiceError(
-      422,
-      "That image came out too blurry to read. Take a screenshot rather than a photo of the screen if you can."
-    );
-  }
-
-  // ── check it says what it needs to say ─────────────────────────────────
+  // ── supersede, don't delete ─────────────────────────────────────────────
   //
-  // Each of these is refused rather than stored-and-flagged, because a proof
-  // that cannot be looked up, or that is for the wrong amount or the wrong day,
-  // is not weak evidence — it is evidence of a different payment.
-
-  if (!parsed.referenceNo) {
-    throw new ServiceError(
-      422,
-      "We couldn't find a reference number on that receipt. Make sure the whole confirmation is visible, including the Ref No."
-    );
-  }
-
-  if (parsed.amount === null) {
-    throw new ServiceError(422, "We couldn't find the amount on that receipt. Try a clearer shot.");
-  }
-
-  if (Math.abs(parsed.amount - plan.dueUpFront) > AMOUNT_TOLERANCE_PESOS) {
-    throw new ServiceError(
-      422,
-      `That receipt is for ${peso(parsed.amount)}, but ${peso(plan.dueUpFront)} is due. ` +
-        `Upload the receipt for this order, or message your dispatcher if the amount is wrong.`
-    );
-  }
-
-  if (!parsed.transactionDate) {
-    throw new ServiceError(422, "We couldn't find the date on that receipt. Try a clearer shot.");
-  }
-
-  // Today, on the server's calendar — not in UTC.
-  //
-  // A payment made last week is a real payment for something else. Accepting an
-  // old screenshot is the single easiest way to pay for one errand twice, and it
-  // is the check a person eyeballing an image reliably skips.
-  //
-  // The comparison goes through calendarDayOf because Tacurong is UTC+8: a plain
-  // UTC comparison rejects every valid receipt uploaded between local midnight
-  // and 8am, which is exactly when a late-night errand gets paid for.
-  if (!isSameDay(parsed.transactionDate, calendarDayOf(new Date()))) {
-    throw new ServiceError(
-      422,
-      "That receipt isn't from today. Upload the confirmation for the payment you just sent."
-    );
-  }
-
-  // ── one live proof per errand ──────────────────────────────────────────
-  //
-  // Replaces rather than accumulates: a customer who mis-shot the first attempt
-  // should not leave a rejected image sitting in the dispatcher's evidence.
-  await prisma.errandProofImage.deleteMany({ where: { errandId, kind: "PAYMENT_PROOF" } });
+  // A reupload used to delete the previous PAYMENT_PROOF row outright — fine
+  // for a mis-shot retake, but it also erased a rejected or later-disputed
+  // screenshot the moment a new one arrived. Marking it superseded instead
+  // keeps that history: the report joins ErrandPayment.proofImage to a
+  // specific row, and a fraud dispute needs to see everything that was ever
+  // submitted, not just whatever is current right now.
+  await prisma.errandProofImage.updateMany({
+    where: { errandId, kind: "PAYMENT_PROOF", supersededAt: null },
+    data: { supersededAt: new Date() },
+  });
 
   const image = await prisma.errandProofImage.create({
     data: {
@@ -197,7 +154,8 @@ export async function uploadPaymentProof(
 /** What the dispatcher and the customer see back. Never the image bytes. */
 export async function getPaymentProof(errandId: string) {
   const image = await prisma.errandProofImage.findFirst({
-    where: { errandId, kind: "PAYMENT_PROOF" },
+    where: { errandId, kind: "PAYMENT_PROOF", supersededAt: null },
+    orderBy: { capturedAt: "desc" },
     select: {
       id: true,
       capturedAt: true,

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
     errandProofImage: {
-      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       create: vi.fn().mockImplementation(({ data }: any) =>
         Promise.resolve({ id: 1, capturedAt: new Date(), extraction: data.extraction.create })
       ),
