@@ -38,10 +38,12 @@ function buildEmail(code: string, name: string): { subject: string; text: string
 
   const html = renderEmailShell({
     title: "Verify Your Sign-In",
-    subtitle: "Confirm this email address to finish setting up your staff account.",
+    subtitle: `${greeting} Confirm this email address to finish setting up your staff account.`,
     bodyHtml: renderCodeBlock(code, CODE_EXPIRY_MINUTES),
     footerNote:
       "If you did not try to sign in to Sugo Express, contact your system administrator immediately.",
+    categoryBadge: "STAFF VERIFICATION",
+    preheader: `Your Sugo Express verification code is ${code}. Valid for ${CODE_EXPIRY_MINUTES} minutes.`,
   });
 
   return { subject: "Your Sugo Express Sign-In Verification Code", text, html };

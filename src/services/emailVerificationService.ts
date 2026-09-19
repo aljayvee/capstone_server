@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { emailVerificationRepository } from "../repositories/emailVerificationRepository.js";
 import { customerRepository } from "../repositories/customerRepository.js";
 import { sendEmail } from "../lib/mailer.js";
+import { buildRegistrationOtpEmail, buildPasswordResetEmail } from "../lib/emailTemplates.js";
 import { logger } from "../lib/logger.js";
 import { ServiceError } from "./ServiceError.js";
 import { evaluateResend, streakSince } from "./otpCooldownPolicy.js";
@@ -24,51 +25,15 @@ async function issueCode(customerId: number | null, email: string): Promise<void
 
   await emailVerificationRepository.create({ customerId: customerId || null, email: email.toLowerCase().trim(), codeHash, expiresAt });
 
-  const textMessage = `Your Sugo On-the-Go verification code is: ${code}\n\nThis code expires in ${CODE_EXPIRY_MINUTES} minutes.\nIf you did not request this code, please ignore this email.`;
-
-  const htmlMessage = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Verify your Sugo On-the-Go Account</title>
-    </head>
-    <body style="margin: 0; padding: 24px; background-color: #F8F9FA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-      <div style="max-width: 480px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; padding: 32px; border: 1px solid #E5E7EB; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <div style="display: inline-block; background-color: #F62459; color: #FFFFFF; font-weight: bold; font-size: 18px; padding: 8px 18px; border-radius: 9999px; letter-spacing: 1px;">
-            SUGO EXPRESS
-          </div>
-          <h2 style="color: #111827; margin-top: 16px; margin-bottom: 8px; font-size: 22px;">Account Verification</h2>
-          <p style="color: #6B7280; font-size: 14px; margin: 0;">Use the 6-digit code below to complete your registration.</p>
-        </div>
-
-        <div style="background-color: #FFEEF3; border: 1.5px dashed #F62459; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0;">
-          <span style="font-size: 32px; font-weight: 800; color: #F62459; letter-spacing: 10px; font-family: monospace;">${code}</span>
-        </div>
-
-        <p style="color: #4B5563; font-size: 13px; text-align: center; margin-bottom: 24px;">
-          ⏱️ This code will expire in <strong>${CODE_EXPIRY_MINUTES} minutes</strong>.
-        </p>
-
-        <div style="border-top: 1px solid #F3F4F6; padding-top: 18px; text-align: center;">
-          <p style="color: #9CA3AF; font-size: 12px; margin: 0;">
-            If you did not attempt to sign up for Sugo On-the-Go, please disregard this message.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+  const { subject, text, html } = buildRegistrationOtpEmail(code, CODE_EXPIRY_MINUTES);
 
   // Fire-and-forget: an email failure must never fail the caller's request —
   // same contract as sendPushNotification.
   void sendEmail(
     email,
-    "Your Sugo On-the-Go Verification Code",
-    textMessage,
-    htmlMessage
+    subject,
+    text,
+    html
   );
 }
 
@@ -90,51 +55,9 @@ export async function sendPasswordResetCode(customerId: number, email: string): 
 
   await emailVerificationRepository.create({ customerId, email: cleanEmail, codeHash, expiresAt });
 
-  const textMessage = `Your Sugo On-the-Go password reset code is: ${code}
+  const { subject, text, html } = buildPasswordResetEmail(code, CODE_EXPIRY_MINUTES);
 
-This code expires in ${CODE_EXPIRY_MINUTES} minutes.
-
-If you did NOT ask to reset your password, someone else may have entered your username. Your password has not changed and no action is needed — but do not share this code with anyone.`;
-
-  const htmlMessage = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Reset your Sugo On-the-Go password</title>
-    </head>
-    <body style="margin: 0; padding: 24px; background-color: #F8F9FA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-      <div style="max-width: 480px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; padding: 32px; border: 1px solid #E5E7EB; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <div style="display: inline-block; background-color: #F62459; color: #FFFFFF; font-weight: bold; font-size: 18px; padding: 8px 18px; border-radius: 9999px; letter-spacing: 1px;">
-            SUGO EXPRESS
-          </div>
-          <h2 style="color: #111827; margin-top: 16px; margin-bottom: 8px; font-size: 22px;">Password Reset</h2>
-          <p style="color: #6B7280; font-size: 14px; margin: 0;">Use the 6-digit code below to set a new password.</p>
-        </div>
-
-        <div style="background-color: #FFEEF3; border: 1.5px dashed #F62459; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0;">
-          <span style="font-size: 32px; font-weight: 800; color: #F62459; letter-spacing: 10px; font-family: monospace;">${code}</span>
-        </div>
-
-        <p style="color: #4B5563; font-size: 13px; text-align: center; margin-bottom: 24px;">
-          ⏱️ This code will expire in <strong>${CODE_EXPIRY_MINUTES} minutes</strong>.
-        </p>
-
-        <div style="border-top: 1px solid #F3F4F6; padding-top: 18px;">
-          <p style="color: #6B7280; font-size: 12px; margin: 0; line-height: 18px;">
-            <strong style="color: #B91C1C;">Did not request this?</strong> Someone may have entered your username
-            on the sign-in screen. Your password has <strong>not</strong> changed and you do not need to do anything.
-            Never share this code with anyone — Sugo staff will never ask you for it.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  void sendEmail(cleanEmail, "Your Sugo On-the-Go Password Reset Code", textMessage, htmlMessage);
+  void sendEmail(cleanEmail, subject, text, html);
 }
 
 export async function sendVerificationCode(customerId: number, email: string): Promise<void> {

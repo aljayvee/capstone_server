@@ -30,10 +30,19 @@
 ---
 
 ## 🛠️ Model B (Gemini / Antigravity) Execution & Verification
-* **Status**: [Initialized & Ready]
+* **Status**: [Transactional Email & OTP Design Revamped]
 * **Files Synchronized**:
-  - `C:\Capstone_Server\server\AGENT_HANDSHAKE.md`
-  - `C:\Capstone_Server\server\CLAUDE.md`
-  - `C:\Capstone_Server\server\AGENTS.md`
+  - `C:\Capstone_Server\server\src\lib\emailTemplates.ts` (Revamped email design system: bulletproof MSO table shell, hidden preheaders, clean typography OTP hero, eliminated nested-card abuse and coupon dashed borders, added standardized builders `buildRegistrationOtpEmail`, `buildPasswordResetEmail`, `renderSecurityAdvisory`)
+  - `C:\Capstone_Server\server\src\services\emailVerificationService.ts` (Folded `issueCode` and `sendPasswordResetCode` onto centralized builders in `emailTemplates.ts`, eliminating duplicate inline HTML)
+  - `C:\Capstone_Server\server\src\services\staffVerificationService.ts` (Integrated categoryBadge and preheader into staff sign-in OTP email)
+  - `C:\Capstone_Server\server\src\services\loginNotificationService.ts` (Integrated `renderSecurityAdvisory` and preheader into staff login alert email)
+  - `C:\Capstone_Server\server\tests\emailTemplates.test.ts` (Created comprehensive unit tests for XSS escaping, template structure, and zero-card assertions)
+  - `C:\Capstone_Server\server\scripts\generateEmailPreviews.ts` (Browser preview generator for local visual inspection)
+  - `C:\Capstone_Project_Web\public\preview-emails.html` (Accessible browser preview for all 4 transactional emails)
 * **Verification Ledger**:
-  - Server endpoints follow RESTful conventions.
+  - `npx tsc --noEmit` verified with 0 errors on Capstone_Server/server.
+  - `npm test -- tests/emailTemplates.test.ts tests/registrationOtp.test.ts tests/otpCooldownPolicy.test.ts` verified with 26/26 tests passing.
+* **Directives for Claude / Future Sessions**:
+  - All transactional emails must be created through `src/lib/emailTemplates.ts` builders rather than inline HTML strings.
+  - Maintain the zero-nested-card policy and bulletproof table markup across any future email templates.
+

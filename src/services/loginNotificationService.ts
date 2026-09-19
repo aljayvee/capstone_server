@@ -1,5 +1,5 @@
 import { sendEmail } from "../lib/mailer.js";
-import { renderDetailRows, renderEmailShell } from "../lib/emailTemplates.js";
+import { renderDetailRows, renderEmailShell, renderSecurityAdvisory } from "../lib/emailTemplates.js";
 import { logger } from "../lib/logger.js";
 import { roleLabel } from "../lib/roleLabels.js";
 
@@ -97,21 +97,29 @@ export function sendLoginAlert(user: LoginAlertUser, ctx: LoginContext): void {
       `Timestamp (ISO 8601): ${at.toISOString()}\n\n` +
       `If this was you, no action is needed. If it was not, contact your system administrator immediately.`;
 
-    // Every value below is escaped by renderDetailRows — the user-agent this is
-    // derived from is fully caller-controlled text going into an HTML document.
-    const html = renderEmailShell({
-      title: "New Sign-In Detected",
-      subtitle: "Your Sugo Express account was just used to sign in.",
-      bodyHtml: renderDetailRows([
+    const bodyHtml = `
+      ${renderDetailRows([
         { label: "Name", value: fullName },
         { label: "Account", value: `${user.username} (${roleLabel(user.role)})` },
         { label: "Signed in to", value: surface },
         { label: "Device", value: device },
         { label: "Time", value: when },
         { label: "IP address", value: ip },
-      ]),
+      ])}
+      ${renderSecurityAdvisory(
+        "Security Alert",
+        "If you do not recognize this activity, your credentials may be compromised. Please notify your system administrator immediately to lock and secure your account."
+      )}
+    `;
+
+    const html = renderEmailShell({
+      title: "New Sign-In Detected",
+      subtitle: "Your Sugo Express account was just used to sign in.",
+      bodyHtml,
       footerNote:
         "If this was you, no action is needed. If you do not recognise this sign-in, contact your system administrator immediately.",
+      categoryBadge: "SECURITY AUDIT",
+      preheader: `New sign-in to your Sugo Express account from ${device}.`,
     });
 
     void sendEmail(email, "New sign-in to your Sugo Express account", text, html);
