@@ -23,6 +23,7 @@ const calendarDay = z.string().transform((value, ctx) => {
 export const dashboardQuerySchema = z
   .object({
     frequency: z.enum(["TODAY", "WEEK", "MONTH", "YEAR"]).default("TODAY"),
+    date: z.union([calendarDay, z.coerce.date()]).optional(),
     start: calendarDay.optional(),
     end: calendarDay.optional(),
   })

@@ -44,9 +44,10 @@ export interface DashboardSummary {
 // Pattern guidance ("combining multiple ... operations behind one service call").
 export async function getDashboardSummary(
   frequency: DashboardFrequency,
-  range?: DashboardRange
+  range?: DashboardRange,
+  referenceDate?: Date
 ): Promise<DashboardSummary> {
-  const now = new Date();
+  const now = referenceDate ?? new Date();
 
   // An explicit range supersedes the frequency preset — the same precedence the
   // reports use, so the two surfaces cannot disagree about which instruction is

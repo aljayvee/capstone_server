@@ -32,7 +32,7 @@ const MAX_RANGE_DAYS = 366;
 
 const rangeFields = {
   period: z.enum(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]).default("DAILY"),
-  date: z.coerce.date().optional(),
+  date: z.union([calendarDay, z.coerce.date()]).optional(),
   start: calendarDay.optional(),
   end: calendarDay.optional(),
 };
