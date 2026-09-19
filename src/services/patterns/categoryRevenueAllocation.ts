@@ -262,24 +262,29 @@ export interface ErrandCategoryRow {
  * has a home.
  */
 export function toCategoryEvidence(row: ErrandCategoryRow): CategoryEvidence {
+  const pinpoints = row.pinpoints ?? [];
+  const proofImages = row.proofImages ?? [];
+  const pabiliItemRequests = row.pabiliItemRequests ?? [];
+  const pabiliDetails = row.pabiliDetails ?? [];
+
   const categoryByPinpoint = new Map<number, string | null>(
-    row.pinpoints.map((p) => [p.id, p.category?.name ?? null])
+    pinpoints.map((p) => [p.id, p.category?.name ?? null])
   );
 
   return {
-    receipts: row.proofImages.map((img) => ({
+    receipts: proofImages.map((img) => ({
       categoryName: img.pinpointId === null ? null : categoryByPinpoint.get(img.pinpointId) ?? null,
       amount: img.extraction?.confirmedTotal ?? img.declaredTotal ?? 0,
     })),
-    customerItems: row.pabiliItemRequests.map((i) => ({
+    customerItems: pabiliItemRequests.map((i) => ({
       categoryName: i.storeCategory,
       quantity: i.quantity,
     })),
-    workingItems: row.pabiliDetails.map((i) => ({
+    workingItems: pabiliDetails.map((i) => ({
       categoryName: i.storeCategory,
       quantity: i.quantity,
     })),
-    pinnedCategories: row.pinpoints.map((p) => p.category?.name ?? null),
+    pinnedCategories: pinpoints.map((p) => p.category?.name ?? null),
   };
 }
 

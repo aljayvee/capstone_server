@@ -493,8 +493,10 @@ const LEGACY_PAYMENT_NAMES: Record<string, string> = {
   CASH: "Cash on Delivery",
 };
 
-function canonicalPaymentMethod(raw: string): string {
-  const value = raw.trim();
+function canonicalPaymentMethod(raw?: string | null): string {
+  if (!raw) return "Cash on Delivery";
+  const value = String(raw).trim();
+  if (!value) return "Cash on Delivery";
   return LEGACY_PAYMENT_NAMES[value.toUpperCase()] ?? value;
 }
 
@@ -506,10 +508,36 @@ export async function getTransactionSummary(request: ReportRequest) {
   ]);
 
   const rows = transactions.map((t) => {
+    const errand = t.errand;
+    if (!errand) {
+      return {
+        transactionId: t.id,
+        errandId: t.errandId,
+        category: UNCATEGORISED,
+        categories: [UNCATEGORISED],
+        riderName: null,
+        customerName: t.customer?.information
+          ? `${t.customer.information.firstName ?? ""} ${t.customer.information.lastName ?? ""}`.trim() || null
+          : null,
+        deliveryAddress: "Unknown",
+        amount: Number(t.amount) || 0,
+        deliveryFee: 0,
+        paymentMethod: canonicalPaymentMethod(t.paymentMethod),
+        paymentReferenceNo: null,
+        paymentTransactionId: null,
+        paymentConfirmedBy: null,
+        paymentEvidenceSource: null,
+        status: "CANCELLED" as const,
+        errandStatus: "CANCELLED" as const,
+        paymentStatus: t.status ?? "PENDING",
+        createdAt: t.createdAt ? t.createdAt.toISOString() : new Date().toISOString(),
+      };
+    }
+
     // Same evidence and same rules as the Sales report, so an errand does not
     // appear under one category there and another here. Resolved from relations
     // already loaded with the transaction — no extra query per row.
-    const { weights } = buildWeights(toCategoryEvidence(t.errand), activeNames);
+    const { weights } = buildWeights(toCategoryEvidence(errand), activeNames);
     const categories = [...weights.keys()].sort();
 
     // The ledger entry that IS the payment — UPFRONT on a half-payment plan,
@@ -517,8 +545,17 @@ export async function getTransactionSummary(request: ReportRequest) {
     // adjustments to that payment, not the payment itself, so they're
     // excluded here (they still count in the ledger a dispatcher sees).
     const paymentEntry =
-      t.errand.payments?.find((p) => p.kind === "UPFRONT" || p.kind === "FINAL") ?? null;
+      errand.payments?.find((p) => p.kind === "UPFRONT" || p.kind === "FINAL") ?? null;
     const proof = paymentEntry?.proofImage ?? null;
+
+    const riderName = errand.rider
+      ? `${errand.rider.firstName ?? ""} ${errand.rider.lastName ?? ""}`.trim() || null
+      : null;
+
+    const customerInfo = t.customer?.information;
+    const customerName = customerInfo
+      ? `${customerInfo.firstName ?? ""} ${customerInfo.lastName ?? ""}`.trim() || null
+      : null;
 
     return {
       transactionId: t.id,
@@ -527,18 +564,16 @@ export async function getTransactionSummary(request: ReportRequest) {
       // it touched — a two-stop errand is one row but two shops.
       category: primaryCategory(weights),
       categories,
-      riderName: t.errand.rider ? `${t.errand.rider.firstName} ${t.errand.rider.lastName}`.trim() : null,
-      customerName: t.customer.information
-        ? `${t.customer.information.firstName} ${t.customer.information.lastName}`.trim()
-        : null,
-      deliveryAddress: t.errand.deliveryAddress,
-      amount: t.amount,
-      deliveryFee: t.errand.deliveryFee,
+      riderName,
+      customerName,
+      deliveryAddress: errand.deliveryAddress ?? "",
+      amount: Number(t.amount) || 0,
+      deliveryFee: Number(errand.deliveryFee) || 0,
       // CustomerTransaction.paymentMethod is written once at creation and
       // defaults to COD. What a dispatcher actually confirmed with the customer
       // is the PaymentSelection, so that wins where one exists.
       paymentMethod: canonicalPaymentMethod(
-        t.errand.paymentSelection?.paymentMode.name ?? t.errand.paymentMode?.name ?? t.paymentMethod
+        errand.paymentSelection?.paymentMode?.name ?? errand.paymentMode?.name ?? t.paymentMethod
       ),
       // The GCash/Maya reference and transaction id read off whichever photo
       // backed the payment — null on COD (no ledger entry to point at) or
@@ -546,7 +581,7 @@ export async function getTransactionSummary(request: ReportRequest) {
       paymentReferenceNo: proof?.extraction?.referenceNo ?? null,
       paymentTransactionId: proof?.extraction?.transactionId ?? null,
       paymentConfirmedBy: paymentEntry?.confirmedBy
-        ? `${paymentEntry.confirmedBy.firstName} ${paymentEntry.confirmedBy.lastName}`.trim()
+        ? `${paymentEntry.confirmedBy.firstName ?? ""} ${paymentEntry.confirmedBy.lastName ?? ""}`.trim() || null
         : null,
       // Whose photo it was — the customer's own upload, or a rider's
       // door-side photo of the customer's receipt. Exactly one of
@@ -554,8 +589,8 @@ export async function getTransactionSummary(request: ReportRequest) {
       paymentEvidenceSource: proof ? (proof.customerId ? "customer" : "rider") : null,
       // The errand's own lifecycle state. This is the status column that carries
       // information — see paymentStatus below for the one that does not.
-      status: t.errand.status,
-      errandStatus: t.errand.status,
+      status: errand.status,
+      errandStatus: errand.status,
       paymentStatus: t.status,
       createdAt: t.createdAt.toISOString(),
     };
