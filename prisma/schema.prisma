@@ -889,6 +889,9 @@ model SysAdmin {
   emailVerifiedAt            DateTime?
   verificationTokenHash      String?   @db.VarChar(255)
   verificationTokenExpiresAt DateTime?
+  // Profile-change security gate: 6-digit OTP for updating username/email/password
+  profileOtpHash             String?   @db.VarChar(255)
+  profileOtpExpiresAt        DateTime?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
   lastLoginAt                DateTime?

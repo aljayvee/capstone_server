@@ -2,6 +2,7 @@ import { Response } from "express";
 import {
   getSystemTelemetry,
   toggleMaintenanceMode,
+  getPortalMaintenanceStatus,
   triggerDatabaseBackupSnapshot,
   listItAdministrators,
   createItAdministrator,
@@ -24,12 +25,16 @@ export async function getTelemetryHandler(req: AuthenticatedRequest, res: Respon
 
 export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: Response) {
   try {
-    const { active, notice } = req.body;
+    const { portal, active, notice } = req.body;
+    const validPortals = ["owner", "dispatcher", "rider", "customer"];
+    if (!portal || !validPortals.includes(portal)) {
+      return res.status(400).json({ error: `Property 'portal' must be one of: ${validPortals.join(", ")}.` });
+    }
     if (typeof active !== "boolean") {
       return res.status(400).json({ error: "Property 'active' must be a boolean." });
     }
-    const result = toggleMaintenanceMode(active, notice);
-    return res.status(200).json(result);
+    const result = toggleMaintenanceMode(portal, active, notice);
+    return res.status(200).json({ portal, ...result });
   } catch (err: unknown) {
     if (err instanceof ServiceError) {
       return res.status(err.status).json({ error: err.message });
@@ -37,6 +42,18 @@ export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: R
     return res.status(500).json({ error: "Failed to update maintenance mode." });
   }
 }
+
+// Public endpoint — no auth required — for portal polling
+export function getPublicMaintenanceStatusHandler(req: AuthenticatedRequest, res: Response) {
+  const { portal } = req.query;
+  const validPortals = ["owner", "dispatcher", "rider", "customer"];
+  if (!portal || typeof portal !== "string" || !validPortals.includes(portal)) {
+    return res.status(400).json({ error: `Query param 'portal' must be one of: ${validPortals.join(", ")}.` });
+  }
+  const status = getPortalMaintenanceStatus(portal as "owner" | "dispatcher" | "rider" | "customer");
+  return res.status(200).json(status);
+}
+
 
 export async function triggerBackupHandler(req: AuthenticatedRequest, res: Response) {
   try {

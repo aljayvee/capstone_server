@@ -10,8 +10,18 @@ import { logger } from "../lib/logger.js";
 
 const execAsync = promisify(exec);
 
-let isMaintenanceModeActive = false;
-let maintenanceNotice = "Scheduled system maintenance in progress. Services will resume shortly.";
+// ─── Per-Portal Maintenance State ────────────────────────────────────────────
+export type PortalKey = "owner" | "dispatcher" | "rider" | "customer";
+
+const DEFAULT_NOTICE = "Scheduled system maintenance in progress. Services will resume shortly.";
+
+const maintenanceState: Record<PortalKey, { isActive: boolean; notice: string }> = {
+  owner:      { isActive: false, notice: DEFAULT_NOTICE },
+  dispatcher: { isActive: false, notice: DEFAULT_NOTICE },
+  rider:      { isActive: false, notice: DEFAULT_NOTICE },
+  customer:   { isActive: false, notice: DEFAULT_NOTICE },
+};
+
 
 export interface SystemTelemetry {
   server: {
@@ -53,10 +63,7 @@ export interface SystemTelemetry {
       sysAdmins: number;
     };
   };
-  maintenance: {
-    isActive: boolean;
-    notice: string;
-  };
+  maintenance: Record<PortalKey, { isActive: boolean; notice: string }>;
 }
 
 export async function getSystemTelemetry(): Promise<SystemTelemetry> {
@@ -145,22 +152,20 @@ export async function getSystemTelemetry(): Promise<SystemTelemetry> {
       dbName: "errand_system_db",
       counts,
     },
-    maintenance: {
-      isActive: isMaintenanceModeActive,
-      notice: maintenanceNotice,
-    },
+    maintenance: { ...maintenanceState },
   };
 }
 
-export function toggleMaintenanceMode(active: boolean, notice?: string) {
-  isMaintenanceModeActive = active;
-  if (notice) {
-    maintenanceNotice = notice;
+export function toggleMaintenanceMode(portal: PortalKey, active: boolean, notice?: string) {
+  maintenanceState[portal].isActive = active;
+  if (notice !== undefined) {
+    maintenanceState[portal].notice = notice || DEFAULT_NOTICE;
   }
-  return {
-    isActive: isMaintenanceModeActive,
-    notice: maintenanceNotice,
-  };
+  return maintenanceState[portal];
+}
+
+export function getPortalMaintenanceStatus(portal: PortalKey) {
+  return maintenanceState[portal] ?? { isActive: false, notice: "" };
 }
 
 export async function triggerDatabaseBackupSnapshot(): Promise<{

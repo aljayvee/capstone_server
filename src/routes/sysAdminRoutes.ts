@@ -26,10 +26,16 @@ import {
 import {
   getTelemetryHandler,
   toggleMaintenanceHandler,
+  getPublicMaintenanceStatusHandler,
   triggerBackupHandler,
   listItAdminsHandler,
   createItAdminHandler,
 } from "../controllers/sysAdminDevOpsController.js";
+import {
+  requestProfileOtpHandler,
+  verifyProfileOtpHandler,
+  updateProfileHandler,
+} from "../controllers/sysAdminProfileController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { loginLimiter, verificationLimiter, readLimiter } from "../middleware/rateLimiters.js";
 
@@ -43,6 +49,11 @@ router.post("/sysadmin/auth/verify-email", verificationLimiter, sysAdminVerifyMa
 router.post("/sysadmin/auth/resend-verification", verificationLimiter, sysAdminResendMagicLink);
 router.post("/sysadmin/auth/logout", authenticateToken, requireRole("SYSADMIN"), sysAdminLogout);
 router.get("/sysadmin/auth/me", authenticateToken, requireRole("SYSADMIN"), sysAdminMe);
+
+// Profile Change Security Gate (3-layer: password + CONFIRM + email OTP)
+router.post("/sysadmin/auth/request-profile-otp", authenticateToken, requireRole("SYSADMIN"), verificationLimiter, requestProfileOtpHandler);
+router.post("/sysadmin/auth/verify-profile-otp", authenticateToken, requireRole("SYSADMIN"), verificationLimiter, verifyProfileOtpHandler);
+router.patch("/sysadmin/auth/update-profile", authenticateToken, requireRole("SYSADMIN"), updateProfileHandler);
 
 // Multi-Role User Account Monitoring & Security Actions
 router.get("/sysadmin/users", authenticateToken, requireRole("SYSADMIN"), readLimiter, getMonitoredAccounts);
@@ -66,5 +77,8 @@ router.post("/sysadmin/devops/maintenance", authenticateToken, requireRole("SYSA
 router.post("/sysadmin/devops/backup-db", authenticateToken, requireRole("SYSADMIN"), triggerBackupHandler);
 router.get("/sysadmin/it-admins", authenticateToken, requireRole("SYSADMIN"), readLimiter, listItAdminsHandler);
 router.post("/sysadmin/it-admins", authenticateToken, requireRole("SYSADMIN"), createItAdminHandler);
+
+// Public maintenance status endpoint — no auth — polled by each portal
+router.get("/maintenance/status", getPublicMaintenanceStatusHandler);
 
 export default router;
