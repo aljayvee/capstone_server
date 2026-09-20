@@ -849,6 +849,7 @@ model AccountLoginLog {
   deviceInfo    String?   @db.VarChar(120)
   status        String    @db.VarChar(32)
   sessionId     String?   @db.VarChar(36)
+  isOnline      Boolean   @default(false)
   createdAt     DateTime  @default(now())
   revokedAt     DateTime?
   revokedReason String?   @db.VarChar(64)
@@ -866,6 +867,33 @@ model TokenBlocklist {
 
   @@index([expiresAt])
   @@map("token_blocklist")
+}
+
+// 12b. System Administrator IT Accounts Table
+// Dedicated table for IT Management / DevOps staff, completely separated from
+// operational staff (`users`) and customer accounts (`customer_accounts`).
+model SysAdmin {
+  id                         Int       @id @default(autoincrement())
+  username                   String    @unique @db.VarChar(50)
+  passwordHash               String    @db.VarChar(255)
+  firstName                  String?   @db.VarChar(100)
+  middleName                 String?   @db.VarChar(100)
+  lastName                   String?   @db.VarChar(100)
+  nickname                   String?   @db.VarChar(50)
+  email                      String?   @unique @db.VarChar(191)
+  phone                      String?   @db.VarChar(30)
+  status                     String    @default("Active") @db.VarChar(20)
+  role                       String    @default("SYSADMIN") @db.VarChar(20)
+  profileCompleted           Boolean   @default(false)
+  emailVerified              Boolean   @default(false)
+  emailVerifiedAt            DateTime?
+  verificationTokenHash      String?   @db.VarChar(255)
+  verificationTokenExpiresAt DateTime?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  lastLoginAt                DateTime?
+
+  @@map("tbl_sys_admin")
 }
 
 // 13. Payment Selection Table (3NF: dispatcher-prompted, customer-confirmed

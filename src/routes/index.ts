@@ -14,10 +14,12 @@ import notificationRoutes from "./notificationRoutes.js";
 import connectivityIncidentRoutes from "./connectivityIncidentRoutes.js";
 import routingRoutes from "./routingRoutes.js";
 import placeRoutes from "./placeRoutes.js";
+import sysAdminRoutes from "./sysAdminRoutes.js";
 
 const router = Router();
 
 router.use("/", authRoutes);
+router.use("/", sysAdminRoutes);
 router.use("/users", userRoutes);
 router.use("/customers", customerRoutes);
 router.use("/errands", errandRoutes);

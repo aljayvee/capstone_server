@@ -12,6 +12,7 @@ import type { CreateUserInput, UpdateUserInput, ProfileUpdateInput, ChangePasswo
 import type { PushTokenInput } from "../validators/pushTokenValidators.js";
 import { riderPhotoRepository } from "../repositories/riderPhotoRepository.js";
 import type { RiderPhotoUploadInput } from "../validators/riderPhotoValidators.js";
+import * as userPresenceStore from "../lib/userPresenceStore.js";
 
 function sanitize<T extends { passwordHash: string }>(user: T) {
   const { passwordHash: _, ...rest } = user;
@@ -20,7 +21,16 @@ function sanitize<T extends { passwordHash: string }>(user: T) {
 
 export async function listUsers() {
   const users = await userRepository.findMany();
-  return users.map((u) => withFullName(sanitize(u)));
+  return users.map((u) => ({
+    ...withFullName(sanitize(u)),
+    isOnline: userPresenceStore.isOnline(u.id),
+  }));
+}
+
+export function getUserPresence() {
+  return {
+    onlineUserIds: userPresenceStore.getOnlineUserIds(),
+  };
 }
 
 export async function createUser(input: CreateUserInput) {
@@ -212,7 +222,13 @@ export async function getRiderProfile(riderId: number) {
 export async function getRiderPhoto(riderId: number) {
   const photo = await riderPhotoRepository.findByUserId(riderId);
   if (!photo) {
-    throw new ServiceError(404, "No profile photo set");
+    return {
+      photoData: null,
+      mimeType: null,
+      fileSize: 0,
+      fileName: null,
+      updatedAt: null,
+    };
   }
   return {
     photoData: photo.photoData,

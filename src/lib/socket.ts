@@ -3,8 +3,25 @@ import jwt from "jsonwebtoken";
 import { ALLOWED_ORIGINS, JWT_SECRET } from "../config/env.js";
 import { logger } from "./logger.js";
 import * as riderPresenceStore from "./riderPresenceStore.js";
+import * as userPresenceStore from "./userPresenceStore.js";
+import { prisma } from "./prisma.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import type { TokenPayload } from "../middleware/auth.js";
+
+async function syncUserPresenceToDb(userId: number, isOnline: boolean): Promise<void> {
+  try {
+    await prisma.accountLoginLog.updateMany({
+      where: {
+        userId,
+        status: "SUCCESS",
+        revokedAt: null,
+      },
+      data: { isOnline },
+    });
+  } catch (err) {
+    logger.warn(`Failed to sync presence to database for user ${userId}:`, err);
+  }
+}
 
 // NOTE: emits `io.emit(...)` directly rather than going through
 // eventPublisher.ts's IEventPublisher wrapper — that wrapper imports `io`
@@ -139,6 +156,14 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
     if (typeof errandId === "string" && errandId) socket.leave(rooms.errand(errandId));
   });
 
+  if (userId !== undefined) {
+    const becameOnline = userPresenceStore.addSocket(userId, socket.id);
+    if (becameOnline) {
+      io.emit("user:presence_changed", { userId, isOnline: true });
+      void syncUserPresenceToDb(userId, true);
+    }
+  }
+
   const riderId = socket.data.riderId;
   if (riderId !== undefined) {
     const becameOnline = riderPresenceStore.addSocket(riderId, socket.id);
@@ -149,6 +174,13 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
 
   socket.on("disconnect", () => {
     logger.info(`🔌 Client disconnected: ${socket.id}`);
+    if (userId !== undefined) {
+      const becameOffline = userPresenceStore.removeSocket(userId, socket.id);
+      if (becameOffline) {
+        io.emit("user:presence_changed", { userId, isOnline: false });
+        void syncUserPresenceToDb(userId, false);
+      }
+    }
     if (riderId !== undefined) {
       const becameOffline = riderPresenceStore.removeSocket(riderId, socket.id);
       if (becameOffline) {

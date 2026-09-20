@@ -263,3 +263,50 @@ export function buildPasswordResetEmail(
   return { subject, text, html };
 }
 
+export function buildSysAdminVerificationLinkEmail(
+  verificationLink: string,
+  recipientName: string = "System Administrator",
+  expiryMinutes: number = 5
+): { subject: string; text: string; html: string } {
+  const subject = "Verify Your Sugo IT System Administrator Account";
+  const text =
+    `Hello ${recipientName},\n\n` +
+    `You have completed your profile setup for the Sugo IT System Administrator portal.\n\n` +
+    `Please click the link below to verify your email and unlock access to the /sysadmin console:\n` +
+    `${verificationLink}\n\n` +
+    `This link expires in ${expiryMinutes} minutes.\n` +
+    `If you did not request this verification, please contact the system owner immediately.`;
+
+  const bodyHtml = `
+    <div style="margin: 28px 0; text-align: center;">
+      <p style="margin: 0 0 20px 0; font-size: 15px; color: #334155; line-height: 1.6;">
+        Welcome <strong>${escapeHtml(recipientName)}</strong>. Please click the button below to verify your email address and activate your System Administrator privileges.
+      </p>
+      <a href="${escapeHtml(verificationLink)}" target="_blank" style="display: inline-block; background-color: #DC2626; color: #FFFFFF; font-size: 15px; font-weight: 600; text-decoration: none; padding: 14px 28px; border-radius: 8px; letter-spacing: 0.3px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        Verify &amp; Unlock SysAdmin Portal &rarr;
+      </a>
+      <p style="margin: 24px 0 8px 0; font-size: 12px; color: #64748B;">
+        Or copy and paste this verification URL into your browser:
+      </p>
+      <p style="margin: 0; font-size: 12px; color: #0284C7; word-break: break-all; font-family: monospace;">
+        ${escapeHtml(verificationLink)}
+      </p>
+    </div>
+    ${renderSecurityAdvisory(
+      "High-Privilege Security Notice",
+      `This link is valid for exactly ${expiryMinutes} minutes and can only be used once. Never forward or disclose this link to anyone. This account holds administrative IT management access.`
+    )}
+  `;
+
+  const html = renderEmailShell({
+    title: "IT Administrator Verification",
+    subtitle: "Click the secure button below to verify your email and complete your IT management onboarding.",
+    bodyHtml,
+    footerNote: "This is an automated administrative notification from Sugo On-the-Go IT Management.",
+    preheader: `Click to verify your System Administrator account. Valid for ${expiryMinutes} minutes.`,
+    categoryBadge: "IT SECURITY ACCESS",
+  });
+
+  return { subject, text, html };
+}
+

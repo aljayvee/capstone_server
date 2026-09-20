@@ -11,6 +11,11 @@ export const listUsers = asyncHandler(async (req, res) => {
   res.json(users);
 });
 
+export const getUserPresence = asyncHandler(async (req, res) => {
+  const presence = userService.getUserPresence();
+  res.json(presence);
+});
+
 export const createUser = asyncHandler(async (req, res) => {
   const input = parseOrThrow(createUserSchema, req.body);
   const user = await userService.createUser(input);

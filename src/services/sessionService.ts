@@ -19,7 +19,7 @@ import { REFRESH_SESSION_TTL_MS, REFRESH_ROTATION_GRACE_MS } from "../config/env
  * real user sign in again, which is exactly what `assertNotReplayed` does.
  */
 
-export type SubjectType = "USER" | "CUSTOMER";
+export type SubjectType = "USER" | "CUSTOMER" | "SYSADMIN";
 
 export interface SessionContext {
   deviceId?: string | null;
@@ -44,9 +44,12 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-/** A customer id and a staff id may collide; the pair is the real identity. */
+/** A customer id, staff id, or sysadmin id may collide; the pair is the real identity. */
 export function subjectTypeForRole(role: string): SubjectType {
-  return String(role).toUpperCase() === "CUSTOMER" ? "CUSTOMER" : "USER";
+  const norm = String(role).toUpperCase();
+  if (norm === "CUSTOMER") return "CUSTOMER";
+  if (norm === "SYSADMIN") return "SYSADMIN";
+  return "USER";
 }
 
 function expiryFromNow(): Date {
@@ -150,6 +153,26 @@ export async function revokeOtherSessions(
   return result.count;
 }
 
+/** Revokes ALL active sessions for a subject */
+export async function revokeAllSubjectSessions(
+  subjectId: number,
+  subjectType: SubjectType,
+  reason: string
+): Promise<number> {
+  const result = await prisma.userSession.updateMany({
+    where: {
+      subjectId,
+      subjectType,
+      revokedAt: null,
+    },
+    data: {
+      revokedAt: new Date(),
+      revokedReason: reason.slice(0, 64),
+    },
+  });
+  return result.count;
+}
+
 /** Records an entry in account_login_logs for audit tracking */
 export async function recordLoginLog(data: {
   userId: number;
@@ -172,11 +195,28 @@ export async function recordLoginLog(data: {
         status: data.status.slice(0, 32),
         sessionId: data.sessionId?.slice(0, 36) ?? null,
         revokedReason: data.revokedReason?.slice(0, 64) ?? null,
+        isOnline: data.status.toUpperCase() === "SUCCESS",
       },
     });
   } catch (err) {
     // Non-fatal: an audit failure must never break sign-in or session flows
     console.error("[SessionService] Failed to record login log:", err);
+  }
+}
+
+/** Updates isOnline flag in account_login_logs for the user's active login records */
+export async function updateUserPresenceLog(userId: number, isOnline: boolean): Promise<void> {
+  try {
+    await prisma.accountLoginLog.updateMany({
+      where: {
+        userId,
+        status: "SUCCESS",
+        revokedAt: null,
+      },
+      data: { isOnline },
+    });
+  } catch (err) {
+    console.error("[SessionService] Failed to update presence log:", err);
   }
 }
 
