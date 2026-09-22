@@ -134,6 +134,22 @@ export const login = asyncHandler(async (req, res) => {
   if (outcome.kind === "AUTHENTICATED") {
     const role = outcome.user.role?.toUpperCase();
     if (role === "OWNER" || role === "DISPATCHER") {
+      // Signing in again on a device you are already signed in on is not a
+      // takeover. The check below compares no device identity at all, so a
+      // dispatcher's own 30-day-old session from the same browser was being
+      // reported to them as "another device" — and confirming superseded it,
+      // signing out any tab still holding it. Retire it quietly first so the
+      // prompt is reserved for a genuinely different device.
+      const deviceId = getDeviceId(req);
+      if (deviceId) {
+        await sessionService.revokeSameDeviceSessions(
+          outcome.user.id,
+          "USER",
+          deviceId,
+          "SUPERSEDED_SAME_DEVICE"
+        );
+      }
+
       const activeSession = await sessionService.findActiveStaffSession(outcome.user.id, role);
       if (activeSession) {
         if (!confirmTakeover) {

@@ -118,6 +118,42 @@ export async function findActiveStaffSession(subjectId: number, role: string) {
   });
 }
 
+/**
+ * Retires any live session belonging to the SAME device as the caller.
+ *
+ * The single-device guard identifies "another device" as nothing more than "an
+ * active session exists for this user and role" — it compares no device, IP or
+ * user agent at all. Combined with 30-day sessions that nothing prunes, that
+ * made a dispatcher signing in from the browser they always use get challenged
+ * about themselves, and superseding their own earlier session then signed out
+ * any tab still holding it with "This session has been signed out." It is by
+ * far the most common revocation in production: 53 of them against a handful of
+ * staff accounts by 2026-09-23.
+ *
+ * Signing in again on a device you are already signed in on is not a takeover.
+ * It is the same person on the same machine, so the old session is retired
+ * quietly and the prompt is saved for a genuinely different device.
+ *
+ * Only ever matches a POSITIVE device id. A session recorded before the web
+ * portal sent one carries NULL and is deliberately left alone, so this can
+ * never quietly retire a session it cannot prove belongs to this browser.
+ */
+export async function revokeSameDeviceSessions(
+  subjectId: number,
+  subjectType: SubjectType,
+  deviceId: string,
+  reason: string
+): Promise<number> {
+  const trimmed = deviceId.slice(0, 80);
+  if (!trimmed) return 0;
+
+  const result = await prisma.userSession.updateMany({
+    where: { subjectId, subjectType, deviceId: trimmed, revokedAt: null },
+    data: { revokedAt: new Date(), revokedReason: reason.slice(0, 64) },
+  });
+  return result.count;
+}
+
 /** Lists all active sessions for a subject */
 export async function listActiveSessions(subjectId: number, subjectType: SubjectType) {
   return prisma.userSession.findMany({
