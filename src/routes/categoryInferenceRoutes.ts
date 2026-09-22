@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   inferItemCategories,
   inferStoreCategory,
+  suggestItemPlacements,
 } from "../controllers/categoryInferenceController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { userApiLimiter } from "../middleware/rateLimiters.js";
@@ -33,6 +34,18 @@ router.post(
   requireRole(["DISPATCHER", "OWNER"]),
   userApiLimiter,
   inferItemCategories
+);
+
+/**
+ * Placement for one errand's items. Errand-scoped because the answer names one
+ * of THAT errand's pinned shops, not just a category.
+ */
+router.post(
+  "/errands/:errandId/item-placements",
+  authenticateToken,
+  requireRole(["DISPATCHER", "OWNER"]),
+  userApiLimiter,
+  suggestItemPlacements
 );
 
 export default router;

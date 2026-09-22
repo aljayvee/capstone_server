@@ -2,6 +2,7 @@ import { errandRepository, dispatchLogRepository } from "../repositories/errandR
 import { pinpointRepository, type PinpointInput } from "../repositories/pinpointRepository.js";
 import { pabiliItemRepository } from "../repositories/pabiliItemRepository.js";
 import { pabiliDetailRepository, type PabiliDetailInput } from "../repositories/pabiliDetailRepository.js";
+import { forgetMemoryCache } from "./itemPlacementService.js";
 import { pricingStoreCount, distinctStopCount } from "./patterns/pricingStoreCount.js";
 import { smoothPath } from "../lib/routing/smoothPath.js";
 import { fareAfterAgreement } from "./patterns/agreedFare.js";
@@ -1279,6 +1280,13 @@ export async function updateItems(errandId: string, items: PabiliDetailInput[]) 
   // moving noodles from a fast-food stop to a grocery is recorded in the item's
   // storeCategory, and until this ran the rider went on seeing the customer's
   // original grouping no matter what the dispatcher changed.
+  // Every row just written is a dispatcher deciding where an item is bought,
+  // which is exactly what the placement suggester learns from. Dropping its
+  // cache here is what closes the loop: a dispatcher who files an unfamiliar
+  // item now gets that answer back on the very next errand rather than after
+  // the cache happens to expire.
+  forgetMemoryCache();
+
   const filed = await pabiliItemRepository.attachToPinpoints(errandId);
   if (filed > 0) {
     logger.info(`Errand ${errandId}: re-filed ${filed} edited item(s) under their store stops.`);

@@ -3,8 +3,10 @@ import { parseOrThrow } from "../validators/validate.js";
 import {
   inferItemCategoriesSchema,
   inferStoreCategorySchema,
+  suggestItemPlacementsSchema,
 } from "../validators/categoryInferenceValidators.js";
 import * as categoryInferenceService from "../services/categoryInferenceService.js";
+import * as itemPlacementService from "../services/itemPlacementService.js";
 
 /**
  * Category guessing for the dispatcher console.
@@ -31,4 +33,21 @@ export const inferItemCategories = asyncHandler(async (req, res) => {
   // Index-aligned with the names that were sent, so the console can zip them
   // back onto its own rows without matching on the text it submitted.
   res.json({ results });
+});
+
+/**
+ * Where each item should be bought, for one errand.
+ *
+ * Answers from what dispatchers have already decided before falling back to the
+ * model — see itemPlacementService. Like the endpoints above it reports "no
+ * suggestion" in the body rather than failing the request, because the caller
+ * is a panel someone is looking at.
+ */
+export const suggestItemPlacements = asyncHandler(async (req, res) => {
+  const input = parseOrThrow(suggestItemPlacementsSchema, req.body);
+  const placements = await itemPlacementService.suggestItemPlacements(
+    req.params.errandId,
+    input.names
+  );
+  res.json({ placements });
 });

@@ -34,3 +34,18 @@ export const inferItemCategoriesSchema = z.object({
 });
 
 export type InferItemCategoriesInput = z.infer<typeof inferItemCategoriesSchema>;
+
+/**
+ * Stage 3's "where does this go?" question.
+ *
+ * Takes the errand so the answer can name one of ITS pinned shops rather than
+ * a bare category — the same item lands on a different pin every order.
+ */
+export const suggestItemPlacementsSchema = z.object({
+  names: z
+    .array(z.string().trim().min(1).max(200))
+    .min(1, "At least one item is required.")
+    .max(100, "At most 100 items can be placed at once."),
+});
+
+export type SuggestItemPlacementsInput = z.infer<typeof suggestItemPlacementsSchema>;
