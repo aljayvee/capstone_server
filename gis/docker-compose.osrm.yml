@@ -41,7 +41,23 @@ services:
       /data/tacurong.osrm
     healthcheck:
       # Nearest is the cheapest service that still proves the graph is loaded.
-      test: ["CMD-SHELL", "wget -qO- 'http://localhost:5000/nearest/v1/driving/124.6752,6.6873' | grep -q '\"code\":\"Ok\"'"]
+      #
+      # Probed with bash's /dev/tcp rather than an HTTP client, because this
+      # image ships neither: no curl, no wget, no nc, no busybox, no python.
+      # The original check ran `wget -qO- ...` and therefore failed every single
+      # time with "wget: not found" - 22,463 consecutive failures by 2026-09-23,
+      # while OSRM itself was answering perfectly. A healthcheck that can only
+      # ever fail is worse than none: it trains everyone to ignore the column,
+      # and any orchestration keyed on health would have restarted a working
+      # container forever.
+      #
+      # CMD (not CMD-SHELL) with an explicit bash, because the default shell
+      # here is dash, which has no /dev/tcp.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/5000 && printf ''GET /nearest/v1/driving/124.6752,6.6873 HTTP/1.0\r\n\r\n'' >&3 && grep -q ''"code":"Ok"'' <&3'
       interval: 30s
       timeout: 10s
       retries: 3
