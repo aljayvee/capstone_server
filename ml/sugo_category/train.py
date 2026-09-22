@@ -5,7 +5,7 @@ Where the labels come from, in order of how much they are worth:
 
   1. `verified_places`   — an owner catalogued this shop AND chose its category.
                            The cleanest labels in the system.
-  2. `errand_pinpoints`  — the category a dispatcher actually committed on a
+  2. `errand_pinpoints_tbl` — the category a dispatcher actually committed on a
                            real errand. These are gold: every one of them is a
                            human deciding this exact question, and the ones that
                            were CORRECTED away from a previous guess are the
@@ -47,7 +47,29 @@ def _normalise_url(url: str) -> str:
     return url
 
 
-def fetch_store_rows(engine) -> list[tuple[str, str]]:
+def fetch_active_categories(engine) -> list[str]:
+    """
+    The category names this environment actually has.
+
+    Read from the database rather than taken from the lexicon, because
+    `merchant_categories` is owner-editable: production carries a "Bakery" the
+    lexicon has never heard of, and the first version of this trainer silently
+    DROPPED every row labelled with it. A category the owner created is exactly
+    the kind the model most needs to learn, since no seed phrase covers it.
+    """
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        return [
+            name
+            for (name,) in conn.execute(
+                text("SELECT name FROM merchant_categories WHERE status = 'Active'")
+            )
+            if name and name.strip()
+        ]
+
+
+def fetch_store_rows(engine, allowed: set[str]) -> list[tuple[str, str]]:
     """Shop name -> category, from the catalogue and from committed pins."""
     from sqlalchemy import text
 
@@ -68,7 +90,7 @@ def fetch_store_rows(engine) -> list[tuple[str, str]]:
                 """
             )
         ):
-            if category not in CATEGORIES:
+            if category not in allowed:
                 continue
             rows.append((name, category))
             for alias in (keywords or "").split(","):
@@ -84,7 +106,7 @@ def fetch_store_rows(engine) -> list[tuple[str, str]]:
             text(
                 """
                 SELECT pp.storeName, c.name AS category
-                  FROM errand_pinpoints pp
+                  FROM errand_pinpoints_tbl pp
                   JOIN merchant_categories c ON c.id = pp.categoryId
                  WHERE pp.categoryId IS NOT NULL
                    AND pp.storeName IS NOT NULL
@@ -92,13 +114,13 @@ def fetch_store_rows(engine) -> list[tuple[str, str]]:
                 """
             )
         ):
-            if category in CATEGORIES:
+            if category in allowed:
                 rows.append((store_name, category))
 
     return rows
 
 
-def fetch_item_rows(engine) -> list[tuple[str, str]]:
+def fetch_item_rows(engine, allowed: set[str]) -> list[tuple[str, str]]:
     """Item name -> the kind of shop it was bought at."""
     from sqlalchemy import text
 
@@ -126,7 +148,7 @@ def fetch_item_rows(engine) -> list[tuple[str, str]]:
                 # after the pipe. Rows written before the console used the
                 # composite form carry the bare category instead.
                 category = raw_category.split(" | ")[-1].strip() if raw_category else ""
-                if category in CATEGORIES:
+                if category in allowed:
                     rows.append((item_name, category))
 
     return rows
@@ -150,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
 
     store_rows: list[tuple[str, str]] = []
     item_rows: list[tuple[str, str]] = []
+    # None means "fall back to the lexicon's own categories" - the offline path.
+    allowed: set[str] | None = None
 
     if not args.offline:
         if not args.database_url:
@@ -157,14 +181,23 @@ def main(argv: list[str] | None = None) -> int:
         from sqlalchemy import create_engine
 
         engine = create_engine(_normalise_url(args.database_url), pool_pre_ping=True)
-        store_rows = fetch_store_rows(engine)
-        item_rows = fetch_item_rows(engine)
+        active = fetch_active_categories(engine)
+        allowed = set(active) | set(CATEGORIES)
+        print(f"active categories in this environment: {', '.join(sorted(active))}")
+        unseeded = sorted(set(active) - set(CATEGORIES))
+        if unseeded:
+            # Worth saying out loud: these have no seed phrases at all, so the
+            # model knows them only from real rows. Few real rows means weak
+            # predictions for them, which is a data problem, not a bug.
+            print(f"categories with no seed lexicon coverage: {', '.join(unseeded)}")
+        store_rows = fetch_store_rows(engine, allowed)
+        item_rows = fetch_item_rows(engine, allowed)
 
     print(f"store rows from database: {len(store_rows)}")
     print(f"item rows from database:  {len(item_rows)}")
 
     for kind, rows in (("store", store_rows), ("item", item_rows)):
-        model = CategoryModel.train(kind, rows)
+        model = CategoryModel.train(kind, rows, allowed=allowed)
         model.save(args.out)
         report = model.report
         accuracy = (

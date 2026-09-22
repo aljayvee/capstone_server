@@ -190,6 +190,36 @@ def test_normalisation_keeps_something_when_a_name_is_all_noise():
     assert normalize("The Store") != ""
 
 
+def test_a_category_the_lexicon_never_heard_of_can_still_be_learned():
+    # Production caught this: `merchant_categories` is owner-editable and the
+    # live catalogue carries a "Bakery" that no seed phrase covers. The first
+    # trainer filtered real rows against the lexicon's own four names, so every
+    # Bakery row was silently dropped and the model could never predict the one
+    # category it had real evidence for.
+    bakery = "Bakery"
+    rows = [
+        ("Julies Bakeshop Tacurong", bakery),
+        ("Panaderia ni Aling Rosa", bakery),
+        ("Tinapay Express Bakery", bakery),
+        ("Sweet Crust Bakeshop", bakery),
+    ] * 5
+
+    model = CategoryModel.train(
+        "store", rows, holdout=False, allowed={bakery, FOOD, PHARMACY, GROCERY, RETAIL}
+    )
+    assert bakery in model.report.classes
+    assert model.predict("Malinao Bakeshop")["category"] == bakery
+
+
+def test_an_unknown_category_is_still_refused_when_not_in_the_allowed_set():
+    # The filter must stay a filter. A label this environment does not have is
+    # dropped, so a model trained against one catalogue cannot name a category
+    # the dispatcher's dropdown has no entry for.
+    rows = [("Some Shop", "Hardware & Construction")] * 10
+    model = CategoryModel.train("store", rows, holdout=False)
+    assert "Hardware & Construction" not in model.report.classes
+
+
 def test_real_rows_outweigh_the_seed_lexicon():
     # The lexicon is a floor, not an opinion to defend. If Tacurong's own data
     # says a name means something else, the data has to win — otherwise the

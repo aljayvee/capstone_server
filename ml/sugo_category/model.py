@@ -243,17 +243,32 @@ class CategoryModel:
         kind: str,
         real_rows: Iterable[tuple[str, str]],
         holdout: bool = True,
+        allowed: set[str] | None = None,
     ) -> "CategoryModel":
         """
         `real_rows` are `(text, category)` pairs read from the database.
         Seed phrases for this `kind` are always mixed in underneath them.
+
+        `allowed` is the set of category names this environment actually has,
+        read from `merchant_categories`. It defaults to the lexicon's own four,
+        but production carries a fifth ("Bakery") that no seed phrase covers —
+        and filtering real rows against the lexicon silently threw every one of
+        those away, so the model could never learn a category the owner added.
         """
-        seeds = [(text, cat) for text, cat, row_kind in synthetic_rows() if row_kind == kind]
+        permitted = allowed if allowed is not None else set(CATEGORIES)
+        # The catalogue is passed into the lexicon too, so a concept the owner
+        # has promoted into its own category (Bakery) stops being asserted
+        # under its old parent and arguing against the real rows.
+        seeds = [
+            (text, cat)
+            for text, cat, row_kind in synthetic_rows(permitted)
+            if row_kind == kind
+        ]
 
         real = [
             (normalize(text), cat)
             for text, cat in real_rows
-            if text and cat in CATEGORIES and normalize(text)
+            if text and cat in permitted and normalize(text)
         ]
         synthetic = [(normalize(text), cat) for text, cat in seeds]
 

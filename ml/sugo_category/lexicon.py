@@ -227,7 +227,34 @@ ITEM_PHRASES: dict[str, list[str]] = {
 }
 
 
-def synthetic_rows() -> list[tuple[str, str, str]]:
+# ── concepts an owner may promote into a category of their own ─────────────
+#
+# `merchant_categories` is owner-editable, and production carries a "Bakery"
+# that this file files under Fast Food & Restaurant. Left alone, the seed
+# phrases below would actively argue AGAINST the real Bakery rows a dispatcher
+# has already labelled — the lexicon asserting a taxonomy the business has since
+# moved past.
+#
+# When the live catalogue defines a category whose name matches a key here, the
+# listed phrases are re-labelled to it instead of their default parent. Keyed by
+# the category name an owner would plausibly type.
+CONTESTED_CONCEPTS: dict[str, list[str]] = {
+    "Bakery": [
+        "bakery", "bakeshop", "panaderia", "pastry shop", "cake shop",
+        "julies bakeshop", "pan de manila", "goldilocks", "red ribbon",
+        "bread", "pandesal", "ensaymada", "spanish bread", "hopia",
+        "cake", "birthday cake", "slice cake", "cupcake", "donut",
+        "tasty bread", "loaf bread",
+    ],
+    "Beverages": [
+        "milk tea shop", "bubble tea", "juice bar", "coffee shop",
+        "coffee house", "milk tea", "wintermelon milk tea",
+        "okinawa milk tea", "fruit tea", "iced coffee", "hot coffee",
+    ],
+}
+
+
+def synthetic_rows(allowed: set[str] | None = None) -> list[tuple[str, str, str]]:
     """
     Every seed phrase as a `(text, category, kind)` training row.
 
@@ -235,10 +262,31 @@ def synthetic_rows() -> list[tuple[str, str, str]]:
     the same word means different things on each side: "Mercury Drug" is a shop,
     "Biogesic" is something bought in one, and a model that saw both in one pile
     would learn neither cleanly.
+
+    `allowed` is the live catalogue. Where it defines a category named in
+    CONTESTED_CONCEPTS, those phrases are moved to it; where it does not, they
+    stay with their default parent and nothing changes.
     """
+    moved: dict[str, str] = {}
+    if allowed:
+        for concept, phrases in CONTESTED_CONCEPTS.items():
+            if concept in allowed:
+                for phrase in phrases:
+                    moved[phrase] = concept
+
     rows: list[tuple[str, str, str]] = []
     for category, phrases in STORE_PHRASES.items():
-        rows.extend((phrase, category, "store") for phrase in phrases)
+        rows.extend((phrase, moved.get(phrase, category), "store") for phrase in phrases)
     for category, phrases in ITEM_PHRASES.items():
-        rows.extend((phrase, category, "item") for phrase in phrases)
+        rows.extend((phrase, moved.get(phrase, category), "item") for phrase in phrases)
+
+    # A promoted concept may list phrases that appear in neither STORE_PHRASES
+    # nor ITEM_PHRASES. Add them so the new category gets real seed coverage
+    # rather than only whatever the live rows happen to carry.
+    if moved:
+        seen = {(text, kind) for text, _, kind in rows}
+        for phrase, concept in moved.items():
+            for kind in ("store", "item"):
+                if (phrase, kind) not in seen:
+                    rows.append((phrase, concept, kind))
     return rows
