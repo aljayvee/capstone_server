@@ -39,7 +39,7 @@ Three decisions worth knowing about:
 | Source | What it is |
 | --- | --- |
 | `verified_places` | An owner catalogued this shop and chose its category. Its `keywords` aliases each become their own row. |
-| `errand_pinpoints` | The category a dispatcher actually committed on a live errand. The gold labels — every one is a human answering this exact question, and the corrections are the only record of where the model used to be wrong. |
+| `errand_pinpoints_tbl` | The category a dispatcher actually committed on a live errand. The gold labels — every one is a human answering this exact question, and the corrections are the only record of where the model used to be wrong. |
 | `pabili_details_tbl`, `pabili_item_requests_tbl` | The item side. `storeCategory` is the composite `"Store 2 - Jollibee \| Fast Food & Restaurant"` the console writes, so the category is whatever follows `" \| "`. |
 | `sugo_category/lexicon.py` | Hand-written seed knowledge: PH chains, Tagalog/Bisaya shop words, common product names. A floor for a fresh install and for the long tail. |
 
@@ -69,7 +69,8 @@ python -m sugo_category.train --database-url "mysql+pymysql://user:pass@host/cap
 
 ```bash
 docker compose -f ml/docker-compose.category.yml build \
-  --build-arg TRAIN_ARGS="--database-url mysql+pymysql://user:pass@host/capstone"
+  --build-arg TRAIN_ARGS="--database-url mysql+pymysql://user:pass@host/capstone" \
+  --build-arg TRAINED_AT=$(date +%s)
 docker compose -f ml/docker-compose.category.yml up -d
 ```
 
@@ -78,6 +79,11 @@ Then in `server/.env`:
 ```
 CATEGORY_SERVICE_URL=http://127.0.0.1:8100
 ```
+
+**Always pass a fresh `TRAINED_AT` when retraining.** Without it, a build with
+no code change reuses Docker's cached training layer: it reports success and
+the container keeps serving the old model. `/health`'s `real_rows` is the
+check - it must move when the data has.
 
 The models are baked into the image rather than mounted, so the running
 container needs no database. Retraining means rebuilding, which is deliberate

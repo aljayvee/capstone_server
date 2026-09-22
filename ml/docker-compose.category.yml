@@ -17,6 +17,10 @@ services:
         # common Philippine chains and shop words but knows nothing specific to
         # Tacurong until it has seen your catalogue.
         TRAIN_ARGS: "--offline"
+        # Set to a fresh value to force a real retrain; unchanged, Docker
+        # reuses the last trained layer and serves the old model. See the
+        # Dockerfile. e.g. TRAINED_AT=$(date +%s) docker compose ... build
+        TRAINED_AT: "${TRAINED_AT:-unset}"
     image: sugo-category:latest
     container_name: capstone-category
     restart: unless-stopped

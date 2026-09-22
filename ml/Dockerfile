@@ -26,7 +26,21 @@ COPY app.py .
 #
 # Baked in either way, so the running container needs no database at all.
 ARG TRAIN_ARGS="--offline"
-RUN python -m sugo_category.train ${TRAIN_ARGS} --out /srv/models
+# Busts the build cache for the training step, and ONLY that step.
+#
+# Without it, retraining against new data is silently a no-op: when neither the
+# code nor TRAIN_ARGS has changed, Docker reuses the previously trained layer,
+# the build reports success, and the "retrained" container serves the old model.
+# That is exactly the retrain-after-dispatcher-corrections case this image
+# exists for. Found on 2026-09-23 when a retrain meant to drop deleted test data
+# printed no training output at all and kept the old row counts.
+#
+# Pass a fresh value on every build that should retrain:
+#   --build-arg TRAINED_AT=$(date +%s)
+# Any RUN after an ARG sees it as an environment variable, so a changed value
+# is a cache miss here and nowhere earlier - the pip install stays cached.
+ARG TRAINED_AT=unset
+RUN echo "training run ${TRAINED_AT}" && python -m sugo_category.train ${TRAIN_ARGS} --out /srv/models
 
 # Not root. This process parses strings that arrive from a dispatcher's search
 # box, by way of two other services; there is no reason for it to be able to
