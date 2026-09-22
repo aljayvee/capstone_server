@@ -220,6 +220,23 @@ def test_an_unknown_category_is_still_refused_when_not_in_the_allowed_set():
     assert "Hardware & Construction" not in model.report.classes
 
 
+def test_database_url_is_normalised_for_pymysql():
+    # Production's DATABASE_URL carries Prisma-only query parameters. SQLAlchemy
+    # forwards them verbatim to the driver, and PyMySQL raises
+    # "unexpected keyword argument 'connection_limit'" - which the trainer hit
+    # on its first real deploy and reported as zero training rows.
+    from sugo_category.train import _normalise_url
+
+    assert (
+        _normalise_url("mysql://u:p@localhost:3306/db?connection_limit=5&pool_timeout=10")
+        == "mysql+pymysql://u:p@localhost:3306/db"
+    )
+    # Already-correct URLs are left alone apart from the same query strip.
+    assert (
+        _normalise_url("mysql+pymysql://u:p@h/db") == "mysql+pymysql://u:p@h/db"
+    )
+
+
 def test_real_rows_outweigh_the_seed_lexicon():
     # The lexicon is a floor, not an opinion to defend. If Tacurong's own data
     # says a name means something else, the data has to win — otherwise the

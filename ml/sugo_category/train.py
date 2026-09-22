@@ -41,10 +41,25 @@ DEFAULT_MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
 def _normalise_url(url: str) -> str:
-    """Accept the server's own DATABASE_URL spelling without hand-editing."""
+    """
+    Accept the server's own DATABASE_URL spelling without hand-editing.
+
+    Two things have to happen. The scheme becomes `mysql+pymysql://` so
+    SQLAlchemy picks a driver that is actually installed, and the query string
+    is dropped: production's URL carries Prisma-only parameters such as
+    `?connection_limit=...`, which SQLAlchemy forwards verbatim to the driver
+    and PyMySQL rejects with
+
+        TypeError: Connection.__init__() got an unexpected keyword argument
+        'connection_limit'
+
+    Nothing in that query string means anything to this trainer - it opens one
+    short-lived connection, reads a few thousand rows and exits - so discarding
+    it is safe rather than merely convenient.
+    """
     if url.startswith("mysql://"):
-        return "mysql+pymysql://" + url[len("mysql://") :]
-    return url
+        url = "mysql+pymysql://" + url[len("mysql://") :]
+    return url.split("?", 1)[0]
 
 
 def fetch_active_categories(engine) -> list[str]:
