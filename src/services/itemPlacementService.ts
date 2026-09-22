@@ -78,26 +78,44 @@ interface MemoryEntry {
   total: number;
 }
 
-let memoryCache: { at: number; entries: Map<string, MemoryEntry> } | null = null;
+/** One remembered filing, kept with its errand so an errand never learns from itself. */
+interface MemoryRow {
+  errandId: string;
+  categoryId: number;
+}
+
+let memoryCache: { at: number; rows: Map<string, MemoryRow[]> } | null = null;
 
 /**
- * Every past "this item belongs to this kind of shop" decision, keyed by the
- * reduced item name.
+ * Every past decision a DISPATCHER made about where an item is bought, keyed
+ * by the reduced item name.
  *
- * Read from two places, because the category lives in two shapes. Where the
- * item was attached to a pinned stop, that stop's own category is the truest
- * record — the dispatcher pinned the shop AND filed the item there. Where it
- * was not, the `storeCategory` text carries the category after the " | ".
+ * Two rules keep this honest, and both were found by running a real order
+ * through the console on 2026-09-23:
+ *
+ *  1. Only rows the dispatcher console filed count. `pabili_details_tbl` is
+ *     also written when the CUSTOMER places the order, carrying their own bare
+ *     category pick ("Bakery"). Counting those presented a customer's guess
+ *     as a dispatcher's remembered decision - including their mistakes. Stage
+ *     3 is the only writer of the "Store 2 - Julie's | Bakery" form, so the
+ *     " | " separator is what marks a row as a human dispatcher's filing.
+ *  2. An errand never learns from its own rows. Without this, every item on
+ *     the order being asked about answered "learned once before" at 100% -
+ *     from itself - and echoed the customer's pick straight back.
+ *
+ * The model still trains on the customer rows at build time, where they are
+ * useful general signal. They are just not evidence of what a dispatcher did.
  */
-async function loadMemory(): Promise<Map<string, MemoryEntry>> {
+async function loadMemory(): Promise<Map<string, MemoryRow[]>> {
   if (memoryCache && Date.now() - memoryCache.at < MEMORY_TTL_MS) {
-    return memoryCache.entries;
+    return memoryCache.rows;
   }
 
   const [rows, categories] = await Promise.all([
     prisma.pabiliDetail.findMany({
-      where: { itemName: { not: "" } },
+      where: { itemName: { not: "" }, storeCategory: { contains: " | " } },
       select: {
+        errandId: true,
         itemName: true,
         storeCategory: true,
         pinpoint: { select: { categoryId: true } },
@@ -112,7 +130,7 @@ async function loadMemory(): Promise<Map<string, MemoryEntry>> {
     categories.map((c: { id: number; name: string }) => [c.name.trim().toLowerCase(), c])
   );
 
-  const entries = new Map<string, MemoryEntry>();
+  const byKey = new Map<string, MemoryRow[]>();
 
   for (const row of rows) {
     const key = itemNameKey(row.itemName);
@@ -128,14 +146,25 @@ async function loadMemory(): Promise<Map<string, MemoryEntry>> {
     }
     if (categoryId == null) continue;
 
-    const entry = entries.get(key) ?? { byCategory: new Map(), total: 0 };
-    entry.byCategory.set(categoryId, (entry.byCategory.get(categoryId) ?? 0) + 1);
-    entry.total += 1;
-    entries.set(key, entry);
+    const list = byKey.get(key) ?? [];
+    list.push({ errandId: row.errandId, categoryId });
+    byKey.set(key, list);
   }
 
-  memoryCache = { at: Date.now(), entries };
-  return entries;
+  memoryCache = { at: Date.now(), rows: byKey };
+  return byKey;
+}
+
+/** Tallies one item's remembered filings, leaving out the errand being asked about. */
+function recall(rows: MemoryRow[] | undefined, excludeErrandId: string): MemoryEntry | null {
+  if (!rows) return null;
+  const entry: MemoryEntry = { byCategory: new Map(), total: 0 };
+  for (const row of rows) {
+    if (row.errandId === excludeErrandId) continue;
+    entry.byCategory.set(row.categoryId, (entry.byCategory.get(row.categoryId) ?? 0) + 1);
+    entry.total += 1;
+  }
+  return entry.total > 0 ? entry : null;
 }
 
 /** Drops the cache so a just-sent item list is visible immediately. */
@@ -190,7 +219,7 @@ export async function suggestItemPlacements(
   const unknown: Array<{ index: number; name: string }> = [];
 
   names.forEach((name, index) => {
-    const entry = memory.get(itemNameKey(name));
+    const entry = recall(memory.get(itemNameKey(name)), errandId);
     if (!entry || entry.total === 0) {
       unknown.push({ index, name });
       return;

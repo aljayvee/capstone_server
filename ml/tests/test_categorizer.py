@@ -183,6 +183,24 @@ def test_a_clear_name_can_still_outvote_a_generic_google_type(store_model: Categ
     assert result["category"] == FOOD
 
 
+def test_google_bakery_type_lands_on_bakery_where_the_catalogue_has_one():
+    # Found in production on 2026-09-23: Google tags Julie's Bakeshop as
+    # "bakery", the FOOD rule listed "bakery", and the pin was filed under Fast
+    # Food although the catalogue carried a Bakery category.
+    with_bakery = {"Bakery", FOOD, PHARMACY, GROCERY, RETAIL}
+    category, _ = category_from_google_types(["bakery", "food", "store"], available=with_bakery)
+    assert category == "Bakery"
+
+
+def test_google_bakery_type_still_falls_back_to_food_without_a_bakery_class():
+    # A catalogue with no Bakery row must keep the old behaviour, not lose the
+    # Google signal entirely.
+    category, _ = category_from_google_types(
+        ["bakery", "food"], available={FOOD, PHARMACY, GROCERY, RETAIL}
+    )
+    assert category == FOOD
+
+
 def test_no_google_types_is_not_treated_as_a_vote(store_model: CategoryModel):
     assert category_from_google_types(None) == (None, 0.0)
     assert category_from_google_types([]) == (None, 0.0)

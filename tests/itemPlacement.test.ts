@@ -164,6 +164,49 @@ describe("learning from what dispatchers already decided", () => {
   });
 });
 
+describe("learning only from dispatchers, never from the order itself", () => {
+  // Both found by running a real order through the console on 2026-09-23:
+  // "Biogesic" came back "learned once before" at 100% although nobody had ever
+  // filed it. The one row it learned from was the order's own, written by the
+  // customer when they placed it.
+
+  it("asks only for rows the dispatcher console filed", async () => {
+    await suggestItemPlacements("err_1", ["Biogesic"]);
+
+    // " | " marks the "Store 2 - Julie's | Bakery" form that only stage 3
+    // writes. A customer's bare "Bakery" is their guess, not a decision.
+    const { where } = mockPabiliFindMany.mock.calls[0][0];
+    expect(where.storeCategory).toEqual({ contains: " | " });
+  });
+
+  it("does not learn from the errand it is answering for", async () => {
+    mockPabiliFindMany.mockResolvedValue([
+      { errandId: "err_1", itemName: "Biogesic", storeCategory: "Store 1 - M | Pharmacy & Health", pinpoint: { categoryId: PHARMACY.id } },
+    ]);
+    mockInferItems.mockResolvedValue([
+      { available: true, categoryId: PHARMACY.id, categoryName: PHARMACY.name, confidence: 0.93 },
+    ]);
+
+    const [placement] = await suggestItemPlacements("err_1", ["Biogesic"]);
+
+    // Falls through to the model rather than quoting itself back.
+    expect(placement.source).toBe("model");
+    expect(placement.learnedFrom).toBe(0);
+  });
+
+  it("still learns from the same item on OTHER errands", async () => {
+    mockPabiliFindMany.mockResolvedValue([
+      { errandId: "err_1", itemName: "Biogesic", storeCategory: "Store 1 - M | Pharmacy & Health", pinpoint: { categoryId: PHARMACY.id } },
+      { errandId: "err_OTHER", itemName: "Biogesic", storeCategory: "Store 1 - M | Pharmacy & Health", pinpoint: { categoryId: PHARMACY.id } },
+    ]);
+
+    const [placement] = await suggestItemPlacements("err_1", ["Biogesic"]);
+
+    expect(placement.source).toBe("learned");
+    expect(placement.learnedFrom).toBe(1);
+  });
+});
+
 describe("refusing to overstate what was learned", () => {
   it("flags a learned answer that past dispatchers disagreed about", async () => {
     mockPabiliFindMany.mockResolvedValue(

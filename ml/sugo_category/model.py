@@ -69,6 +69,11 @@ MODEL_VERSION = 2
 # types must be consulted before the generic tail, or the bare "store" entry
 # wins and files every restaurant under Retail.
 GOOGLE_TYPE_RULES: list[tuple[str, tuple[str, ...]]] = [
+    # Ahead of FOOD, which also lists "bakery". Production's catalogue has a
+    # Bakery category, and filing Google's `bakery` type under Fast Food sent
+    # a pinned Julie's Bakeshop there on 2026-09-23. Skipped wherever the model
+    # has no Bakery class, so the FOOD fallback still applies there.
+    ("Bakery", ("bakery",)),
     (PHARMACY, ("pharmacy", "drugstore", "doctor", "hospital", "dentist",
                 "physiotherapist", "health", "veterinary_care")),
     (GROCERY, ("supermarket", "grocery_or_supermarket", "grocery_store",
@@ -94,15 +99,29 @@ SPECIFIC_GOOGLE_WEIGHT = 0.85
 GENERIC_GOOGLE_WEIGHT = 0.15
 
 
-def category_from_google_types(types: Sequence[str] | None) -> tuple[str | None, float]:
-    """The category Google's types imply, and how much that is worth."""
+def category_from_google_types(
+    types: Sequence[str] | None,
+    available: Iterable[str] | None = None,
+) -> tuple[str | None, float]:
+    """
+    The category Google's types imply, and how much that is worth.
+
+    `available` is the set of classes the calling model can actually predict.
+    A rule naming anything else is skipped rather than returned: a Google vote
+    for a category the model has never heard of cannot be blended with its
+    scores, and would otherwise silently cancel the rule that should have
+    applied after it.
+    """
     if not types:
         return None, 0.0
     present = {str(t).strip().lower() for t in types if t}
     if not present:
         return None, 0.0
+    allowed = set(available) if available is not None else None
 
     for category, rule_types in GOOGLE_TYPE_RULES:
+        if allowed is not None and category not in allowed:
+            continue
         hit = present.intersection(rule_types)
         if not hit:
             continue
@@ -356,7 +375,9 @@ class CategoryModel:
                 "reason": "No usable text to read.",
             }
 
-        google_category, google_weight = category_from_google_types(google_types)
+        google_category, google_weight = category_from_google_types(
+            google_types, available=scores.keys()
+        )
         source = "name"
         reason = "Matched the shop name against the catalogue and the local lexicon."
 
