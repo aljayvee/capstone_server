@@ -128,6 +128,42 @@ STORE_PHRASES: dict[str, list[str]] = {
 # vocabulary customers actually type — brand names, Tagalog, and the English
 # word side by side, because all three turn up in the same order.
 
+# ── fresh produce ──────────────────────────────────────────────────────────
+#
+# Both languages, because a customer types whichever comes to mind and the
+# dispatcher retypes it however they read it. Absent entirely until
+# 2026-09-23, which is why "dragon fruit" came back unclassified in
+# production: the list held "banana" and "saging" and almost nothing else
+# green.
+#
+# Aromatics (garlic, onion, ginger) sit here rather than with the cooking
+# staples because they are bought at the same counter as the rest of the
+# produce. Named rather than inlined so CONTESTED_CONCEPTS can reference the
+# same list: an owner who creates a produce category later should move all of
+# it, not whichever half someone remembered to copy.
+PRODUCE_TERMS: list[str] = [
+    "garlic", "bawang", "onion", "sibuyas", "red onion", "ginger", "luya",
+    "tomato", "kamatis", "potato", "patatas", "carrot", "karot",
+    "cabbage", "repolyo", "lettuce", "letsugas", "cucumber", "pipino",
+    "eggplant", "talong", "okra", "string beans", "sitaw", "baguio beans",
+    "bitter gourd", "ampalaya", "squash", "kalabasa", "chayote", "sayote",
+    "bottle gourd", "upo", "patola", "kangkong", "pechay", "petsay",
+    "mustasa", "malunggay", "moringa", "sweet potato", "kamote",
+    "taro", "gabi", "singkamas", "radish", "labanos", "bean sprouts",
+    "togue", "bell pepper", "chili", "sili", "siling labuyo",
+    "lemongrass", "tanglad", "pandan", "spring onion", "leeks",
+    "mung beans", "monggo", "corn", "mais", "sweet corn",
+    "banana", "saging", "mango", "mangga", "papaya", "pineapple", "pinya",
+    "watermelon", "pakwan", "melon", "cantaloupe", "guava", "bayabas",
+    "santol", "lanzones", "rambutan", "durian", "marang", "pomelo", "suha",
+    "dalandan", "calamansi", "kalamansi", "dayap", "grapes", "ubas",
+    "apple", "mansanas", "orange", "pear", "avocado", "atis", "chico",
+    "star apple", "kaimito", "jackfruit", "langka", "coconut", "buko",
+    "niyog", "soursop", "guyabano", "duhat", "sineguelas", "tamarind",
+    "sampalok", "kamias", "dragon fruit", "strawberry", "lemon", "lime",
+    "fresh fruits", "fresh vegetables", "gulay", "prutas", "produce",
+]
+
 ITEM_PHRASES: dict[str, list[str]] = {
     FOOD: [
         "chickenjoy", "burger steak", "jolly spaghetti", "palabok", "yumburger",
@@ -191,8 +227,7 @@ ITEM_PHRASES: dict[str, list[str]] = {
         "candy", "chocolate", "chocnut", "mentos", "maxx", "instant coffee sachet",
         "flour", "harina", "baking powder", "yeast", "pasta", "spaghetti noodles",
         "tomato sauce", "del monte", "seasoning", "magic sarap", "knorr cubes",
-        "garlic", "bawang", "onion", "sibuyas", "ginger", "luya", "potato",
-        "carrot", "cabbage", "repolyo", "tomato", "kamatis", "banana", "saging",
+        *PRODUCE_TERMS,
     ],
     RETAIL: [
         "notebook", "spiral notebook", "yellow pad", "ballpen", "pentel pen",
@@ -250,6 +285,21 @@ CONTESTED_CONCEPTS: dict[str, list[str]] = {
         "milk tea shop", "bubble tea", "juice bar", "coffee shop",
         "coffee house", "milk tea", "wintermelon milk tea",
         "okinawa milk tea", "fruit tea", "iced coffee", "hot coffee",
+    ],
+    # Produce currently files under Supermarket & Grocery, which is right for a
+    # catalogue with no separate produce row. An owner who splits the palengke
+    # out later gets the whole vocabulary moved rather than the half someone
+    # remembered to re-enter. Three spellings because the name is the match key
+    # and there is no telling which one they will type.
+    "Fruits & Vegetables": [
+        *PRODUCE_TERMS, "fruit stand", "fruit stall", "vegetable stand", "gulayan",
+    ],
+    "Fresh Produce": [
+        *PRODUCE_TERMS, "fruit stand", "fruit stall", "vegetable stand", "gulayan",
+    ],
+    "Palengke": [
+        *PRODUCE_TERMS, "fruit stand", "fruit stall", "vegetable stand", "gulayan",
+        "public market", "wet market", "talipapa",
     ],
 }
 

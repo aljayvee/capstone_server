@@ -76,6 +76,19 @@ def test_store_accuracy_across_the_whole_unseen_set(store_model: CategoryModel):
 # ── items ──────────────────────────────────────────────────────────────────
 
 UNSEEN_ITEMS = [
+    # Produce. "dragon fruit" is here because production returned no answer for
+    # it at all on 2026-09-23: the item lexicon carried "banana" and "saging"
+    # and almost nothing else green, so the model was genuinely torn between
+    # Fast Food and Grocery and correctly declined. Both languages, since a
+    # customer types whichever comes to mind.
+    ("dragon fruit", GROCERY),
+    ("1 kilo mangga", GROCERY),
+    ("kalamansi 1/4 kilo", GROCERY),
+    ("ampalaya", GROCERY),
+    ("kangkong 2 bundles", GROCERY),
+    ("talong", GROCERY),
+    ("sweet potato kamote", GROCERY),
+    ("bell pepper", GROCERY),
     ("2pc Chickenjoy with rice", FOOD),
     ("large wintermelon milktea", FOOD),
     ("biogesic 500mg tablet", PHARMACY),
