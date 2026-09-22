@@ -1,0 +1,36 @@
+# The SUGO category service, deployed the same way the OSRM sidecar is.
+#
+# The API server reaches it via CATEGORY_SERVICE_URL in server/.env. Leave that
+# blank and the service is skipped entirely: store and item categories fall back
+# to the TypeScript rules in storeCategoryInference.ts, exactly as they worked
+# before this existed. Blanking it is the correct move if the container is down
+# — pointing the API at a dead host makes every pin wait for a timeout first.
+services:
+  category:
+    build:
+      context: .
+      args:
+        # Overridden at build time to train against the live catalogue:
+        #   docker compose -f ml/docker-compose.category.yml build \
+        #     --build-arg TRAIN_ARGS="--database-url mysql+pymysql://user:pass@host/db"
+        # The default trains from the seed lexicon alone, which answers the
+        # common Philippine chains and shop words but knows nothing specific to
+        # Tacurong until it has seen your catalogue.
+        TRAIN_ARGS: "--offline"
+    image: sugo-category:latest
+    container_name: capstone-category
+    restart: unless-stopped
+    # SECURITY: no authentication, no rate limiting. Same rule as OSRM — this
+    # must never be published to the open internet. Loopback by default; set
+    # CATEGORY_BIND to a private interface address if the API server lives on a
+    # different host, and firewall the port to that host. Never 0.0.0.0.
+    ports:
+      - "${CATEGORY_BIND:-127.0.0.1}:8100:8100"
+    environment:
+      SUGO_MODEL_DIR: /srv/models
+    # Small by design. TF-IDF plus a linear model is a few megabytes; capping it
+    # means a runaway here cannot take the API server's memory with it.
+    deploy:
+      resources:
+        limits:
+          memory: 512M

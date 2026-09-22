@@ -152,6 +152,23 @@ export const ROUTING_PROVIDER_ORDER = (process.env.ROUTING_PROVIDER_ORDER || "os
   .map((name) => name.trim().toLowerCase())
   .filter(Boolean);
 
+// --- Merchant category inference (see server/ml/) ---
+// Self-hosted Python sidecar that guesses what kind of shop a store name refers
+// to, and what kind of shop an item is bought at. Same deployment shape as OSRM
+// above: a container on a private port, never published to the internet.
+//
+// Blank means the service is skipped and category guessing falls back to the
+// TypeScript rules in the dispatcher console, exactly as it worked before this
+// existed. Blank it if the container is genuinely down — pointing this at a dead
+// host makes every pin wait for the timeout below before falling back.
+export const CATEGORY_SERVICE_URL = (process.env.CATEGORY_SERVICE_URL || "").replace(/\/+$/, "");
+
+// Tighter than the routing timeouts on purpose. A dispatcher is watching the
+// stage-2 panel while this resolves, and a guess that arrives after they have
+// already picked the category by hand is worse than no guess at all.
+export const CATEGORY_SERVICE_TIMEOUT_MS =
+  Number(process.env.CATEGORY_SERVICE_TIMEOUT_MS) || 1500;
+
 // Straight-line distance under-states real road distance. Both constants below
 // were measured, not guessed: six real Tacurong POI pairs from prisma/seedPlaces.ts
 // were routed against OSRM and compared to their haversine distance. Observed

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Build artefacts. The Dockerfile trains these INTO the image, so a model
+# committed here would only ever be a stale copy of one.
+models/
