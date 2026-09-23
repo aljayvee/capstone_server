@@ -9,6 +9,7 @@ import { hasPaymentLedger } from "./patterns/paymentModes.js";
 import { summarisePaymentPlan, isOveragePending } from "./patterns/paymentLedger.js";
 import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
+import * as errandPaymentService from "./errandPaymentService.js";
 import type { PaymentProofUploadInput } from "../validators/paymentProofValidators.js";
 
 /**
@@ -19,11 +20,11 @@ import type { PaymentProofUploadInput } from "../validators/paymentProofValidato
  * vouching for something they had seen in a different app. This gives them the
  * screenshot, and gives the screenshot a reading.
  *
- * The reading does NOT confirm the payment. A dispatcher still presses the
- * button, because OCR can be fooled by an edited image and the money is real.
- * What this does is make the attestation an informed one: the reference is
- * on file, the amount and date were checked against the errand, and anything
- * that does not line up is refused before it can be mistaken for evidence.
+ * Anything that does not line up is refused before it can be mistaken for
+ * evidence: the reference is on file, and the amount and date were checked
+ * against the errand. For the mid-way half-payment, a receipt that passes those
+ * checks now confirms the payment by itself (settleAutomatically, below); a
+ * reused reference number and the balance still wait for a dispatcher.
  */
 
 function stripDataUri(data: string): string {
@@ -74,6 +75,17 @@ export async function uploadPaymentProof(
 
   if (!target) {
     throw new ServiceError(409, "There's nothing currently due to upload a receipt for.");
+  }
+
+  // The half is taken on what the rider actually paid, so it cannot be owed
+  // before the rider has bought everything and asked for it. A receipt sent
+  // earlier would be checked against half the customer's ESTIMATE, then either
+  // fail to match the real figure or settle the wrong amount.
+  if (target.label === "payment" && !errand.halfPaymentRequestedAt) {
+    throw new ServiceError(
+      409,
+      "Your rider hasn't finished buying yet. We'll ask for the half-payment once they have, so it's half of what they actually paid."
+    );
   }
 
   const base64 = stripDataUri(input.imageData);
@@ -136,10 +148,16 @@ export async function uploadPaymentProof(
 
   logger.info(
     `Errand ${errandId}: payment proof read by ${ocr.engine} — ` +
-      `ref ${parsed.referenceNo}, ₱${parsed.amount}, ${parsed.transactionDate.toDateString()}.`
+      `ref ${parsed.referenceNo}, ₱${parsed.amount}, ${parsed.transactionDate.toDateString()}` +
+      // Spelled out rather than left implicit. When a network fee has been taken
+      // off, the stored figure deliberately differs from the one printed large
+      // on the customer's screenshot, and anyone reconciling the two later needs
+      // to see why without re-deriving it.
+      (parsed.feeExcluded
+        ? ` (net of a ₱${parsed.transferFee} transfer fee; receipt headline ₱${parsed.amount + (parsed.transferFee ?? 0)}).`
+        : ".")
   );
 
-  // The dispatcher is the one who confirms the money. Tell them it is waiting.
   eventPublisher.emitToErrand(errandId, "errand:payment_proof_uploaded", {
     errandId,
     referenceNo: parsed.referenceNo,
@@ -148,7 +166,57 @@ export async function uploadPaymentProof(
     transactionDate: parsed.transactionDate,
   });
 
-  return image;
+  const review = await settleAutomatically(errandId, target.label, image.id, parsed);
+  if (!review.autoConfirmed) {
+    await errandPaymentService.publishPaymentUpdate(errandId, "proof_uploaded");
+  }
+
+  return { image, ...review };
+}
+
+/**
+ * Confirms the half-payment from the customer's own receipt, when it can.
+ *
+ * This used to always wait for a dispatcher to press a button, on the grounds
+ * that OCR can be fooled. The owner asked for it to settle on its own, and the
+ * receipt that reaches this point has already passed validateTransferReceipt:
+ * the amount is within ₱1 of the half, the transfer happened today, and it has
+ * a reference number. What that cannot see is the same screenshot being spent
+ * twice, so a reference number already used on another errand is the one case
+ * held back for a person. So is the balance: that is collected at the door and
+ * was never part of this flow.
+ *
+ * The ledger row carries no person (confirmedByUserId null) and names the
+ * receipt instead, so the audit trail says exactly what happened.
+ */
+async function settleAutomatically(
+  errandId: string,
+  label: string,
+  proofImageId: number,
+  parsed: { referenceNo: string; amount: number }
+): Promise<{ autoConfirmed: boolean; reviewReason: "reference_reused" | "not_half_payment" | "confirm_failed" | null }> {
+  if (label !== "payment") return { autoConfirmed: false, reviewReason: "not_half_payment" };
+
+  if (await errandPaymentRepository.isReferenceUsedElsewhere(parsed.referenceNo, errandId)) {
+    logger.warn(
+      `Errand ${errandId}: receipt ref ${parsed.referenceNo} already backs another errand; left for a dispatcher.`
+    );
+    return { autoConfirmed: false, reviewReason: "reference_reused" };
+  }
+
+  try {
+    await errandPaymentService.confirmUpfrontPayment(errandId, null, {
+      amount: parsed.amount,
+      proofImageId,
+      note: `Confirmed automatically from the customer's receipt, ref ${parsed.referenceNo}.`,
+    });
+    return { autoConfirmed: true, reviewReason: null };
+  } catch (err) {
+    // A race with a dispatcher confirming by hand lands here as a 409, which is
+    // the right outcome. Anything else leaves it for a person, not lost.
+    logger.warn(`Errand ${errandId}: automatic confirmation declined: ${(err as Error).message}`);
+    return { autoConfirmed: false, reviewReason: "confirm_failed" };
+  }
 }
 
 /** What the dispatcher and the customer see back. Never the image bytes. */

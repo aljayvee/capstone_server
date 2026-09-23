@@ -582,7 +582,10 @@ export async function getTransactionSummary(request: ReportRequest) {
       paymentTransactionId: proof?.extraction?.transactionId ?? null,
       paymentConfirmedBy: paymentEntry?.confirmedBy
         ? `${paymentEntry.confirmedBy.firstName ?? ""} ${paymentEntry.confirmedBy.lastName ?? ""}`.trim() || null
-        : null,
+        : paymentEntry
+          ? // No person: the customer's receipt passed every check on its own.
+            "Automatic (receipt check)"
+          : null,
       // Whose photo it was — the customer's own upload, or a rider's
       // door-side photo of the customer's receipt. Exactly one of
       // customerId/riderId is ever set on a proof image.

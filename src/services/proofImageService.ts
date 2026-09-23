@@ -391,7 +391,7 @@ export async function confirmProofImage(
  * Only confirmed figures count. An extraction the rider has not yet accepted is
  * a machine's guess, and a guess must never reach a customer's bill.
  */
-async function confirmedReceiptTotal(errandId: string): Promise<number> {
+export async function confirmedReceiptTotal(errandId: string): Promise<number> {
   const purchases = await prisma.errandProofImage.findMany({
     where: { errandId, kind: { in: ["RECEIPT", "NO_RECEIPT"] } },
     select: { declaredTotal: true, extraction: { select: { confirmedTotal: true } } },

@@ -35,11 +35,32 @@ export const errandPaymentRepository = {
     return prisma.errandPayment.findFirst({ where: { errandId, kind } });
   },
 
+  /**
+   * Whether a transfer reference number already backs a payment on ANOTHER
+   * errand. One real transfer is one payment; the same screenshot sent twice is
+   * the cheapest fraud there is, and the only one automatic confirmation cannot
+   * see on its own.
+   */
+  async isReferenceUsedElsewhere(referenceNo: string, errandId: string): Promise<boolean> {
+    const hit = await prisma.receiptExtraction.findFirst({
+      where: {
+        referenceNo,
+        proofImage: {
+          errandId: { not: errandId },
+          kind: { in: ["PAYMENT_PROOF", "RIDER_BALANCE_PROOF", "TRANSFER"] },
+        },
+      },
+      select: { id: true },
+    });
+    return hit !== null;
+  },
+
   create(data: {
     errandId: string;
     kind: ErrandPaymentKind;
     amount: number;
-    confirmedByUserId: number;
+    /** Null only for an automatic confirmation from a receipt that passed every check. */
+    confirmedByUserId: number | null;
     note?: string | null;
     /** The photo (customer's or rider's) that justified this attestation. */
     proofImageId?: number | null;

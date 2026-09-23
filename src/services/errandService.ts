@@ -109,6 +109,7 @@ function derivePaymentPlan(errand: unknown) {
     status?: string;
     overageEscalatedAt?: Date | null;
     overageResolvedAt?: Date | null;
+    halfPaymentRequestedAt?: Date | null;
     payments?: Array<{ kind: string; amount: number }>;
     paymentSelection?: { paymentMode: { name: string } } | null;
   };
@@ -129,7 +130,14 @@ function derivePaymentPlan(errand: unknown) {
     cancelled: row.status === "CANCELLED",
   });
 
-  return { ...summary, hasLedger: true };
+  return {
+    ...summary,
+    hasLedger: true,
+    // What the half is taken on, and whether the rider has asked for it yet.
+    // The customer's modal and the rider's waiting state both key off these.
+    goodsTotal: row.estimatedCost ?? 0,
+    halfPaymentRequestedAt: row.halfPaymentRequestedAt ?? null,
+  };
 }
 
 export function attachErrandNames<

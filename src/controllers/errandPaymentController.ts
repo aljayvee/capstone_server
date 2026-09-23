@@ -41,6 +41,17 @@ export const getPaymentLedger = asyncHandler<AuthenticatedRequest>(async (req, r
   res.json({ success: true, ledger });
 });
 
+/**
+ * POST /api/errands/:id/payments/request-half
+ *
+ * The rider, holding every item, asks for the customer's 50% before heading to
+ * them. Rider-only at the route; the service checks it is THEIR errand.
+ */
+export const requestHalfPayment = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const result = await errandPaymentService.requestHalfPayment(req.params.id, req.user!.id);
+  res.json({ success: true, ...result });
+});
+
 export const confirmUpfrontPayment = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(confirmUpfrontSchema, req.body);
   const ledger = await errandPaymentService.confirmUpfrontPayment(req.params.id, req.user!.id, input);

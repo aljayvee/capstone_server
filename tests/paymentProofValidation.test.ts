@@ -24,15 +24,26 @@ vi.mock("../src/repositories/paymentSelectionRepository.js", () => ({
   paymentSelectionRepository: { findByErrandId: vi.fn() },
 }));
 vi.mock("../src/repositories/errandPaymentRepository.js", () => ({
-  errandPaymentRepository: { findAmountsByErrandId: vi.fn().mockResolvedValue([]) },
+  errandPaymentRepository: {
+    findAmountsByErrandId: vi.fn().mockResolvedValue([]),
+    isReferenceUsedElsewhere: vi.fn().mockResolvedValue(false),
+  },
 }));
 vi.mock("../src/lib/eventPublisher.js", () => ({
-  eventPublisher: { emitToErrand: vi.fn(), emit: vi.fn() },
+  eventPublisher: { emitToErrand: vi.fn(), emit: vi.fn(), emitToErrandParties: vi.fn() },
+}));
+// The ledger write itself is errandPaymentService's to test; here it only has
+// to be called, or not, with the right arguments.
+vi.mock("../src/services/errandPaymentService.js", () => ({
+  confirmUpfrontPayment: vi.fn().mockResolvedValue({}),
+  publishPaymentUpdate: vi.fn().mockResolvedValue({}),
 }));
 
 import { readText } from "../src/lib/ocr/resilientOcrService.js";
 import { errandRepository } from "../src/repositories/errandRepository.js";
 import { paymentSelectionRepository } from "../src/repositories/paymentSelectionRepository.js";
+import { errandPaymentRepository } from "../src/repositories/errandPaymentRepository.js";
+import { confirmUpfrontPayment, publishPaymentUpdate } from "../src/services/errandPaymentService.js";
 import { uploadPaymentProof } from "../src/services/paymentProofService.js";
 
 const CUSTOMER = 42;
@@ -60,9 +71,10 @@ const upload = (text: string) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // ₱1,000 of goods on the 50% plan: ₱500 due before dispatch.
+  // ₱1,000 of goods bought on the 50% plan, and the rider has asked: ₱500 due.
   vi.mocked(errandRepository.findByIdBasic).mockResolvedValue({
-    id: ERRAND, customerId: CUSTOMER, estimatedCost: 1000, totalCost: 1120, status: "PENDING",
+    id: ERRAND, customerId: CUSTOMER, estimatedCost: 1000, totalCost: 1120, status: "IN_TRANSIT",
+    halfPaymentRequestedAt: new Date(),
   } as never);
   vi.mocked(paymentSelectionRepository.findByErrandId).mockResolvedValue({
     paymentMode: { name: "GCash / PayMaya" },
@@ -71,7 +83,7 @@ beforeEach(() => {
 
 describe("a receipt that says what it should", () => {
   it("is accepted and keeps the reference for the dispatcher to look up", async () => {
-    const proof: any = await upload(screenshot());
+    const { image: proof }: any = await upload(screenshot());
     expect(proof.extraction.referenceNo).toBe("012345678901");
     expect(proof.extraction.extractedTotal).toBe(500);
   });
@@ -140,7 +152,7 @@ describe("every non-COD channel owes the same half", () => {
     vi.mocked(paymentSelectionRepository.findByErrandId).mockResolvedValue({
       paymentMode: { name: mode },
     } as never);
-    const proof: any = await upload(screenshot());
+    const { image: proof }: any = await upload(screenshot());
     expect(proof.extraction.extractedTotal).toBe(500);
   });
 
@@ -154,5 +166,58 @@ describe("every non-COD channel owes the same half", () => {
       status: 422,
       message: expect.stringContaining("₱500.00 is due"),
     });
+  });
+});
+
+describe("the half-payment asked for mid-way", () => {
+  it("is refused before the rider has bought everything and asked", async () => {
+    // Half of the ESTIMATE is the wrong figure: the owner's rule is half of what
+    // the rider actually paid, which does not exist until they have paid it.
+    vi.mocked(errandRepository.findByIdBasic).mockResolvedValue({
+      id: ERRAND, customerId: CUSTOMER, estimatedCost: 1000, totalCost: 1120, status: "IN_TRANSIT",
+      halfPaymentRequestedAt: null,
+    } as never);
+
+    await expect(upload(screenshot())).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("hasn't finished buying"),
+    });
+    expect(confirmUpfrontPayment).not.toHaveBeenCalled();
+  });
+
+  it("settles on its own when the receipt passes every check", async () => {
+    const result: any = await upload(screenshot());
+
+    expect(result.autoConfirmed).toBe(true);
+    // No person: null, and the photo stands in as the evidence.
+    expect(confirmUpfrontPayment).toHaveBeenCalledWith(
+      ERRAND,
+      null,
+      expect.objectContaining({ amount: 500, proofImageId: 1 })
+    );
+  });
+
+  it("waits for a dispatcher when the reference number already paid for another errand", async () => {
+    // The one fraud the per-receipt checks cannot see: the same screenshot, twice.
+    vi.mocked(errandPaymentRepository.isReferenceUsedElsewhere).mockResolvedValueOnce(true);
+
+    const result: any = await upload(screenshot());
+
+    expect(result).toMatchObject({ autoConfirmed: false, reviewReason: "reference_reused" });
+    expect(confirmUpfrontPayment).not.toHaveBeenCalled();
+    // Still announced, so the dispatcher's panel shows a receipt is waiting.
+    expect(publishPaymentUpdate).toHaveBeenCalledWith(ERRAND, "proof_uploaded");
+  });
+
+  it("never settles the balance on its own", async () => {
+    // Half already in: what is owed now is the balance, collected at the door.
+    vi.mocked(errandPaymentRepository.findAmountsByErrandId).mockResolvedValueOnce([
+      { kind: "UPFRONT", amount: 500 },
+    ] as never);
+
+    const result: any = await upload(screenshot({ amount: "620.00" }));
+
+    expect(result).toMatchObject({ autoConfirmed: false, reviewReason: "not_half_payment" });
+    expect(confirmUpfrontPayment).not.toHaveBeenCalled();
   });
 });

@@ -381,6 +381,14 @@ model Errand {
   // Mirrors paymentEnabledAt's nullable-timestamp-as-gate pattern.
   itemsPurchasedAt DateTime?
 
+  // Set when the rider, holding every item, asks for the customer's 50% before
+  // heading to them (errandPaymentService.requestHalfPayment). The half is taken
+  // on what the rider actually paid, so it cannot be asked for any earlier. It
+  // opens the customer's receipt upload and raises the dispatcher's alert.
+  // Deliberately NOT itemsPurchasedAt: the rider is still standing at the last
+  // shop, and the customer's tracker must not read "on the way to you" yet.
+  halfPaymentRequestedAt DateTime?
+
   // The receipt came in higher than the customer agreed to, and the goods are
   // being held until the office arranges the difference.
   //
@@ -951,8 +959,13 @@ model ErrandPayment {
   // no gateway callback to trust, only a person saying they saw it. Recording
   // WHICH person is the whole control: an attestation nobody signed is a figure
   // with no one accountable for it.
-  confirmedByUserId Int
-  confirmedBy       User     @relation("ErrandPaymentsConfirmed", fields: [confirmedByUserId], references: [id])
+  //
+  // Null means no person: the customer's own GCash/Maya receipt passed every
+  // automatic check (amount, same day, a reference number never used before)
+  // and the system recorded it. The receipt is the evidence then, which is why
+  // an automatic entry always carries its proofImageId and says so in `note`.
+  confirmedByUserId Int?
+  confirmedBy       User?    @relation("ErrandPaymentsConfirmed", fields: [confirmedByUserId], references: [id])
   confirmedAt       DateTime @default(now())
   note              String?  @db.VarChar(255)
 

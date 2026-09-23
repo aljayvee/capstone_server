@@ -16,12 +16,20 @@ import type { AuthenticatedRequest } from "../middleware/auth.js";
  */
 export const uploadPaymentProof = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(paymentProofUploadSchema, req.body);
-  const proof = await paymentProofService.uploadPaymentProof(req.params.id, req.user!.id, input);
+  const { image: proof, autoConfirmed, reviewReason } = await paymentProofService.uploadPaymentProof(
+    req.params.id,
+    req.user!.id,
+    input
+  );
 
   // The bytes never come back. The customer has the original on their phone and
   // the dispatcher reads it through the proof-image endpoint.
   res.json({
     success: true,
+    // True when the receipt settled the half-payment on its own. False means a
+    // dispatcher will look at it; reviewReason says why, for the app's wording.
+    autoConfirmed,
+    reviewReason,
     proof: {
       id: proof.id,
       capturedAt: proof.capturedAt,

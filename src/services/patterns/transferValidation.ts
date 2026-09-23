@@ -41,9 +41,65 @@ export interface TransferValidationInput {
 export interface TransferValidationResult {
   referenceNo: string;
   transactionId: string | null;
+  /**
+   * What this payment is worth to us: the figure that matched what was owed,
+   * with any network fee already taken out of it.
+   */
   amount: number;
+  /** The fee the receipt printed, kept for the ledger. Null when it printed none. */
+  transferFee: number | null;
+  /** True when `amount` is the headline MINUS the fee rather than the headline itself. */
+  feeExcluded: boolean;
   transactionDate: Date;
   characterCount: number;
+}
+
+/**
+ * The amounts a receipt could honestly be claiming, best first.
+ *
+ * An InstaPay send out of Maya prints one headline figure and a separate
+ * "Transfer Fee ₱10.00", and the receipt does not say in so many words whether
+ * the headline is the amount the recipient got or the total the sender was
+ * debited. Both readings exist across Philippine e-wallets, and the difference
+ * is exactly the fee.
+ *
+ * Rather than pick one and be wrong half the time, both are offered and
+ * whichever reconciles with what is actually owed is the one taken. This cannot
+ * manufacture a false match out of nothing: the two candidates differ by a fee
+ * the receipt itself printed and which is stored alongside the result, so a
+ * dispatcher reviewing the proof sees the arithmetic rather than a bare number.
+ *
+ * The fee is never counted as money received either way. It went to the rails,
+ * not to us, and billing a customer as though we had it would overcharge them by
+ * the fee on every single InstaPay payment.
+ */
+function candidateAmounts(
+  headline: number,
+  fee: number | null,
+  totalSent: number | null
+): number[] {
+  if (fee === null || fee <= 0) return [headline];
+
+  // Unless the receipt does the sum for us.
+  //
+  // GCash prints an "Amount" and a "Total Amount Sent". When the second is the
+  // first plus the fee, the receipt has stated in its own figures that the
+  // headline is the principal and the fee sat on top of it. There is nothing
+  // left to infer, so the ambiguity below is skipped and the guessing window
+  // closes entirely.
+  //
+  // A receipt that prints no total simply misses this branch and falls through
+  // to the two-candidate reading, so nothing depends on any given app printing
+  // it. The rule can only ever turn a guess into a certainty.
+  if (totalSent !== null && Math.abs(totalSent - (headline + fee)) < 0.01) {
+    return [headline];
+  }
+
+  // Net first. A headline that already excludes the fee still matches on the
+  // second candidate, so leading with the net costs nothing and means the
+  // ambiguous case resolves towards charging the customer less, not more.
+  const net = Number((headline - fee).toFixed(2));
+  return net > 0 ? [net, headline] : [headline];
 }
 
 /**
@@ -74,7 +130,16 @@ export function validateTransferReceipt(input: TransferValidationInput): Transfe
     throw new ServiceError(422, "We couldn't find the amount on that receipt. Try a clearer shot.");
   }
 
-  if (Math.abs(parsed.amount - input.dueAmount) > AMOUNT_TOLERANCE_PESOS) {
+  const candidates = candidateAmounts(parsed.amount, parsed.transferFee, parsed.totalSent);
+  const matched = candidates.find(
+    (candidate) => Math.abs(candidate - input.dueAmount) <= AMOUNT_TOLERANCE_PESOS
+  );
+
+  if (matched === undefined) {
+    // Report the headline, because that is the figure printed large on the
+    // screen the customer is looking at. Quoting them a net amount they cannot
+    // see anywhere on their own receipt reads as a system error rather than a
+    // mismatch, and they cannot act on it.
     throw new ServiceError(
       422,
       `That receipt is for ${peso(parsed.amount)}, but ${peso(input.dueAmount)} ${input.dueLabel === "balance" ? "is the balance due" : "is due"}. ` +
@@ -107,7 +172,9 @@ export function validateTransferReceipt(input: TransferValidationInput): Transfe
   return {
     referenceNo: parsed.referenceNo,
     transactionId: parsed.transactionId,
-    amount: parsed.amount,
+    amount: matched,
+    transferFee: parsed.transferFee,
+    feeExcluded: matched !== parsed.amount,
     transactionDate: parsed.transactionDate,
     characterCount: parsed.characterCount,
   };

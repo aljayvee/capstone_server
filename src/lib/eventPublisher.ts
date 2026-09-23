@@ -17,6 +17,17 @@ export interface IEventPublisher {
   // Only the parties to one errand: its customer, its rider, and staff.
   emitToErrand(errandId: string, event: string, payload: unknown): void;
 
+  // emitToErrand, plus the rider's and customer's own rooms. Those are joined on
+  // connect, so an app that never subscribed to this errand (the rider app does
+  // not) still hears it. One emit across every room, so a socket sitting in
+  // several of them receives it once.
+  emitToErrandParties(
+    errandId: string,
+    parties: { riderId?: number | null; customerId?: number | null },
+    event: string,
+    payload: unknown
+  ): void;
+
   // Every connected user holding a given role.
   emitToRole(role: string, event: string, payload: unknown): void;
 
@@ -33,6 +44,20 @@ class SocketIOEventPublisher implements IEventPublisher {
   // to subscribe to each errand individually.
   emitToErrand(errandId: string, event: string, payload: unknown): void {
     io.to(rooms.errand(errandId)).to(rooms.role("DISPATCHER")).to(rooms.role("OWNER")).emit(event, payload);
+  }
+
+  emitToErrandParties(
+    errandId: string,
+    parties: { riderId?: number | null; customerId?: number | null },
+    event: string,
+    payload: unknown
+  ): void {
+    let target = io.to(rooms.errand(errandId)).to(rooms.role("DISPATCHER")).to(rooms.role("OWNER"));
+    if (parties.riderId) target = target.to(rooms.rider(parties.riderId));
+    // The customer room only, never rooms.user(): customer and staff ids share
+    // one numeric space, so user:5 is both customer 5 and dispatcher 5.
+    if (parties.customerId) target = target.to(rooms.customer(parties.customerId));
+    target.emit(event, payload);
   }
 
   emitToRole(role: string, event: string, payload: unknown): void {

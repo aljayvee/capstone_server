@@ -89,6 +89,34 @@ function labelMatch(line: string, label: string): boolean {
 }
 
 /**
+ * The money on the rest of a label's line, read from the RIGHT.
+ *
+ * `parseAmount` strips every non-digit before matching, which is what lets it
+ * cope with "PHP 176.00" and "55.00V". The cost is that it also welds together
+ * anything else numeric sharing the line: 7-Eleven prints its item count in the
+ * label, and "Total (10) 330.00" collapsed to "10330.00" — a ₱330 receipt read
+ * as ₱10,330, on the figure the customer is billed from.
+ *
+ * Reading the tokens right to left fixes that without loosening parseAmount,
+ * whose strictness is load-bearing elsewhere: the amount is the last thing on
+ * the line on every layout seen, and anything to its left is a label, a currency
+ * code or a count. The leading count is stripped first for the case where OCR
+ * runs it straight into the figure with no space between.
+ */
+function amountOnLine(rest: string): number | null {
+  const withoutCount = rest.replace(/^\s*\(\s*\d+\s*\)/, "");
+
+  const tokens = withoutCount.split(/\s+/).filter(Boolean);
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const value = parseAmount(tokens[i]);
+    if (value !== null) return value;
+  }
+
+  // Whole-string fallback, for a value OCR split across spaces ("1, 005.00").
+  return parseAmount(withoutCount);
+}
+
+/**
  * The amount belonging to a label, wherever the layout put it.
  *
  * Three receipts, three layouts:
@@ -105,7 +133,7 @@ function amountForLabels(lines: string[], labels: string[]): number | null {
       if (!labelMatch(lines[i], label)) continue;
 
       const rest = normalise(lines[i]).slice(label.length);
-      const sameLine = parseAmount(rest);
+      const sameLine = amountOnLine(rest);
       if (sameLine !== null) return sameLine;
 
       for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {

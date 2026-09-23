@@ -50,4 +50,40 @@ export const notificationFactory = {
       body: `Errand #${errandId.slice(0, 8)}'s total is now ₱${totalCost.toFixed(2)}.`,
     };
   },
+
+  /** To the customer: the rider has everything and the half is due now. */
+  halfPaymentRequested(amount: number, goodsTotal: number): NotificationContent {
+    return {
+      type: "HALF_PAYMENT_REQUESTED",
+      title: "Your items are bought. Half-payment needed",
+      body: `Send ₱${amount.toFixed(2)}, half of the ₱${goodsTotal.toFixed(2)} your rider paid, so they can bring your items. Tap to open the chat.`,
+    };
+  },
+
+  /** To the dispatcher handling it: a rider is waiting at the last shop. */
+  halfPaymentRequestedStaff(customerName: string, amount: number): NotificationContent {
+    return {
+      type: "HALF_PAYMENT_REQUESTED",
+      title: `${customerName} needs to send the half-payment`,
+      body: `The rider has every item and is waiting. Ask ${customerName} for ₱${amount.toFixed(2)} in the chat.`,
+    };
+  },
+
+  /** To the rider: go. Names what is left to collect, which is the next question. */
+  halfPaymentSettled(customerName: string, balanceDue: number): NotificationContent {
+    return {
+      type: "HALF_PAYMENT_SETTLED",
+      title: `${customerName} settled the half-payment`,
+      body: `Head to the customer. Collect ₱${balanceDue.toFixed(2)} at the door: the other half plus the fees.`,
+    };
+  },
+
+  /** To the customer: their receipt counted. */
+  halfPaymentReceived(amount: number): NotificationContent {
+    return {
+      type: "HALF_PAYMENT_RECEIVED",
+      title: "Half-payment received",
+      body: `We got your ₱${amount.toFixed(2)}. Your rider is on the way with your items.`,
+    };
+  },
 };

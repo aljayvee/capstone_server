@@ -38,6 +38,7 @@ import {
   confirmTopUp,
   confirmBalancePayment,
   recordRefund,
+  requestHalfPayment,
 } from "../controllers/errandPaymentController.js";
 import { uploadPaymentProof, getPaymentProof } from "../controllers/paymentProofController.js";
 
@@ -261,8 +262,20 @@ router.post("/:id/payment-selection", authenticateToken, userApiLimiter, confirm
 //
 // Read by Cloud Vision and checked against the errand before it is stored: it
 // must carry a reference number, be for the amount owed, and be dated today.
-// The reading does not confirm the payment — a dispatcher still does that — it
-// makes their attestation an informed one.
+// For the mid-way half-payment a receipt that passes confirms it on its own
+// (see paymentProofService.settleAutomatically); a reused reference number and
+// the balance still wait for a dispatcher.
+
+// POST /api/errands/:id/payments/request-half - the rider, holding every item,
+// asks for the customer's 50% before heading to them. The one payment write a
+// rider may make: it records nothing as paid, it only asks.
+router.post(
+  "/:id/payments/request-half",
+  authenticateToken,
+  requireRole(["RIDER"]),
+  userApiLimiter,
+  requestHalfPayment
+);
 
 // POST /api/errands/:id/payment-proof - customer uploads their confirmation
 router.post(
