@@ -3,16 +3,32 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
 import { ServiceError } from "./ServiceError.js";
-import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/env.js";
+import { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_SECRET } from "../config/env.js";
 import * as sessionService from "./sessionService.js";
 import { normalizeUsername, normalizeEmail } from "../lib/identity.js";
 import { sendEmail } from "../lib/mailer.js";
-import { buildSysAdminVerificationLinkEmail } from "../lib/emailTemplates.js";
+import {
+  buildSysAdminVerificationLinkEmail,
+  buildSysAdminUnlockLinkEmail,
+  buildSysAdmin2FaOtpEmail,
+  buildSysAdminSecurityAlertEmail,
+} from "../lib/emailTemplates.js";
 import { generateAccessToken, generateRefreshToken } from "./authService.js";
+import { parseDeviceInfo } from "../lib/requestContext.js";
 import type { TokenPayload } from "../middleware/auth.js";
 import type { SessionContext } from "./sessionService.js";
 
 const MAGIC_LINK_EXPIRY_MINUTES = 5;
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const TWO_FACTOR_EXPIRY_MINUTES = 10;
+const UNLOCK_TOKEN_EXPIRY_MINUTES = 30;
+
+export interface SysAdminSessionContext extends SessionContext {
+  deviceToken?: string | null;
+  deviceFingerprint?: string | null;
+  appOrigin?: string | null;
+}
 
 export interface SysAdminProfileInput {
   firstName: string;
@@ -20,6 +36,13 @@ export interface SysAdminProfileInput {
   middleName?: string;
   nickname: string;
   email: string;
+}
+
+export function maskEmail(email: string): string {
+  if (!email || !email.includes("@")) return "registered email";
+  const [local, domain] = email.split("@");
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}***${local[local.length - 1]}@${domain}`;
 }
 
 function sanitizeAdmin(admin: {
@@ -35,6 +58,9 @@ function sanitizeAdmin(admin: {
   status: string;
   profileCompleted: boolean;
   emailVerified: boolean;
+  enforceTwoFactor?: boolean;
+  failedLoginAttempts?: number;
+  lockedUntil?: Date | null;
   lastLoginAt?: Date | null;
   createdAt: Date;
 }) {
@@ -52,6 +78,7 @@ function sanitizeAdmin(admin: {
     status: admin.status,
     profileCompleted: admin.profileCompleted,
     emailVerified: admin.emailVerified,
+    enforceTwoFactor: admin.enforceTwoFactor ?? false,
     lastLoginAt: admin.lastLoginAt,
     createdAt: admin.createdAt,
   };
@@ -76,7 +103,7 @@ export function verifySetupToken(token: string): number {
 export async function loginSysAdmin(
   usernameInput: string,
   passwordInput: string,
-  context: SessionContext = {}
+  context: SysAdminSessionContext = {}
 ) {
   const normUsername = normalizeUsername(usernameInput);
   if (!normUsername || !passwordInput) {
@@ -91,26 +118,170 @@ export async function loginSysAdmin(
     throw new ServiceError(401, "Invalid administrative credentials.");
   }
 
-  const isPasswordValid = await bcrypt.compare(passwordInput, admin.passwordHash);
-  if (!isPasswordValid) {
-    throw new ServiceError(401, "Invalid administrative credentials.");
+  // 1. Check account lockout status
+  if (admin.lockedUntil && admin.lockedUntil.getTime() > Date.now()) {
+    const remainingMinutes = Math.ceil((admin.lockedUntil.getTime() - Date.now()) / (60 * 1000));
+    throw new ServiceError(
+      423,
+      `Administrative account is locked due to consecutive failed attempts. Try again in ${remainingMinutes} minute(s) or use the emergency unlock link sent to your registered email.`
+    );
   }
 
+  // 2. Validate password
+  const isPasswordValid = await bcrypt.compare(passwordInput, admin.passwordHash);
+  if (!isPasswordValid) {
+    const newAttempts = (admin.failedLoginAttempts || 0) + 1;
+
+    if (context.ipAddress) {
+      await sessionService.recordLoginLog({
+        userId: admin.id,
+        role: "SYSADMIN",
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent ?? "Unknown",
+        deviceInfo: null,
+        status: "FAILED_CREDENTIALS",
+        sessionId: null,
+        revokedReason: `Failed password attempt ${newAttempts}/${LOCKOUT_THRESHOLD}`,
+      });
+    }
+
+    if (newAttempts >= LOCKOUT_THRESHOLD) {
+      const lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+      const rawUnlockToken = crypto.randomBytes(32).toString("hex");
+      const unlockTokenHash = crypto.createHash("sha256").update(rawUnlockToken).digest("hex");
+      const unlockTokenExpiresAt = new Date(Date.now() + UNLOCK_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+
+      await prisma.sysAdmin.update({
+        where: { id: admin.id },
+        data: {
+          failedLoginAttempts: newAttempts,
+          lockedUntil,
+          unlockTokenHash,
+          unlockTokenExpiresAt,
+        },
+      });
+
+      if (admin.email) {
+        const origin = context.appOrigin?.replace(/\/$/, "") || "https://portal.sugo-express.org";
+        const unlockLink = `${origin}/sysadmin/unlock?token=${rawUnlockToken}`;
+        const emailTemplate = buildSysAdminUnlockLinkEmail(
+          unlockLink,
+          admin.firstName || admin.username,
+          UNLOCK_TOKEN_EXPIRY_MINUTES
+        );
+        sendEmail(admin.email, emailTemplate.subject, emailTemplate.text, emailTemplate.html).catch((err) => {
+          console.error("Failed to send SysAdmin emergency unlock email:", err);
+        });
+      }
+
+      throw new ServiceError(
+        423,
+        "Account locked: 5 consecutive failed login attempts reached. Your administrator account is locked for 30 minutes. An emergency unlock link has been sent to your registered email."
+      );
+    }
+
+    await prisma.sysAdmin.update({
+      where: { id: admin.id },
+      data: { failedLoginAttempts: newAttempts },
+    });
+
+    throw new ServiceError(
+      401,
+      `Invalid administrative credentials. Attempt ${newAttempts} of ${LOCKOUT_THRESHOLD} before temporary account lockout.`
+    );
+  }
+
+  // 3. Status check
   if (admin.status !== "Active") {
     throw new ServiceError(403, "System Administrator account has been suspended or deactivated.");
   }
 
-  // If profile is not completed or email is not verified, require the Setup Wizard
+  // 4. Setup Wizard check
   if (!admin.profileCompleted || !admin.emailVerified) {
     const challengeToken = generateSetupToken(admin.id);
     return {
       profileSetupRequired: true,
+      twoFactorRequired: false,
       challengeToken,
       admin: sanitizeAdmin(admin),
     };
   }
 
-  // Full authenticated login
+  // 5. Adaptive 2FA check (Q4 & Q5)
+  let isDeviceTrusted = false;
+  if (context.deviceToken && !admin.enforceTwoFactor) {
+    const tokenHash = crypto.createHash("sha256").update(context.deviceToken).digest("hex");
+    const trustedDevice = await prisma.sysAdminTrustedDevice.findFirst({
+      where: {
+        adminId: admin.id,
+        deviceTokenHash: tokenHash,
+        expiresAt: { gt: new Date() },
+      },
+    });
+    if (trustedDevice) {
+      isDeviceTrusted = true;
+      prisma.sysAdminTrustedDevice.update({
+        where: { id: trustedDevice.id },
+        data: { lastUsedAt: new Date() },
+      }).catch(() => {});
+    }
+  }
+
+  if (admin.enforceTwoFactor || !isDeviceTrusted) {
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const twoFactorCodeHash = crypto.createHash("sha256").update(otp).digest("hex");
+    const twoFactorExpiresAt = new Date(Date.now() + TWO_FACTOR_EXPIRY_MINUTES * 60 * 1000);
+
+    await prisma.sysAdmin.update({
+      where: { id: admin.id },
+      data: {
+        failedLoginAttempts: 0,
+        twoFactorCodeHash,
+        twoFactorExpiresAt,
+      },
+    });
+
+    const challengeJwt = jwt.sign(
+      { adminId: admin.id, purpose: "SYSADMIN_2FA" },
+      JWT_SECRET,
+      { expiresIn: `${TWO_FACTOR_EXPIRY_MINUTES}m` }
+    );
+
+    if (admin.email) {
+      const emailTemplate = buildSysAdmin2FaOtpEmail(
+        otp,
+        admin.firstName || admin.username,
+        TWO_FACTOR_EXPIRY_MINUTES,
+        context.ipAddress,
+        parseDeviceInfo(context.userAgent ?? null)
+      );
+      sendEmail(admin.email, emailTemplate.subject, emailTemplate.text, emailTemplate.html).catch((err) => {
+        console.error("Failed to send SysAdmin 2FA email:", err);
+      });
+    }
+
+    return {
+      profileSetupRequired: false,
+      twoFactorRequired: true,
+      challengeToken: challengeJwt,
+      emailMasked: maskEmail(admin.email || ""),
+      admin: sanitizeAdmin(admin),
+    };
+  }
+
+  // 6. Direct Authenticated Login (Device is Trusted & Profile is Complete)
+  await prisma.sysAdmin.update({
+    where: { id: admin.id },
+    data: {
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+    },
+  });
+
+  // Strict Single-Session Invariant (Q8): Revoke all prior active sessions for this SysAdmin
+  await sessionService.revokeAllSubjectSessions(admin.id, "SYSADMIN", "SYSADMIN_CONCURRENT_LOGIN_TERMINATED");
+
   const sessionId = crypto.randomUUID();
   const tokenPayload: TokenPayload = {
     id: admin.id,
@@ -129,11 +300,6 @@ export async function loginSysAdmin(
     context
   );
 
-  await prisma.sysAdmin.update({
-    where: { id: admin.id },
-    data: { lastLoginAt: new Date() },
-  });
-
   if (context.ipAddress) {
     await sessionService.recordLoginLog({
       userId: admin.id,
@@ -148,6 +314,7 @@ export async function loginSysAdmin(
 
   return {
     profileSetupRequired: false,
+    twoFactorRequired: false,
     user: sanitizeAdmin(admin),
     accessToken,
     refreshToken,
@@ -199,7 +366,7 @@ export async function completeSysAdminProfile(
   });
 
   // Construct magic link
-  const origin = appOrigin?.replace(/\/$/, "") || "https://sugo-express.org";
+  const origin = appOrigin?.replace(/\/$/, "") || "https://portal.sugo-express.org";
   const verificationLink = `${origin}/sysadmin/verify-email?token=${rawToken}`;
 
   const displayName = nickname || firstName;
@@ -321,7 +488,7 @@ export async function resendSysAdminMagicLink(challengeToken: string, appOrigin?
     },
   });
 
-  const origin = appOrigin?.replace(/\/$/, "") || "https://sugo-express.org";
+  const origin = appOrigin?.replace(/\/$/, "") || "https://portal.sugo-express.org";
   const verificationLink = `${origin}/sysadmin/verify-email?token=${rawToken}`;
   const displayName = admin.nickname || admin.firstName || admin.username;
 
@@ -498,8 +665,45 @@ export async function updateAdminProfile(
   }
 
   if (newData.password) {
-    if (newData.password.length < 8) throw new ServiceError(400, "New password must be at least 8 characters.");
-    updateData.passwordHash = await bcrypt.hash(newData.password, 10);
+    if (newData.password.length < 12) {
+      throw new ServiceError(400, "New administrator password must be at least 12 characters long.");
+    }
+    if (!/[A-Z]/.test(newData.password) || !/[a-z]/.test(newData.password) || !/[0-9]/.test(newData.password) || !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?~`]/.test(newData.password)) {
+      throw new ServiceError(400, "Password must include at least one uppercase letter, one lowercase letter, one number, and one special symbol.");
+    }
+
+    // Compare with current password
+    const matchesCurrent = await bcrypt.compare(newData.password, admin.passwordHash);
+    if (matchesCurrent) {
+      throw new ServiceError(400, "New password must be different from your current password.");
+    }
+
+    // Check last 3 passwords in history
+    const history = await prisma.sysAdminPasswordHistory.findMany({
+      where: { adminId },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+    });
+    for (const h of history) {
+      const reused = await bcrypt.compare(newData.password, h.passwordHash);
+      if (reused) {
+        throw new ServiceError(400, "For security, you cannot reuse any of your last 3 passwords.");
+      }
+    }
+
+    const newHash = await bcrypt.hash(newData.password, 10);
+    updateData.passwordHash = newHash;
+
+    // Record in password history
+    await prisma.sysAdminPasswordHistory.create({
+      data: {
+        adminId,
+        passwordHash: newHash,
+      },
+    });
+
+    // Revoke other sessions on password change
+    await sessionService.revokeAllSubjectSessions(adminId, "SYSADMIN", "SYSADMIN_PASSWORD_CHANGED");
   }
 
   if (Object.keys(updateData).length === 0) {
@@ -509,3 +713,303 @@ export async function updateAdminProfile(
   const updated = await prisma.sysAdmin.update({ where: { id: adminId }, data: updateData });
   return sanitizeAdmin(updated);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-Factor Authentication & Account Lockout Security Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function verifySysAdmin2Fa(
+  challengeToken: string,
+  code: string,
+  trustDevice: boolean = false,
+  deviceFingerprint: string = "unknown_device",
+  context: SysAdminSessionContext = {}
+) {
+  let decoded: { adminId: number; purpose: string };
+  try {
+    decoded = jwt.verify(challengeToken, JWT_SECRET) as { adminId: number; purpose: string };
+  } catch {
+    throw new ServiceError(401, "Two-factor verification session expired. Please sign in again.");
+  }
+
+  if (decoded.purpose !== "SYSADMIN_2FA" || !decoded.adminId) {
+    throw new ServiceError(401, "Invalid two-factor session.");
+  }
+
+  const admin = await prisma.sysAdmin.findUnique({ where: { id: decoded.adminId } });
+  if (!admin || admin.status !== "Active") {
+    throw new ServiceError(403, "System Administrator account invalid or suspended.");
+  }
+
+  if (!admin.twoFactorCodeHash || !admin.twoFactorExpiresAt) {
+    throw new ServiceError(400, "No pending two-factor security code. Please sign in again.");
+  }
+
+  if (admin.twoFactorExpiresAt.getTime() < Date.now()) {
+    throw new ServiceError(400, "Security code has expired. Please request a new code.");
+  }
+
+  const inputHash = crypto.createHash("sha256").update(code.trim()).digest("hex");
+  if (inputHash !== admin.twoFactorCodeHash) {
+    throw new ServiceError(400, "Invalid 2FA security code.");
+  }
+
+  // Consume OTP and reset attempts
+  await prisma.sysAdmin.update({
+    where: { id: admin.id },
+    data: {
+      twoFactorCodeHash: null,
+      twoFactorExpiresAt: null,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+    },
+  });
+
+  // Optional: Trust this device for 30 days
+  let newDeviceToken: string | null = null;
+  if (trustDevice) {
+    newDeviceToken = crypto.randomBytes(32).toString("hex");
+    const deviceTokenHash = crypto.createHash("sha256").update(newDeviceToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    await prisma.sysAdminTrustedDevice.create({
+      data: {
+        adminId: admin.id,
+        deviceFingerprint: deviceFingerprint.slice(0, 128),
+        deviceTokenHash,
+        ipAddress: context.ipAddress?.slice(0, 45) || "127.0.0.1",
+        userAgent: context.userAgent || "Unknown Browser",
+        expiresAt,
+      },
+    });
+  }
+
+  // Strict Single-Session Invariant (Q8): Revoke all prior active sessions
+  await sessionService.revokeAllSubjectSessions(admin.id, "SYSADMIN", "SYSADMIN_CONCURRENT_LOGIN_TERMINATED");
+
+  const sessionId = crypto.randomUUID();
+  const tokenPayload: TokenPayload = {
+    id: admin.id,
+    username: admin.username,
+    email: admin.email ?? "",
+    role: "SYSADMIN",
+  };
+
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload, sessionId);
+
+  await sessionService.createSession(
+    sessionId,
+    { id: admin.id, role: "SYSADMIN", subjectType: "SYSADMIN" },
+    refreshToken,
+    context
+  );
+
+  if (context.ipAddress) {
+    await sessionService.recordLoginLog({
+      userId: admin.id,
+      role: "SYSADMIN",
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent ?? "Unknown",
+      deviceInfo: null,
+      status: "SUCCESS",
+      sessionId,
+    });
+  }
+
+  return {
+    user: sanitizeAdmin(admin),
+    accessToken,
+    refreshToken,
+    sessionId,
+    deviceToken: newDeviceToken,
+  };
+}
+
+export async function resendSysAdmin2Fa(
+  challengeToken: string,
+  context: SysAdminSessionContext = {}
+) {
+  let decoded: { adminId: number; purpose: string };
+  try {
+    decoded = jwt.verify(challengeToken, JWT_SECRET) as { adminId: number; purpose: string };
+  } catch {
+    throw new ServiceError(401, "Two-factor session expired. Please sign in again.");
+  }
+
+  if (decoded.purpose !== "SYSADMIN_2FA" || !decoded.adminId) {
+    throw new ServiceError(401, "Invalid two-factor session.");
+  }
+
+  const admin = await prisma.sysAdmin.findUnique({ where: { id: decoded.adminId } });
+  if (!admin || admin.status !== "Active" || !admin.email) {
+    throw new ServiceError(404, "Administrator account or email not found.");
+  }
+
+  const otp = crypto.randomInt(100000, 999999).toString();
+  const twoFactorCodeHash = crypto.createHash("sha256").update(otp).digest("hex");
+  const twoFactorExpiresAt = new Date(Date.now() + TWO_FACTOR_EXPIRY_MINUTES * 60 * 1000);
+
+  await prisma.sysAdmin.update({
+    where: { id: admin.id },
+    data: { twoFactorCodeHash, twoFactorExpiresAt },
+  });
+
+  const emailTemplate = buildSysAdmin2FaOtpEmail(
+    otp,
+    admin.firstName || admin.username,
+    TWO_FACTOR_EXPIRY_MINUTES,
+    context.ipAddress,
+    parseDeviceInfo(context.userAgent ?? null)
+  );
+  sendEmail(admin.email, emailTemplate.subject, emailTemplate.text, emailTemplate.html).catch((err) => {
+    console.error("Failed to send SysAdmin 2FA email:", err);
+  });
+
+  return {
+    message: "A new security verification code has been dispatched to your email.",
+    emailMasked: maskEmail(admin.email),
+  };
+}
+
+export async function unlockSysAdminAccount(rawToken: string) {
+  if (!rawToken || typeof rawToken !== "string") {
+    throw new ServiceError(400, "Emergency unlock token is required.");
+  }
+
+  const unlockTokenHash = crypto.createHash("sha256").update(rawToken.trim()).digest("hex");
+
+  const admin = await prisma.sysAdmin.findFirst({
+    where: {
+      unlockTokenHash,
+      unlockTokenExpiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!admin) {
+    throw new ServiceError(400, "This emergency unlock link is invalid or has expired.");
+  }
+
+  await prisma.sysAdmin.update({
+    where: { id: admin.id },
+    data: {
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      unlockTokenHash: null,
+      unlockTokenExpiresAt: null,
+    },
+  });
+
+  return {
+    message: "Administrator account unlocked successfully. You may now sign in.",
+    username: admin.username,
+  };
+}
+
+export async function refreshSysAdminSession(
+  refreshToken: string,
+  context: SessionContext = {}
+) {
+  if (!refreshToken || typeof refreshToken !== "string") {
+    throw new ServiceError(401, "Missing administrative refresh token.");
+  }
+
+  let decoded: { id: number; username: string; email: string; role: string; sid?: string };
+  try {
+    decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as any;
+  } catch {
+    throw new ServiceError(401, "Invalid or expired refresh token. Please sign in again.");
+  }
+
+  if (decoded.role !== "SYSADMIN" || !decoded.sid) {
+    throw new ServiceError(401, "Invalid administrative session token.");
+  }
+
+  const tokenPayload: TokenPayload = {
+    id: decoded.id,
+    username: decoded.username,
+    email: decoded.email,
+    role: "SYSADMIN",
+  };
+
+  const { outcome, refreshToken: newRefreshToken } = await sessionService.rotateSession(
+    decoded.sid,
+    refreshToken,
+    () => generateRefreshToken(tokenPayload, decoded.sid!),
+    context
+  );
+
+  const newAccessToken = generateAccessToken(tokenPayload);
+  const profile = await prisma.sysAdmin.findUnique({ where: { id: decoded.id } });
+
+  return {
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+    user: profile ? sanitizeAdmin(profile) : null,
+  };
+}
+
+export async function toggleSysAdminTwoFactor(
+  adminId: number,
+  enforceTwoFactor: boolean,
+  stepUpPassword: string
+) {
+  const admin = await prisma.sysAdmin.findUnique({ where: { id: adminId } });
+  if (!admin) throw new ServiceError(404, "System Administrator not found.");
+
+  const valid = await bcrypt.compare(stepUpPassword, admin.passwordHash);
+  if (!valid) throw new ServiceError(403, "Step-up re-authentication failed: incorrect password.");
+
+  const updated = await prisma.sysAdmin.update({
+    where: { id: adminId },
+    data: { enforceTwoFactor },
+  });
+
+  return {
+    message: enforceTwoFactor
+      ? "Two-Factor Authentication is now enforced on every sign-in."
+      : "Adaptive Two-Factor Authentication is active (OTP required only on unrecognized devices).",
+    enforceTwoFactor: updated.enforceTwoFactor,
+  };
+}
+
+export async function listSysAdminTrustedDevices(adminId: number) {
+  const devices = await prisma.sysAdminTrustedDevice.findMany({
+    where: {
+      adminId,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { lastUsedAt: "desc" },
+  });
+
+  return devices.map((d) => ({
+    id: d.id,
+    deviceFingerprint: d.deviceFingerprint,
+    ipAddress: d.ipAddress,
+    deviceInfo: parseDeviceInfo(d.userAgent),
+    lastUsedAt: d.lastUsedAt,
+    expiresAt: d.expiresAt,
+    createdAt: d.createdAt,
+  }));
+}
+
+export async function revokeSysAdminTrustedDevice(adminId: number, deviceId: string) {
+  const deleted = await prisma.sysAdminTrustedDevice.deleteMany({
+    where: { id: deviceId, adminId },
+  });
+  if (deleted.count === 0) {
+    throw new ServiceError(404, "Trusted device not found.");
+  }
+  return { message: "Trusted device revoked successfully." };
+}
+
+export async function verifySysAdminStepUpPassword(adminId: number, stepUpPassword: string): Promise<boolean> {
+  const admin = await prisma.sysAdmin.findUnique({
+    where: { id: adminId },
+    select: { passwordHash: true, status: true },
+  });
+  if (!admin || admin.status !== "Active") return false;
+  return bcrypt.compare(stepUpPassword, admin.passwordHash);
+}
+
