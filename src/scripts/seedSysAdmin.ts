@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { sysAdminPasswordPolicy } from "../validators/sysAdminValidators.js";
 
 const prisma = new PrismaClient();
 
@@ -7,7 +8,16 @@ async function main() {
   console.log("🌱 Seeding System Administrator IT account...");
 
   const username = "sysadminit";
-  const rawPassword = "Astrowarden@12";
+  // From the environment, never from this file: the password that used to be
+  // written here was committed to a public repository. Run as
+  //   SYSADMIN_SEED_PASSWORD='...' npm run seed:sysadmin
+  const passwordCheck = sysAdminPasswordPolicy.safeParse(process.env.SYSADMIN_SEED_PASSWORD ?? "");
+  if (!passwordCheck.success) {
+    throw new Error(
+      `Set SYSADMIN_SEED_PASSWORD to seed the sysadmin account. ${passwordCheck.error.issues[0]?.message ?? ""}`
+    );
+  }
+  const rawPassword = passwordCheck.data;
   const passwordHash = await bcrypt.hash(rawPassword, 10);
 
   const admin = await prisma.sysAdmin.upsert({

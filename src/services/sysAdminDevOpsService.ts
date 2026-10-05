@@ -6,21 +6,132 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { prisma } from "../lib/prisma.js";
 import { ServiceError } from "./ServiceError.js";
+import { sysAdminPasswordPolicy } from "../validators/sysAdminValidators.js";
 import { logger } from "../lib/logger.js";
+import { sysAdminBackupService } from "./sysAdminBackupService.js";
+import { sysAdminAlertService } from "./sysAdminAlertService.js";
+import { eventPublisher } from "../lib/eventPublisher.js";
+import { broadcastPushNotification } from "../lib/pushNotifications.js";
 
 const execAsync = promisify(exec);
 
 // ─── Per-Portal Maintenance State ────────────────────────────────────────────
 export type PortalKey = "owner" | "dispatcher" | "rider" | "customer";
+export type MaintenanceType = "SCHEDULED" | "EMERGENCY" | "UPGRADE" | "SECURITY";
 
-const DEFAULT_NOTICE = "Scheduled system maintenance in progress. Services will resume shortly.";
+export interface PortalMaintenanceConfig {
+  portal: PortalKey;
+  isActive: boolean;
+  maintenanceType: MaintenanceType;
+  header: string;
+  message: string;
+  supportContact?: string;
+  customColor?: string;
+  activatedAt?: string | null;
+  updatedAt: string;
+}
 
-const maintenanceState: Record<PortalKey, { isActive: boolean; notice: string }> = {
-  owner:      { isActive: false, notice: DEFAULT_NOTICE },
-  dispatcher: { isActive: false, notice: DEFAULT_NOTICE },
-  rider:      { isActive: false, notice: DEFAULT_NOTICE },
-  customer:   { isActive: false, notice: DEFAULT_NOTICE },
+export const DEFAULT_MAINTENANCE_HEADERS: Record<MaintenanceType, string> = {
+  SCHEDULED: "Scheduled System Maintenance",
+  EMERGENCY: "Emergency System Maintenance",
+  UPGRADE: "Database & Infrastructure Upgrade",
+  SECURITY: "Security Protocol Enforcement",
 };
+
+export const DEFAULT_MAINTENANCE_MESSAGES: Record<MaintenanceType, string> = {
+  SCHEDULED: "Scheduled maintenance is currently underway to optimize platform reliability. Services will resume shortly.",
+  EMERGENCY: "We are addressing an unexpected operational issue. System services are temporarily paused while our engineers resolve it.",
+  UPGRADE: "System data structures and infrastructure components are being upgraded for enhanced performance.",
+  SECURITY: "System access is temporarily restricted to enforce critical administrative security protocols.",
+};
+
+export const DEFAULT_SUPPORT_CONTACT = "support@sugo-express.org | IT Operations Desk";
+
+const CONFIG_FILE_PATH = path.join(process.cwd(), "config", "maintenance.json");
+
+function createDefaultPortalConfig(portal: PortalKey): PortalMaintenanceConfig {
+  return {
+    portal,
+    isActive: false,
+    maintenanceType: "SCHEDULED",
+    header: DEFAULT_MAINTENANCE_HEADERS.SCHEDULED,
+    message: DEFAULT_MAINTENANCE_MESSAGES.SCHEDULED,
+    supportContact: DEFAULT_SUPPORT_CONTACT,
+    customColor: "",
+    activatedAt: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+const maintenanceState: Record<PortalKey, PortalMaintenanceConfig> = {
+  owner: createDefaultPortalConfig("owner"),
+  dispatcher: createDefaultPortalConfig("dispatcher"),
+  rider: createDefaultPortalConfig("rider"),
+  customer: createDefaultPortalConfig("customer"),
+};
+
+let serverErrorSimulated = false;
+
+async function loadMaintenanceState(): Promise<void> {
+  try {
+    const raw = await fs.readFile(CONFIG_FILE_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    const portals: PortalKey[] = ["owner", "dispatcher", "rider", "customer"];
+    for (const p of portals) {
+      if (parsed[p]) {
+        maintenanceState[p] = {
+          ...createDefaultPortalConfig(p),
+          ...parsed[p],
+        };
+      }
+    }
+    if (typeof parsed.serverErrorSimulated === "boolean") {
+      serverErrorSimulated = parsed.serverErrorSimulated;
+    }
+    logger.info("[DevOpsService] Loaded persistent maintenance config from disk.");
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") {
+      logger.warn("[DevOpsService] Error reading maintenance config from disk, using defaults:", err);
+    }
+  }
+}
+
+async function saveMaintenanceState(): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(CONFIG_FILE_PATH), { recursive: true });
+    await fs.writeFile(
+      CONFIG_FILE_PATH,
+      JSON.stringify({ ...maintenanceState, serverErrorSimulated }, null, 2),
+      "utf-8"
+    );
+  } catch (err) {
+    logger.error("[DevOpsService] Failed to persist maintenance state to disk:", err);
+  }
+}
+
+export function getServerErrorStatus(): boolean {
+  return serverErrorSimulated;
+}
+
+export async function setServerErrorStatus(
+  active: boolean,
+  operatorUsername?: string
+): Promise<{ active: boolean }> {
+  serverErrorSimulated = active;
+  await saveMaintenanceState();
+  logger.info(
+    `[DevOpsService] 500 Server Error simulation set to ${active} by ${operatorUsername || "SysAdmin"}`
+  );
+  try {
+    eventPublisher.emit("system:server_error_update", { active });
+  } catch (err) {
+    logger.warn("[DevOpsService] Failed to emit system:server_error_update:", err);
+  }
+  return { active };
+}
+
+// Initial load on startup
+loadMaintenanceState();
 
 
 export interface SystemTelemetry {
@@ -63,7 +174,8 @@ export interface SystemTelemetry {
       sysAdmins: number;
     };
   };
-  maintenance: Record<PortalKey, { isActive: boolean; notice: string }>;
+  maintenance: Record<PortalKey, PortalMaintenanceConfig>;
+  serverErrorSimulated: boolean;
 }
 
 export async function getSystemTelemetry(): Promise<SystemTelemetry> {
@@ -153,82 +265,227 @@ export async function getSystemTelemetry(): Promise<SystemTelemetry> {
       counts,
     },
     maintenance: { ...maintenanceState },
+    serverErrorSimulated: getServerErrorStatus(),
   };
 }
 
-export function toggleMaintenanceMode(portal: PortalKey, active: boolean, notice?: string) {
-  maintenanceState[portal].isActive = active;
-  if (notice !== undefined) {
-    maintenanceState[portal].notice = notice || DEFAULT_NOTICE;
+export async function toggleMaintenanceMode(
+  portal: PortalKey,
+  active: boolean,
+  options?: {
+    maintenanceType?: MaintenanceType;
+    header?: string;
+    message?: string;
+    supportContact?: string;
+    customColor?: string;
+  },
+  operatorUsername?: string
+): Promise<PortalMaintenanceConfig> {
+  const current = maintenanceState[portal] || createDefaultPortalConfig(portal);
+  const nowIso = new Date().toISOString();
+
+  const type = options?.maintenanceType || current.maintenanceType || "SCHEDULED";
+  const header = options?.header?.trim() || current.header || DEFAULT_MAINTENANCE_HEADERS[type];
+  const message = options?.message?.trim() || current.message || DEFAULT_MAINTENANCE_MESSAGES[type];
+  const supportContact = options?.supportContact !== undefined ? options.supportContact.trim() : (current.supportContact || DEFAULT_SUPPORT_CONTACT);
+  const customColor = options?.customColor !== undefined ? options.customColor.trim() : current.customColor;
+
+  maintenanceState[portal] = {
+    portal,
+    isActive: active,
+    maintenanceType: type,
+    header,
+    message,
+    supportContact,
+    customColor,
+    activatedAt: active ? (current.isActive && current.activatedAt ? current.activatedAt : nowIso) : null,
+    updatedAt: nowIso,
+  };
+
+  await saveMaintenanceState();
+
+  // 1. Instant Real-Time Push to all connected clients
+  try {
+    eventPublisher.emit("maintenance:update", maintenanceState[portal]);
+  } catch (socketErr) {
+    logger.warn("[DevOpsService] Failed to emit maintenance:update socket event:", socketErr);
   }
+
+  // 2. Automated Telegram Alert Notification & Incident Log
+  try {
+    const statusWord = active ? "ACTIVATED" : "DEACTIVATED";
+    const emoji = active ? "⚠️" : "✅";
+    await sysAdminAlertService.sendTelegramAlert({
+      alertType: "SERVICE_RESTART",
+      severity: active ? "HIGH" : "LOW",
+      title: `${emoji} [${portal.toUpperCase()}] Maintenance Mode ${statusWord}`,
+      message: `System maintenance governance was modified by <b>${operatorUsername || "Administrator"}</b>.\n\n` +
+        `• <b>Portal:</b> ${portal.toUpperCase()}\n` +
+        `• <b>State:</b> ${statusWord}\n` +
+        `• <b>Type:</b> ${type}\n` +
+        `• <b>Header:</b> ${header}\n` +
+        `• <b>Notice:</b> ${message}\n` +
+        (supportContact ? `• <b>Contact:</b> ${supportContact}\n` : "") +
+        `• <b>Timestamp:</b> ${nowIso}`,
+      metadata: {
+        portal,
+        active,
+        maintenanceType: type,
+        header,
+        operator: operatorUsername,
+        timestamp: nowIso,
+      },
+    });
+  } catch (alertErr) {
+    logger.warn("[DevOpsService] Failed to dispatch Telegram maintenance alert:", alertErr);
+  }
+
+  // 3. Automated FCM & Expo Mobile Push Notification Broadcast
+  if (active && (portal === "customer" || portal === "rider")) {
+    void dispatchMaintenancePushNotification(portal, header, message, type);
+  }
+
   return maintenanceState[portal];
 }
 
-export function getPortalMaintenanceStatus(portal: PortalKey) {
-  return maintenanceState[portal] ?? { isActive: false, notice: "" };
+async function dispatchMaintenancePushNotification(
+  portal: PortalKey,
+  header: string,
+  message: string,
+  maintenanceType: MaintenanceType
+): Promise<void> {
+  try {
+    let tokens: (string | null)[] = [];
+
+    if (portal === "customer") {
+      const customers = await prisma.customerAccount.findMany({
+        where: {
+          expoPushToken: { not: null },
+        },
+        select: {
+          expoPushToken: true,
+        },
+      });
+      tokens = customers.map((c) => c.expoPushToken);
+    } else if (portal === "rider") {
+      const riders = await prisma.user.findMany({
+        where: {
+          role: "RIDER",
+          status: "ACTIVE",
+          expoPushToken: { not: null },
+        },
+        select: {
+          expoPushToken: true,
+        },
+      });
+      tokens = riders.map((r) => r.expoPushToken);
+    }
+
+    if (tokens.length === 0) {
+      logger.info(`[DevOpsService] No push tokens found for portal '${portal}'. Skipping push broadcast.`);
+      return;
+    }
+
+    logger.info(`[DevOpsService] Broadcasting maintenance push notification to ${tokens.length} devices for portal '${portal}'...`);
+    void broadcastPushNotification(tokens, {
+      title: header || "System Under Maintenance",
+      body: message || "Scheduled system maintenance in progress. Services will resume shortly.",
+      urgent: true,
+      channelId: "default",
+      data: {
+        type: "MAINTENANCE_NOTICE",
+        portal,
+        active: "true",
+        maintenanceType,
+        header,
+        message,
+      },
+    });
+  } catch (pushErr) {
+    logger.error(`[DevOpsService] Failed to dispatch maintenance push notifications for ${portal}:`, pushErr);
+  }
 }
 
-export async function triggerDatabaseBackupSnapshot(): Promise<{
+export function getPortalMaintenanceStatus(portal: PortalKey): PortalMaintenanceConfig {
+  return maintenanceState[portal] ?? createDefaultPortalConfig(portal);
+}
+
+export async function triggerDatabaseBackupSnapshot(adminId?: number): Promise<{
   success: boolean;
   backupFile: string;
   backupSizeBytes: number;
   backupSizeFormatted: string;
   timestamp: string;
 }> {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupFileName = `db_snapshot_${timestamp}.sql`;
-  const backupDir = path.resolve(process.cwd(), "backups");
-
   try {
-    await fs.mkdir(backupDir, { recursive: true });
-    const backupFilePath = path.join(backupDir, backupFileName);
-
-    // On Linux / VPS: try mysqldump
-    if (os.platform() === "linux") {
-      try {
-        await execAsync(`mysqldump -u root errand_system_db > ${backupFilePath}`);
-        const stat = await fs.stat(backupFilePath);
-        return {
-          success: true,
-          backupFile: backupFileName,
-          backupSizeBytes: stat.size,
-          backupSizeFormatted: formatBytes(stat.size),
-          timestamp,
-        };
-      } catch (err) {
-        logger.info("[DevOpsService] mysqldump command failed or required credentials, writing schema snapshot fallback.");
-      }
-    }
-
-    // Structured metadata & table dump fallback
-    const snapshotMetadata = {
-      createdAt: new Date().toISOString(),
-      database: "errand_system_db",
-      version: "Prisma 3NF v1",
-      tableCounts: {
-        users: await prisma.user.count(),
-        customerAccounts: await prisma.customerAccount.count(),
-        errands: await prisma.errand.count(),
-        sessions: await prisma.userSession.count(),
-        sysAdmins: await prisma.sysAdmin.count(),
-      },
-    };
-
-    const content = `-- SUGO Express MariaDB Snapshot\n-- Generated: ${snapshotMetadata.createdAt}\n-- Database: errand_system_db\n\n/* TABLE STATS: ${JSON.stringify(snapshotMetadata.tableCounts, null, 2)} */\n`;
-    await fs.writeFile(backupFilePath, content, "utf-8");
-    const stat = await fs.stat(backupFilePath);
-
+    const backup = await sysAdminBackupService.createDatabaseBackup("MANUAL", adminId);
     return {
       success: true,
-      backupFile: backupFileName,
-      backupSizeBytes: stat.size,
-      backupSizeFormatted: formatBytes(stat.size),
-      timestamp,
+      backupFile: backup.fileName,
+      backupSizeBytes: backup.fileSizeBytes,
+      backupSizeFormatted: backup.fileSizeFormatted,
+      timestamp: backup.createdAt.toISOString(),
     };
   } catch (err) {
     logger.error("[DevOpsService] Failed to trigger database backup:", err);
     throw new ServiceError(500, "Failed to create database backup snapshot.");
   }
+}
+
+export async function restartService(
+  service: "backend" | "nginx",
+  adminUsername: string
+): Promise<{ success: boolean; message: string }> {
+  if (service === "nginx") {
+    if (os.platform() === "linux") {
+      try {
+        await execAsync("nginx -t");
+        await execAsync("systemctl reload nginx");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error("[DevOpsService] Nginx reload error:", err);
+        throw new ServiceError(500, `Nginx reload failed: ${msg}`);
+      }
+    }
+
+    sysAdminAlertService
+      .sendTelegramAlert({
+        alertType: "SERVICE_RESTART",
+        severity: "MEDIUM",
+        title: "Nginx Reverse Proxy Reloaded",
+        message: `Nginx was reloaded via SysAdmin console by @${adminUsername}. Configuration syntax verified (nginx -t).`,
+        metadata: { service: "nginx", triggeredBy: adminUsername },
+      })
+      .catch(() => {});
+
+    return { success: true, message: "Nginx configuration verified and reloaded successfully." };
+  } else if (service === "backend") {
+    if (os.platform() === "linux") {
+      // Small 500ms timeout ensures HTTP 200 response is sent back to the browser before process reloads
+      setTimeout(() => {
+        exec("pm2 restart capstone-backend", (err) => {
+          if (err) logger.error("[DevOpsService] PM2 restart error:", err);
+        });
+      }, 500);
+    }
+
+    sysAdminAlertService
+      .sendTelegramAlert({
+        alertType: "SERVICE_RESTART",
+        severity: "HIGH",
+        title: "PM2 Backend Process Restarted",
+        message: `Node.js capstone-backend process restart initiated by @${adminUsername} via SysAdmin console.`,
+        metadata: { service: "backend", triggeredBy: adminUsername },
+      })
+      .catch(() => {});
+
+    return {
+      success: true,
+      message: "PM2 backend restart initiated. Process is reloading cleanly.",
+    };
+  }
+
+  throw new ServiceError(400, "Invalid service identifier. Supported: backend, nginx.");
 }
 
 export async function listItAdministrators() {
@@ -267,7 +524,18 @@ export async function createItAdministrator(data: {
   nickname?: string;
 }) {
   const username = data.username.trim().toLowerCase();
-  const rawPassword = data.password || "Astrowarden@12";
+  // No built-in default. There used to be one, the same for every new IT
+  // administrator and committed to a public repository, so an account created
+  // without a password could be signed into by anyone who had read the source.
+  // The same policy the step-up schema uses decides what is strong enough.
+  const passwordCheck = sysAdminPasswordPolicy.safeParse(data.password ?? "");
+  if (!passwordCheck.success) {
+    throw new ServiceError(
+      400,
+      passwordCheck.error.issues[0]?.message ?? "Set a temporary password for the new IT administrator."
+    );
+  }
+  const rawPassword = passwordCheck.data;
 
   if (!username || username.length < 3) {
     throw new ServiceError(400, "Username must be at least 3 characters.");

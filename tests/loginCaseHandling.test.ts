@@ -48,19 +48,19 @@ describe("password casing is preserved end to end", () => {
     // The single most important assertion in this file. A `.toLowerCase()`
     // anywhere on this path would collapse the alphabet of every password from
     // 62 characters to 36 and silently weaken every account in the system.
-    const parsed = loginSchema.parse({ username: "jayvee", password: "Astrowarden12" });
-    expect(parsed.password).toBe("Astrowarden12");
+    const parsed = loginSchema.parse({ username: "jayvee", password: "Bluebird-Lantern42" });
+    expect(parsed.password).toBe("Bluebird-Lantern42");
   });
 
   it("the registration schema does not alter the case of a password", () => {
     const parsed = customerRegisterSchema.parse({
       username: "jayvee",
-      password: "Astrowarden12",
+      password: "Bluebird-Lantern42",
       email: "juandelacruz@gmail.com",
       firstName: "Juan",
       lastName: "Dela Cruz",
     });
-    expect(parsed.password).toBe("Astrowarden12");
+    expect(parsed.password).toBe("Bluebird-Lantern42");
   });
 
   // bcryptjs is the pure-JS implementation, so one cost-10 hash plus four
@@ -68,9 +68,9 @@ describe("password casing is preserved end to end", () => {
   // vitest's 5s default, which made this the suite's one intermittent failure.
   // The work is the point of the test, so it gets room rather than a lower cost.
   it("bcrypt rejects the same password in the wrong case", async () => {
-    const hash = await bcrypt.hash("Astrowarden12", 10);
+    const hash = await bcrypt.hash("Bluebird-Lantern42", 10);
 
-    await expect(bcrypt.compare("Astrowarden12", hash)).resolves.toBe(true);
+    await expect(bcrypt.compare("Bluebird-Lantern42", hash)).resolves.toBe(true);
     await expect(bcrypt.compare("astrowarden12", hash)).resolves.toBe(false);
     await expect(bcrypt.compare("ASTROWARDEN12", hash)).resolves.toBe(false);
     await expect(bcrypt.compare("aSTROWARDEN12", hash)).resolves.toBe(false);
@@ -81,8 +81,8 @@ describe("password casing is preserved end to end", () => {
     // leading or trailing spaces can never be stored — trimming at login
     // therefore matches something that could not have been the secret anyway,
     // and costs no entropy. Interior spaces are a passphrase and must survive.
-    expect(loginSchema.parse({ username: "u", password: "  Astrowarden12  " }).password).toBe(
-      "Astrowarden12"
+    expect(loginSchema.parse({ username: "u", password: "  Bluebird-Lantern42  " }).password).toBe(
+      "Bluebird-Lantern42"
     );
     expect(loginSchema.parse({ username: "u", password: "open sesame please" }).password).toBe(
       "open sesame please"

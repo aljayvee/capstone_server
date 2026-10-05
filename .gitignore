@@ -30,3 +30,10 @@ gis/verified-places.geojson
 # Database regardless of the security rules.
 *firebase-adminsdk*.json
 firebase-service-account*.json
+
+# Real receipts (names, phone numbers, reference numbers) used to tune the
+# receipt parser, and debug screenshots of live maps. This repository is
+# public on GitHub: personal data stays on the machine.
+Training_Data_*/
+/Innacurate ETA and route line issues when zoom in/
+*.stackdump
