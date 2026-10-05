@@ -5,3 +5,8 @@ __pycache__/
 # Build artefacts. The Dockerfile trains these INTO the image, so a model
 # committed here would only ever be a stale copy of one.
 models/
+# Crawler response cache (crawler.fetcher) and production's exported rows,
+# which a deploy writes just before the Docker build.
+.crawl-cache/
+.env
+data/production.json

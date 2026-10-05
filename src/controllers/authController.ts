@@ -15,7 +15,7 @@ import * as authService from "../services/authService.js";
 import * as passwordResetService from "../services/passwordResetService.js";
 import type { AuthResult, LoginOutcome } from "../services/authService.js";
 import * as loginNotificationService from "../services/loginNotificationService.js";
-import type { LoginChannel } from "../services/loginNotificationService.js";
+import type { LoginChannel, LoginContext } from "../services/loginNotificationService.js";
 import type { LoginChallenge } from "../services/loginChallengeService.js";
 import { getClientIp, getDeviceHint, getDeviceId, getUserAgent, parseDeviceInfo } from "../lib/requestContext.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
@@ -24,31 +24,37 @@ import * as sessionService from "../services/sessionService.js";
 import { notifySessionRevoked } from "../lib/socket.js";
 import { prisma } from "../lib/prisma.js";
 
-import { REFRESH_SESSION_TTL_MS } from "../config/env.js";
+import { REFRESH_SESSION_TTL_MS, COOKIE_DOMAIN, CROSS_SITE_COOKIES } from "../config/env.js";
 
 // Matches the refresh token's own lifetime. Previously pinned at 7 days while
 // the token said 7 days too; both now follow JWT_REFRESH_EXPIRES_IN so the
 // cookie can never outlive, or die before, the credential inside it.
 const REFRESH_COOKIE_MAX_AGE = REFRESH_SESSION_TTL_MS;
-
-// A dashboard served from a different origin than the API (e.g. the Vite dev
-// server on :5173 against the tunnelled backend) is a cross-site context, and
-// browsers refuse to send a SameSite=Lax cookie there — the refresh token never
-// arrives and /auth/refresh always 401s. SameSite=None fixes that but is only
-// accepted on a Secure cookie, so the two move together. Default stays Lax:
-// same-origin deployments keep the stronger CSRF posture.
-const CROSS_SITE_COOKIES = process.env.CROSS_SITE_COOKIES === "true";
 const ACCESS_TOKEN_FALLBACK_MS = 24 * 60 * 60 * 1000; // 24 hours
 const REFRESH_TOKEN_FALLBACK_MS = REFRESH_SESSION_TTL_MS;
+
+function getCookieDomain(): string | undefined {
+  if (COOKIE_DOMAIN) return COOKIE_DOMAIN;
+  if (process.env.NODE_ENV === "production") return ".sugo-express.org";
+  return undefined;
+}
+
+function isSecureCookie(): boolean {
+  return CROSS_SITE_COOKIES || process.env.NODE_ENV === "production";
+}
 
 // Facade: collapses the previously 3-4x duplicated "set refresh cookie + shape the
 // login/register JSON response" block (one per auth endpoint) behind a single call.
 function setRefreshCookie(res: Response, refreshToken: string) {
+  const domain = getCookieDomain();
+  const secure = isSecureCookie();
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: CROSS_SITE_COOKIES || process.env.NODE_ENV === "production",
-    sameSite: CROSS_SITE_COOKIES ? "none" : "lax",
+    secure,
+    sameSite: secure ? "none" : "lax",
+    ...(domain ? { domain } : {}),
     maxAge: REFRESH_COOKIE_MAX_AGE,
+    path: "/",
   });
 }
 
@@ -89,11 +95,12 @@ async function respondWithAuth(
   });
 }
 
-function loginContext(req: Request, channel: LoginChannel) {
+function loginContext(req: Request, channel: LoginChannel): LoginContext {
   return {
     ipAddress: getClientIp(req),
     userAgent: getUserAgent(req),
     deviceHint: getDeviceHint(req),
+    deviceId: getDeviceId(req),
     channel,
   };
 }
@@ -121,9 +128,9 @@ function respondWithOutcome(req: Request, res: Response, outcome: LoginOutcome, 
   if (outcome.kind === "CHALLENGE") {
     return respondWithChallenge(res, outcome.challenge);
   }
-  // Bare statement, never awaited: sendLoginAlert returns void and swallows its
-  // own failures, so a mail problem cannot change this response.
-  loginNotificationService.sendLoginAlert(outcome.user, loginContext(req, channel));
+  // Fire-and-forget, never awaited: sendLoginAlert swallows its
+  // own failures, so a mail problem cannot delay or fail this response.
+  void loginNotificationService.sendLoginAlert(outcome.user, loginContext(req, channel));
   return respondWithAuth(req, res, 200, "Login successful", outcome.result);
 }
 
@@ -211,7 +218,7 @@ export const completeLoginProfile = asyncHandler(async (req, res) => {
 export const verifyLoginOtp = asyncHandler(async (req, res) => {
   const { challengeToken, code } = parseOrThrow(verifyLoginOtpSchema, req.body);
   const { result, user, audience } = await authService.completeLoginOtp(challengeToken, code);
-  loginNotificationService.sendLoginAlert(user, loginContext(req, audience));
+  void loginNotificationService.sendLoginAlert(user, loginContext(req, audience));
 
   if (audience === "WEB_PORTAL" && (user.role === "OWNER" || user.role === "DISPATCHER")) {
     await sessionService.revokeOtherSessions(
@@ -374,7 +381,15 @@ export const logout = asyncHandler<AuthenticatedRequest>(async (req, res) => {
     void riderPresenceService.closeLoginSession(req.user.id);
   }
 
-  res.clearCookie("refreshToken");
+  const domain = getCookieDomain();
+  const secure = isSecureCookie();
+  res.clearCookie("refreshToken", {
+    path: "/",
+    httpOnly: true,
+    secure,
+    sameSite: secure ? "none" : "lax",
+    ...(domain ? { domain } : {}),
+  });
   res.status(200).json({ message: "Logged out successfully." });
 });
 

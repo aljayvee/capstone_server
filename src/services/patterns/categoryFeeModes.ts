@@ -40,7 +40,15 @@ import type { HandlingFeeMode } from "./pricingStrategy.js";
  * deliberate: live rows still carry a "test1" storeCategory, and they must price
  * the way they always have rather than failing.
  */
-export async function resolveCategoryModes(errandId: string): Promise<HandlingFeeMode[]> {
+export async function resolveCategoryModes(
+  errandId: string,
+  /**
+   * The categories of stops the dispatcher has placed but not saved, for a
+   * price preview (errandService.quotePinpoints). Used in place of the saved
+   * stops, for the same fallback.
+   */
+  proposedPinCategoryIds?: Array<number | null | undefined>
+): Promise<HandlingFeeMode[]> {
   const items = await prisma.pabiliItemRequest.findMany({
     where: { errandId, storeCategory: { not: null } },
     select: { storeCategory: true },
@@ -50,6 +58,16 @@ export async function resolveCategoryModes(errandId: string): Promise<HandlingFe
     const names = dedupe(items.map((i) => i.storeCategory!));
     const modes = await modesForCategoryNames(names);
     if (modes.length > 0) return modes;
+  }
+
+  if (proposedPinCategoryIds) {
+    const ids = dedupe(proposedPinCategoryIds.filter((id): id is number => typeof id === "number"));
+    if (ids.length === 0) return [];
+    const categories = await prisma.merchantCategory.findMany({
+      where: { id: { in: ids } },
+      select: { handlingFeeMode: true },
+    });
+    return dedupe(categories.map((c) => c.handlingFeeMode as HandlingFeeMode));
   }
 
   // Nothing the customer chose still resolves to an active category. The stops

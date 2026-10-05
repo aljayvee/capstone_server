@@ -64,6 +64,8 @@ export const proofImageUploadSchema = z.object({
     .positive("Enter what you paid at this shop.")
     .max(100000, "That is larger than any Pabili basket. Check the amount.")
     .optional(),
+
+  riderNote: z.string().trim().max(500).optional().nullable(),
 });
 
 export const proofImageConfirmSchema = z.object({
@@ -71,7 +73,15 @@ export const proofImageConfirmSchema = z.object({
     .number()
     .nonnegative("A confirmed total cannot be negative.")
     .max(1_000_000, "That total looks implausible — please re-check the receipt."),
+  riderNote: z.string().trim().max(500).optional().nullable(),
 });
 
+// A photo to be read and held until the rider confirms its total. Only the kinds
+// with a total to confirm: every other kind is finished the moment it uploads.
+export const proofImageScanSchema = proofImageUploadSchema
+  .omit({ kind: true, declaredTotal: true })
+  .extend({ kind: z.enum(["RECEIPT", "TRANSFER"]) });
+
 export type ProofImageUploadInput = z.infer<typeof proofImageUploadSchema>;
+export type ProofImageScanInput = z.infer<typeof proofImageScanSchema>;
 export type ProofImageConfirmInput = z.infer<typeof proofImageConfirmSchema>;

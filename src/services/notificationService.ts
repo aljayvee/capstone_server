@@ -2,6 +2,7 @@ import { notificationRepository } from "../repositories/notificationRepository.j
 import { notificationFactory } from "./patterns/notificationFactory.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import { ServiceError } from "./ServiceError.js";
+import { eventPublisher } from "../lib/eventPublisher.js";
 
 export async function listForCaller(caller: { id: number; role: string }) {
   if (caller.role === "CUSTOMER") {
@@ -24,6 +25,13 @@ export async function markAsRead(id: number, caller: { id: number; role: string 
   }
 
   return notificationRepository.markRead(id);
+}
+
+export async function markAllAsRead(caller: { id: number; role: string }) {
+  if (caller.role === "CUSTOMER") {
+    return notificationRepository.markAllReadForCustomer(caller.id);
+  }
+  return notificationRepository.markAllReadForUser(caller.id);
 }
 
 // Persists a Notification row AND sends the push in one call — the one real
@@ -49,6 +57,9 @@ export async function notifyRiderAssigned(
     // The rider has 45 seconds to answer. A message Doze is free to sit on until
     // the next maintenance window loses the errand before they ever see it.
     urgent: true,
+    // The rider app's "Errand Assignments & Offers" channel (longer vibration),
+    // rather than the general one every other alert shares.
+    channelId: "orders",
   });
 }
 
@@ -104,4 +115,62 @@ export async function notifyErrandDeclined(
     body: content.body,
     data: { errandId, type: content.type },
   });
+}
+
+/**
+ * Tells a customer their rider is approaching (within 500m of delivery destination).
+ * Persists in MariaDB notifications table and dispatches an Expo push notification.
+ */
+export async function notifyRiderNearby(
+  customer: { id: number; expoPushToken: string | null },
+  errandId: string,
+  storeSummary: string
+) {
+  const content = notificationFactory.riderNearby(storeSummary);
+  const record = await notificationRepository.create({ customerId: customer.id, ...content });
+
+  void sendPushNotification(customer.expoPushToken, {
+    title: content.title,
+    body: content.body,
+    channelId: "delivery-alerts",
+    // One tray entry per delivery: this replaces the "on the way" and
+    // "minutes away" alerts before it (deliveryReminderService.tagFor).
+    tag: `delivery-${errandId}`,
+    data: { errandId, type: content.type },
+    urgent: true,
+  });
+
+  return record;
+}
+
+/**
+ * Tells dispatchers that a customer has chatted on an errand.
+ * Persists for the assigned dispatcher and broadcasts real-time to all on-duty dispatchers.
+ */
+export async function notifyDispatcherCustomerChat(
+  errandId: string,
+  dispatcherId: number | null,
+  customerName: string,
+  messageSnippet: string
+) {
+  const content = notificationFactory.customerChat(errandId, customerName, messageSnippet);
+  let record = null;
+  if (dispatcherId) {
+    record = await notificationRepository.create({
+      userId: dispatcherId,
+      ...content,
+    });
+  }
+
+  // Real-time broadcast to all active dispatchers so they hear the chime immediately
+  eventPublisher.emitToRole("DISPATCHER", "notification:new", {
+    id: record?.id || Date.now(),
+    type: content.type,
+    title: content.title,
+    body: content.body,
+    errandId,
+    createdAt: new Date().toISOString(),
+  });
+
+  return record;
 }

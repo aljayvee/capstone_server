@@ -9,6 +9,8 @@ import type {
   GeoPoint,
   MatchResult,
   MatrixResult,
+  OriginHint,
+  RouteOptions,
   RouteResult,
   RoutingProvider,
   RoutingProviderName,
@@ -28,6 +30,12 @@ const routeCache = new LRUCache<string, RouteResult>({ max: CACHE_MAX_ENTRIES, t
 // would otherwise generate on every single ping.
 function cacheKey(points: GeoPoint[]): string {
   return points.map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`).join(";");
+}
+
+// A route started on the road going the rider's way is a different answer
+// from one started on the nearest road, so the two are cached apart.
+function hintKey(hint: OriginHint | undefined): string {
+  return hint ? `|b${Math.round(hint.bearingDeg / 10)}` : "";
 }
 
 const REGISTRY: Record<RoutingProviderName, () => RoutingProvider> = {
@@ -75,12 +83,24 @@ const breakers = new Map<RoutingProviderName, CircuitBreaker>(
 //              logging it would emit a line per tracking client per refresh.
 type NoResultLog = "error" | "info" | "silent";
 
+// The configured chain with one provider moved to the front. The rest keep
+// their configured order, so asking for Google still falls back to OSRM, and
+// haversine stays last.
+function chainPreferring(prefer: RoutingProviderName | undefined): RoutingProvider[] {
+  if (!prefer) return providers;
+  return [
+    ...providers.filter((provider) => provider.name === prefer),
+    ...providers.filter((provider) => provider.name !== prefer),
+  ];
+}
+
 async function attempt<T>(
   operation: string,
   call: (provider: RoutingProvider) => Promise<T | null>,
-  noResultLog: NoResultLog = "error"
+  noResultLog: NoResultLog = "error",
+  chain: RoutingProvider[] = providers
 ): Promise<T | null> {
-  for (const provider of providers) {
+  for (const provider of chain) {
     if (!provider.isConfigured()) continue;
 
     const breaker = breakers.get(provider.name);
@@ -108,14 +128,49 @@ async function attempt<T>(
 
 // Road-network route through every point in order. Cached briefly, since a
 // moving rider re-requests a near-identical route many times a minute.
-export async function route(points: GeoPoint[]): Promise<RouteResult | null> {
+//
+// `prefer` puts one provider first, for a map that must draw that provider's
+// own roads: Sugo Rider on OpenStreetMap asks for OSRM, on Google for Google,
+// so the line lies on the roads painted underneath it. Each is cached apart.
+export async function route(
+  points: GeoPoint[],
+  options: { prefer?: RoutingProviderName; origin?: OriginHint } = {}
+): Promise<RouteResult | null> {
   if (points.length < 2) return null;
 
-  const key = cacheKey(points);
+  const key = `${options.prefer ?? ""}|${cacheKey(points)}${hintKey(options.origin)}`;
   const cached = routeCache.get(key);
   if (cached) return cached;
 
-  const result = await attempt("route", (provider) => provider.route(points));
+  const result = await attempt(
+    "route",
+    (provider) => provider.route(points, options.origin ? { origin: options.origin } : undefined),
+    "error",
+    chainPreferring(options.prefer)
+  );
+  if (result) routeCache.set(key, result);
+  return result;
+}
+
+// One provider's answer and nothing else: no falling back to the next. How
+// bestRoute.ts puts OSRM's and Google's routes side by side. Still behind that
+// provider's circuit breaker, and cached like route().
+export async function routeWith(
+  name: RoutingProviderName,
+  points: GeoPoint[],
+  options: RouteOptions = {}
+): Promise<RouteResult | null> {
+  if (points.length < 2) return null;
+  const only = providers.filter((provider) => provider.name === name);
+  if (only.length === 0) return null;
+
+  const key = `only:${name}${options.passThrough ? ":via" : ""}|${cacheKey(points)}${hintKey(options.origin)}`;
+  const cached = routeCache.get(key);
+  if (cached) return cached;
+
+  // "info": one provider having no answer is routine here; the caller has
+  // the other one.
+  const result = await attempt("route", (provider) => provider.route(points, options), "info", only);
   if (result) routeCache.set(key, result);
   return result;
 }
@@ -143,8 +198,8 @@ export async function match(trace: TracePoint[]): Promise<MatchResult | null> {
 // so until OSRM is configured this returns null on every call and callers route
 // from the raw coordinate, which is exactly the previous behaviour. That is why
 // it is "silent": see NoResultLog above.
-export async function snap(point: GeoPoint): Promise<GeoPoint | null> {
-  return attempt("snap", (provider) => provider.snap(point), "silent");
+export async function snap(point: GeoPoint, hint?: OriginHint): Promise<GeoPoint | null> {
+  return attempt("snap", (provider) => provider.snap(point, hint), "silent");
 }
 
 // Exposed for diagnostics and tests.

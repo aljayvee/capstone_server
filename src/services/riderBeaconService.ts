@@ -2,11 +2,16 @@ import { riderPresenceRepository } from "../repositories/riderPresenceRepository
 import { riderLoginSessionRepository } from "../repositories/riderLoginSessionRepository.js";
 import * as riderPositionStore from "../lib/riderPositionStore.js";
 import * as riderPresenceStore from "../lib/riderPresenceStore.js";
+import { broadcastRiderLocation } from "../lib/riderLocationBroadcast.js";
+import { liveLinkOf } from "../lib/riderLiveLink.js";
 import {
   availabilityOf,
+  mostRecentManilaMidnight,
+  OFFLINE_AFTER_MS,
   type AvailabilityResult,
   type PresenceSnapshot,
 } from "../lib/riderAvailability.js";
+import { logger } from "../lib/logger.js";
 import type { RiderBeaconInput } from "../validators/riderBeaconValidators.js";
 
 /**
@@ -21,16 +26,26 @@ import type { RiderBeaconInput } from "../validators/riderBeaconValidators.js";
 export async function recordBeacon(
   riderId: number,
   input: RiderBeaconInput
-): Promise<AvailabilityResult & { riderId: number }> {
+): Promise<AvailabilityResult & { riderId: number; forcedOffline: "midnight_reset" | null }> {
   const now = new Date();
   const recordedAt = input.recordedAt ?? now;
+
+  // Every shift ends at 12:00 AM Manila time. A device still reporting a shift
+  // that began before then (the app was closed and missed the moment, or its
+  // clock check never ran) is recorded as off duty, stamped at midnight so the
+  // screens say why, and told to stop in the reply below. Builds that do not
+  // send dutySince cannot be held to this and keep the old behaviour.
+  const midnight = mostRecentManilaMidnight(now.getTime());
+  const staleShift = input.onDuty && input.dutySince != null && input.dutySince < midnight;
+  const onDuty = input.onDuty && !staleShift;
+  const shutdownAt = staleShift ? new Date(midnight) : input.shuttingDown ? now : null;
 
   await riderPresenceRepository.upsert(riderId, {
     latitude: input.latitude ?? null,
     longitude: input.longitude ?? null,
     accuracyMeters: input.accuracyMeters ?? null,
     headingDeg: input.headingDeg ?? null,
-    onDuty: input.onDuty,
+    onDuty,
     backgroundLocation: input.backgroundLocation,
     notifications: input.notifications,
     exactAlarms: input.exactAlarms,
@@ -40,7 +55,7 @@ export async function recordBeacon(
     lastBeaconAt: now,
     // Cleared by any ordinary beacon: a rider who shut down and came back is
     // present again, and a stale shutdown marker would pin them to OFFLINE.
-    shutdownAt: input.shuttingDown ? now : null,
+    shutdownAt,
   });
 
   // Only a real fix updates the position cache. A beacon from a rider who has
@@ -54,21 +69,38 @@ export async function recordBeacon(
       accuracyMeters: input.accuracyMeters ?? null,
       headingDeg: input.headingDeg ?? null,
     });
+    // The beacon is also a live fix. For a rider app that predates the socket
+    // stream, this is the only socket-borne position its viewers will get.
+    broadcastRiderLocation(
+      riderId,
+      {
+        latitude: input.latitude,
+        longitude: input.longitude,
+        headingDeg: input.headingDeg ?? null,
+        accuracyMeters: input.accuracyMeters ?? null,
+        recordedAt: recordedAt.getTime(),
+      },
+      "beacon"
+    );
   }
 
-  const session = await riderLoginSessionRepository.findOpenForRider(riderId);
+  let session = await riderLoginSessionRepository.findOpenForRider(riderId);
+  if (!session && onDuty && !input.shuttingDown) {
+    session = await riderLoginSessionRepository.open(riderId);
+  }
 
   return {
     riderId,
+    forcedOffline: staleShift ? "midnight_reset" : null,
     ...availabilityOf({
       hasSession: Boolean(session),
-      onDuty: input.onDuty,
+      onDuty,
       backgroundLocation: input.backgroundLocation,
       notifications: input.notifications,
       exactAlarms: input.exactAlarms,
-    beaconIntervalMs: input.beaconIntervalMs ?? null,
+      beaconIntervalMs: input.beaconIntervalMs ?? null,
       lastBeaconAt: now.getTime(),
-      shutdownAt: input.shuttingDown ? now.getTime() : null,
+      shutdownAt: shutdownAt?.getTime() ?? null,
     }),
   };
 }
@@ -115,21 +147,59 @@ export async function availabilityForRiders(
         impediments: [],
         beaconAgeMs: null,
         presumed: !online,
+        riderStatus: online ? "AVAILABLE_ONLINE" : "OFFLINE",
+        riderStatusReason: online ? "online" : "never_connected",
+        lastBeaconAt: null,
       });
       continue;
     }
 
+    const isBeaconFreshAndOnDuty = Boolean(
+      row.onDuty &&
+      row.shutdownAt === null &&
+      row.lastBeaconAt &&
+      now - row.lastBeaconAt.getTime() <= OFFLINE_AFTER_MS
+    );
+
+    const hasSession = withSession.has(riderId) || isBeaconFreshAndOnDuty;
+
+    if (!withSession.has(riderId) && isBeaconFreshAndOnDuty) {
+      void riderLoginSessionRepository.open(riderId).catch((err) => {
+        logger.error(`Failed to auto-open missing rider session for rider ${riderId}:`, err);
+      });
+      withSession.add(riderId);
+    }
+
+    // The one-second WebSocket heartbeat (lib/riderLiveLink.ts), when the app
+    // is open and sending it. Flowing, it counts as hearing from the rider just
+    // now. Stopped, it overrides a beacon that has not yet gone stale: that is
+    // the whole point of it, since the beacon takes 25 to 75 s to notice.
+    const live = liveLinkOf(riderId);
+    const beaconAt = row.lastBeaconAt?.getTime() ?? null;
+
     const snapshot: PresenceSnapshot = {
-      hasSession: withSession.has(riderId),
+      hasSession,
       onDuty: row.onDuty,
       backgroundLocation: row.backgroundLocation,
       notifications: row.notifications,
       exactAlarms: row.exactAlarms,
       beaconIntervalMs: row.beaconIntervalMs ?? null,
-      lastBeaconAt: row.lastBeaconAt?.getTime() ?? null,
+      lastBeaconAt: live && !live.lost ? Math.max(beaconAt ?? 0, live.lastHeartbeatAt) : beaconAt,
       shutdownAt: row.shutdownAt?.getTime() ?? null,
     };
-    result.set(riderId, availabilityOf(snapshot, now));
+    let availability = availabilityOf(snapshot, now);
+    if (live?.lost && availability.riderStatus === "AVAILABLE_ONLINE") {
+      availability = {
+        ...availability,
+        state: "SIGNAL_LOST",
+        dispatchable: false,
+        beaconAgeMs: Math.max(0, now - live.lastHeartbeatAt),
+        riderStatus: "AVAILABLE_SIGNAL_LOST",
+        riderStatusReason: "signal_lost",
+        lastBeaconAt: live.lastHeartbeatAt,
+      };
+    }
+    result.set(riderId, availability);
   }
   return result;
 }

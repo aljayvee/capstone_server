@@ -99,8 +99,9 @@ export async function submitSettlement(
     collectedAmount: round2(collectedAmount),
     variance,
     status,
-    // Only meaningful on a shortfall; a matched settlement has nothing to explain.
-    shortReason: status === "SHORT" ? input.shortReason?.trim() || null : null,
+    // Keep any rider explanation ("Cash nalang daw", "Keep the change (Tip)",
+    // "Walang barya si customer") across SHORT, OVER, and MATCHED settlements.
+    shortReason: input.shortReason?.trim() || null,
     proofImageId: input.proofImageId ?? null,
   });
 }

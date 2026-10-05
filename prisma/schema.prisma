@@ -75,6 +75,7 @@ model User {
   verificationCodes       EmailVerificationCode[]  @relation("UserVerificationCodes")
   profilePhoto            RiderProfilePhoto?
   presence                RiderPresence?
+  knownDevices            UserKnownDevice[]
 
   @@map("users")
 }
@@ -345,6 +346,15 @@ model Errand {
   deliveryAddress   String
   deliveryLatitude  Float?
   deliveryLongitude Float?
+
+  // Copied from the customer's saved location when the errand is created, not
+  // joined to it. Editing or deleting a saved place later must not rewrite where
+  // an errand already in a rider's hands is going. Null on errands created
+  // before these existed, and whenever the customer left them blank.
+  deliveryStreetName String? @db.VarChar(150)
+  deliveryLandmark   String? @db.VarChar(200)
+  deliveryNotes      String? @db.VarChar(300)
+
   estimatedCost     Float        @default(0)
   deliveryFee       Float        @default(50)
   tip               Float        @default(0)
@@ -491,6 +501,10 @@ model Errand {
   etaComputedAt DateTime?
   etaIsDegraded Boolean   @default(false)
 
+  // Stamped when the rider enters within 500m of customer delivery coordinates
+  // during IN_TRANSIT, so proximity push/sound alert fires exactly once per errand.
+  proximityAlertSentAt DateTime? @map("proximity_alert_sent_at")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -528,6 +542,7 @@ model PabiliDetail {
   quantity          Int      @default(1)
   unitPrice         Float    @default(0)
   estimatedSubtotal Float    @default(0)
+  fulfillmentStatus String   @default("PENDING") @db.VarChar(32)
   createdAt         DateTime @default(now())
 
   // Which stop the rider buys this at.
@@ -790,6 +805,11 @@ model SavedDeliveryLocation {
   customer   CustomerAccount @relation(fields: [customerId], references: [id], onDelete: Cascade)
   label      String
   address    String
+  // What a rider needs at the door that a map pin cannot say. All optional:
+  // a pin with an address was a complete location before these existed.
+  streetName String?         @db.VarChar(150)
+  landmark   String?         @db.VarChar(200)
+  notes      String?         @db.VarChar(300)
   latitude   Float
   longitude  Float
   isDefault  Boolean         @default(false)
@@ -867,6 +887,25 @@ model AccountLoginLog {
   @@map("account_login_logs")
 }
 
+// 12d. Staff Known Devices Table
+// Tracks recognized devices and browsers to suppress redundant "New Sign-In" alerts.
+model UserKnownDevice {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  deviceId    String   @db.VarChar(80)
+  deviceInfo  String?  @db.VarChar(120)
+  userAgent   String?  @db.VarChar(300)
+  ipAddress   String?  @db.VarChar(64)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("user_known_devices")
+}
+
 model TokenBlocklist {
   id        Int      @id @default(autoincrement())
   token     String   @unique @db.VarChar(500)
@@ -904,7 +943,151 @@ model SysAdmin {
   updatedAt                  DateTime  @updatedAt
   lastLoginAt                DateTime?
 
+  // Account lockout & brute-force defense
+  failedLoginAttempts        Int       @default(0)
+  lockedUntil                DateTime?
+  unlockTokenHash            String?   @db.VarChar(255)
+  unlockTokenExpiresAt       DateTime?
+
+  // Adaptive & Enforced 2FA Security
+  enforceTwoFactor           Boolean   @default(false)
+  twoFactorCodeHash          String?   @db.VarChar(255)
+  twoFactorExpiresAt         DateTime?
+
+  // Relations
+  trustedDevices             SysAdminTrustedDevice[]
+  passwordHistory            SysAdminPasswordHistory[]
+  blockedIps                 BlockedIp[]
+  whitelistedIps             WhitelistedIp[]
+  backups                    DatabaseBackup[]
+
   @@map("tbl_sys_admin")
+}
+
+// 12c. SysAdmin Trusted Devices Table
+// Stores cryptographically hashed 30-day device tokens to bypass 2FA OTP for recognized devices.
+model SysAdminTrustedDevice {
+  id                String    @id @default(uuid())
+  adminId           Int
+  deviceFingerprint String    @db.VarChar(128)
+  deviceTokenHash   String    @db.VarChar(255)
+  ipAddress         String    @db.VarChar(45)
+  userAgent         String    @db.Text
+  lastUsedAt        DateTime  @default(now())
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+
+  admin             SysAdmin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([deviceTokenHash])
+  @@map("tbl_sys_admin_trusted_devices")
+}
+
+// 12d. SysAdmin Password History Table
+// Enforces password policy by preventing reuse of the last 3 passwords.
+model SysAdminPasswordHistory {
+  id           Int       @id @default(autoincrement())
+  adminId      Int
+  passwordHash String    @db.VarChar(255)
+  createdAt    DateTime  @default(now())
+
+  admin        SysAdmin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@map("tbl_sys_admin_password_history")
+}
+
+// 12e. IP Blocklist Table (Dual-Tier Threat Center)
+// Stores automated heuristic bans and manual administrative bans.
+enum BanType {
+  AUTOMATIC
+  MANUAL
+}
+
+enum ThreatSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum BanStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+model BlockedIp {
+  id           Int            @id @default(autoincrement())
+  ipAddress    String         @db.VarChar(45)
+  reason       String         @db.VarChar(255)
+  banType      BanType        @default(AUTOMATIC)
+  severity     ThreatSeverity @default(HIGH)
+  status       BanStatus      @default(ACTIVE)
+  blockedUntil DateTime?      // NULL = Permanent ban; DateTime = Temporary ban
+  attackCount  Int            @default(1)
+  lastSeenAt   DateTime       @default(now())
+  bannedById   Int?
+  bannedBy     SysAdmin?      @relation(fields: [bannedById], references: [id], onDelete: SetNull)
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([ipAddress, status])
+  @@index([blockedUntil])
+  @@index([createdAt])
+  @@map("tbl_blocked_ips")
+}
+
+// 12f. IP Whitelist Table
+// Whitelisted IPs and subnets immune to auto-ban and edge rate-limits.
+model WhitelistedIp {
+  id          Int       @id @default(autoincrement())
+  ipAddress   String    @unique @db.VarChar(45)
+  cidrBlock   String?   @db.VarChar(50)
+  description String    @db.VarChar(255)
+  isImmune    Boolean   @default(false)
+  createdById Int?
+  createdBy   SysAdmin? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("tbl_whitelisted_ips")
+}
+
+// 12g. Database Backup Inventory Table
+// Stores metadata of compressed database backups generated manually or via nightly cron.
+model DatabaseBackup {
+  id            Int       @id @default(autoincrement())
+  fileName      String    @unique @db.VarChar(255)
+  fileSizeBytes BigInt    @default(0)
+  filePath      String    @db.VarChar(500)
+  backupType    String    @default("AUTOMATED") @db.VarChar(50) // "AUTOMATED" | "MANUAL"
+  status        String    @default("COMPLETED") @db.VarChar(50) // "COMPLETED" | "FAILED"
+  createdById   Int?
+  createdBy     SysAdmin? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+
+  @@index([createdAt])
+  @@map("tbl_database_backups")
+}
+
+// 12h. SysAdmin Emergency Alert Audit Table
+// Logs emergency alerts dispatched via Telegram or other automated notification webhooks.
+model SysAdminAlert {
+  id        Int      @id @default(autoincrement())
+  alertType String   @db.VarChar(50) // "CRITICAL_INTRUSION", "SERVICE_RESTART", "DB_DISCONNECT", "DISK_WARNING"
+  severity  String   @default("HIGH") @db.VarChar(20)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  channel   String   @default("TELEGRAM") @db.VarChar(50)
+  status    String   @default("SENT") @db.VarChar(50)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("tbl_sysadmin_alerts")
 }
 
 // 13. Payment Selection Table (3NF: dispatcher-prompted, customer-confirmed
@@ -1148,6 +1331,10 @@ model ErrandProofImage {
   clarityVerdict ImageClarityVerdict?
 
   capturedAt DateTime @default(now())
+
+  // Optional note from the rider explaining the stop or handover (e.g.
+  // "Walang receipt tong mga items na toh", "Cash nalang daw").
+  riderNote  String?  @db.VarChar(500)
 
   // Whether a machine read this, or a person asserted it.
   //
@@ -1395,6 +1582,7 @@ model VerifiedPlace {
   pinpoints         ErrandPinpoint[]   @relation("PinnedPlace")
   observedAt        ErrandPinpoint[]   @relation("ObservedPlace")
   dwellObservations DwellObservation[]
+  crawledItems      CrawledMerchantItem[]
 
   @@index([name])
   @@index([categoryId])
@@ -1485,3 +1673,40 @@ model DwellObservation {
   @@index([placeId, createdAt])
   @@map("dwell_observations")
 }
+
+// 19. Crawled Merchant Items (catalog assistance for dispatchers & customers)
+model CrawledMerchantItem {
+  id              Int            @id @default(autoincrement())
+  verifiedPlaceId String?        @db.VarChar(36)
+  verifiedPlace   VerifiedPlace? @relation(fields: [verifiedPlaceId], references: [id], onDelete: SetNull)
+
+  rawStoreName    String         @db.VarChar(150)
+  itemName        String         @db.VarChar(150)
+  categoryName    String         @db.VarChar(80)
+  sourceType      String         @db.VarChar(50) // "WEB_SCRAPE", "OCR_FLYER", "STAFF_CATALOGUED"
+  sourceUrl       String?        @db.VarChar(500)
+
+  isAvailable     Boolean        @default(true)
+  lastSeenAt      DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([itemName])
+  @@index([rawStoreName])
+  @@index([verifiedPlaceId])
+  @@map("crawled_merchant_items")
+}
+
+// 20. Processed OCR Image Cache (Google Cloud Vision quota protection)
+model ProcessedOcrImage {
+  id            Int      @id @default(autoincrement())
+  sha256Hash    String   @unique @db.VarChar(64)
+  extractedText String   @db.LongText
+  engine        String   @db.VarChar(50) // "LOCAL_TESSERACT", "CLOUD_VISION"
+  confidence    Float?
+  createdAt     DateTime @default(now())
+
+  @@index([sha256Hash])
+  @@map("processed_ocr_images")
+}
+

@@ -13,6 +13,13 @@ vi.mock("../src/lib/prisma.js", () => ({
     // The receipt an automatic confirmation cites: this errand's, unspent.
     errandProofImage: {
       findUnique: vi.fn(async () => ({ errandId: ERRAND, payment: null })),
+      findMany: vi.fn(async () => []),
+    },
+    errandPinpoint: {
+      findMany: vi.fn(async () => []),
+    },
+    pabiliDetail: {
+      findMany: vi.fn(async () => []),
     },
     errand: {
       findUnique: vi.fn(async () => ({
@@ -47,11 +54,12 @@ vi.mock("../src/lib/eventPublisher.js", () => ({
   eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToErrandParties: vi.fn() },
 }));
 vi.mock("../src/services/errandService.js", () => ({
-  markItemsPurchased: vi.fn(),
+  applyReceiptTotal: vi.fn(),
   recalculateFee: vi.fn(),
 }));
 vi.mock("../src/services/proofImageService.js", () => ({ confirmedReceiptTotal: vi.fn() }));
 
+import { prisma } from "../src/lib/prisma.js";
 import { errandRepository } from "../src/repositories/errandRepository.js";
 import { paymentSelectionRepository } from "../src/repositories/paymentSelectionRepository.js";
 import { errandPaymentRepository } from "../src/repositories/errandPaymentRepository.js";
@@ -119,6 +127,32 @@ describe("who may ask, and when", () => {
     });
     expect(errandRepository.update).not.toHaveBeenCalled();
   });
+
+  it("refuses if any assigned store pinpoint lacks receipt or no-receipt proof", async () => {
+    vi.mocked(prisma.errandPinpoint.findMany).mockResolvedValueOnce([
+      { id: 101, storeName: "Mercury Drug" },
+      { id: 102, storeName: "Fitmart" },
+    ] as never);
+    vi.mocked(prisma.errandProofImage.findMany).mockResolvedValueOnce([
+      { pinpointId: 101 },
+    ] as never);
+
+    await expect(requestHalfPayment(ERRAND, RIDER)).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("Fitmart"),
+    });
+  });
+
+  it("refuses if any errand items remain in PENDING status", async () => {
+    vi.mocked(prisma.pabiliDetail.findMany).mockResolvedValueOnce([
+      { id: 501, itemName: "Biogesic 500mg" },
+    ] as never);
+
+    await expect(requestHalfPayment(ERRAND, RIDER)).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("Biogesic 500mg"),
+    });
+  });
 });
 
 describe("asking", () => {
@@ -161,7 +195,7 @@ describe("asking", () => {
   it("re-syncs the goods figure when a receipt has not folded in yet", async () => {
     vi.mocked(confirmedReceiptTotal).mockResolvedValue(1250);
     await requestHalfPayment(ERRAND, RIDER);
-    expect(errandService.markItemsPurchased).toHaveBeenCalledWith(ERRAND, RIDER, 1250);
+    expect(errandService.applyReceiptTotal).toHaveBeenCalledWith(ERRAND, RIDER, 1250);
   });
 
   it("a second press nudges without moving the stamp", async () => {

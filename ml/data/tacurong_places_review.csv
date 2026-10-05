@@ -1,0 +1,122 @@
+name,lat,lon,osm,mapper_category,model_category,confidence,final_category,needs_review,agrees_with_mappers,reason
+4 Corner Store,6.680139,124.674380,node/5243668525,Convenience Store,Convenience Store,0.859,Convenience Store,no,yes,Tagged by OpenStreetMap mappers.
+7- Eleven,6.691726,124.686198,node/12082352269,Convenience Store,Convenience Store,0.979,Convenience Store,no,yes,Tagged by OpenStreetMap mappers.
+7-Eleven,6.688329,124.679268,node/12761831301,Convenience Store,Convenience Store,0.979,Convenience Store,no,yes,Tagged by OpenStreetMap mappers.
+7-Eleven,6.685587,124.672346,node/12765830102,Convenience Store,Convenience Store,0.979,Convenience Store,no,yes,Tagged by OpenStreetMap mappers.
+7-Eleven,6.699076,124.731946,node/12773518034,Convenience Store,Convenience Store,0.979,Convenience Store,no,yes,Tagged by OpenStreetMap mappers.
+Alsan,6.695750,124.704984,node/10820789508,Retail & General Merchandise,,0.522,Retail & General Merchandise,no,,Tagged by OpenStreetMap mappers.
+Alyöussef,6.682418,124.663992,node/12765733801,Fast Food & Restaurant,Fast Food & Restaurant,0.610,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Aries Pizza,6.630616,124.602203,node/11074960105,Fast Food & Restaurant,Fast Food & Restaurant,0.985,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Arizz Gadget Hub,6.699021,124.731876,node/12773518033,Retail & General Merchandise,Retail & General Merchandise,0.947,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Aseana General Merchandise,6.690710,124.674743,node/6167540697,Retail & General Merchandise,,0.536,Retail & General Merchandise,no,,Tagged by OpenStreetMap mappers.
+Bel's Motor Parts,6.689977,124.675710,node/6167540692,,Retail & General Merchandise,0.996,Retail & General Merchandise,no,,Confidence 1.00 satisfies auto-acceptance threshold (>= 0.75)
+Better Cool Service Center,6.689888,124.682408,node/6167345287,,Retail & General Merchandise,0.836,Retail & General Merchandise,no,,Confidence 0.84 satisfies auto-acceptance threshold (>= 0.75)
+Bidz Inasal,6.686988,124.674293,node/3772753728,Fast Food & Restaurant,Fast Food & Restaurant,0.842,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Bornks pata,6.675970,124.675755,node/5243664541,Fast Food & Restaurant,Fast Food & Restaurant,0.865,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Cabaluna Surgical Center,6.693482,124.671640,node/6172155087,Pharmacy & Health,Pharmacy & Health,0.924,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Cafe Venereja,6.677460,124.675181,node/5243664540,Fast Food & Restaurant,Fast Food & Restaurant,0.981,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Callao Medical and Dental Clinic,6.688703,124.677275,node/6207141588,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Campus Arts III,6.685750,124.680661,node/6167375385,Retail & General Merchandise,Retail & General Merchandise,0.749,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Chai's Corner Food House,6.699010,124.731779,node/12773518031,Fast Food & Restaurant,Fast Food & Restaurant,0.995,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Chooks to Go,6.688760,124.677543,node/6167541689,Fast Food & Restaurant,Fast Food & Restaurant,0.859,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Citi Hardware,6.680839,124.682477,way/770116234,Retail & General Merchandise,Retail & General Merchandise,0.996,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+City Plaza,6.690278,124.675776,node/6167541686,Retail & General Merchandise,,0.426,Retail & General Merchandise,no,,Tagged by OpenStreetMap mappers.
+"Coffe, Please",6.690293,124.678258,node/12765820101,Fast Food & Restaurant,Fast Food & Restaurant,0.933,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Corners Cafe,6.644937,124.607335,node/4810951225,Fast Food & Restaurant,Fast Food & Restaurant,0.994,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+DMFI Hardware and General Store,6.698128,124.674430,node/6207141586,Retail & General Merchandise,Retail & General Merchandise,0.990,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Dose Coffee Lab,6.685847,124.672861,node/13000154143,Fast Food & Restaurant,Fast Food & Restaurant,0.994,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Dunkin Donuts,6.686078,124.672562,node/5306093522,Fast Food & Restaurant,Fast Food & Restaurant,0.853,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Engr. Roger Juan,6.684616,124.675822,node/10241649409,Retail & General Merchandise,,0.472,Retail & General Merchandise,no,,Tagged by OpenStreetMap mappers.
+ERS General Merchandise,6.698915,124.679343,node/6167542886,Retail & General Merchandise,Retail & General Merchandise,0.748,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+FJK,6.683822,124.680577,node/10703277313,Retail & General Merchandise,Retail & General Merchandise,0.639,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Flores bakery,6.688647,124.676543,node/6139971717,Bakery,Bakery,0.995,Bakery,no,yes,Tagged by OpenStreetMap mappers.
+Geric Halal,6.691003,124.674654,node/6167540696,Fast Food & Restaurant,Fast Food & Restaurant,0.814,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Golden Touch Radiator and Tire Services,6.690576,124.684491,node/6167345388,,Retail & General Merchandise,0.975,Retail & General Merchandise,no,,Confidence 0.97 satisfies auto-acceptance threshold (>= 0.75)
+Goldyfood,6.690384,124.678802,node/6167340190,Fast Food & Restaurant,Fast Food & Restaurant,0.733,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Green Agri Farm Supply,6.690853,124.677999,node/6167541688,Retail & General Merchandise,Retail & General Merchandise,0.980,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Greenwich,6.687265,124.675071,node/6177444887,Fast Food & Restaurant,Fast Food & Restaurant,0.757,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Grilled Hitoan,6.691021,124.684589,node/5306316821,Fast Food & Restaurant,Fast Food & Restaurant,0.967,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Healing Touch,6.693639,124.672995,node/6169536587,,Retail & General Merchandise,0.601,Retail & General Merchandise,yes,,Confidence 0.60 is below 0.75 or location out of bounds; flagged for human review
+Honesty Bakeshop,6.687803,124.678492,node/6207143185,Bakery,Bakery,0.996,Bakery,no,yes,Tagged by OpenStreetMap mappers.
+Hungry Fish Seafood Grill,6.667879,124.676033,way/1453324928,Fast Food & Restaurant,Fast Food & Restaurant,0.987,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Ice and Fries,6.691318,124.675382,node/6167447085,Fast Food & Restaurant,Fast Food & Restaurant,0.868,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Immacon,6.687622,124.677517,node/10703277908,Retail & General Merchandise,Retail & General Merchandise,0.639,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Immaculate Concepcion Hospital,6.701037,124.738891,way/1379453397,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Imperial Appliance Plaza,6.689181,124.681431,node/6167340193,Retail & General Merchandise,Retail & General Merchandise,1.000,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+J Shammah,6.689386,124.678691,node/10703277316,Retail & General Merchandise,Retail & General Merchandise,0.652,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Janel,6.683473,124.672708,node/12766841801,Fast Food & Restaurant,,0.482,Fast Food & Restaurant,no,,Tagged by OpenStreetMap mappers.
+Jao Tay,6.689909,124.676909,node/10820789511,Retail & General Merchandise,,0.541,Retail & General Merchandise,no,,Tagged by OpenStreetMap mappers.
+Jireh Marketing,6.689090,124.676187,node/10820789705,Retail & General Merchandise,Retail & General Merchandise,0.877,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Jollibee,6.687332,124.675192,node/1504768621,Fast Food & Restaurant,Fast Food & Restaurant,0.837,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+JTM Cartech and AirConditioning Services,6.637212,124.600077,node/3717419949,,Retail & General Merchandise,0.989,Retail & General Merchandise,no,,Confidence 0.99 satisfies auto-acceptance threshold (>= 0.75)
+Julie's Bakeshop,6.689288,124.681605,node/6167340192,Bakery,Bakery,0.998,Bakery,no,yes,Tagged by OpenStreetMap mappers.
+Julson Bakeshop,6.689264,124.676953,node/6207141288,Bakery,Bakery,0.996,Bakery,no,yes,Tagged by OpenStreetMap mappers.
+Junjun Kambingan,6.685173,124.680329,node/9454319917,Fast Food & Restaurant,Fast Food & Restaurant,0.963,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Kimsan Department Store,6.688723,124.674550,node/3772753722,Retail & General Merchandise,Retail & General Merchandise,0.966,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+KPS-Seed,6.696624,124.677444,node/6207142885,,,0.532,,yes,,Confidence 0.53 is below 0.75 or location out of bounds; flagged for human review
+La Cas Familia Food Shop,6.689839,124.673593,node/6167541694,Fast Food & Restaurant,Fast Food & Restaurant,0.924,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Lab's Old Time La Paz Batchoy,6.691156,124.675496,node/6167540699,Fast Food & Restaurant,Fast Food & Restaurant,0.979,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Laforteza,6.687660,124.675152,node/7043020385,Pharmacy & Health,Pharmacy & Health,0.646,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Laforteza DRS,6.688498,124.675084,node/6963035393,Pharmacy & Health,Pharmacy & Health,0.771,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Laundryworld,6.686727,124.673665,node/5867146585,,,0.422,,yes,,Confidence 0.42 is below 0.75 or location out of bounds; flagged for human review
+Lee Kay Kee and Sons,6.690547,124.677418,node/6167541687,Retail & General Merchandise,Retail & General Merchandise,0.675,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Little Miss Tea,6.631320,124.605448,node/8220280417,Fast Food & Restaurant,Fast Food & Restaurant,0.898,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+LJA Enterprises,6.689353,124.673579,node/6167540694,Retail & General Merchandise,Retail & General Merchandise,0.616,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+LND Bikeshop,6.689219,124.676734,node/6207141289,Retail & General Merchandise,Retail & General Merchandise,0.993,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Lo-oc Motor Parts,6.690312,124.676623,node/6167540688,Retail & General Merchandise,Retail & General Merchandise,0.996,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Lu Clinic and Hospital,6.689668,124.681181,node/6207141299,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Magic Star Digital Photography Services,6.688341,124.674039,node/6167541693,,Retail & General Merchandise,0.929,Retail & General Merchandise,no,,Confidence 0.93 satisfies auto-acceptance threshold (>= 0.75)
+Manolette Bakeshop,6.689622,124.677697,node/6207141301,Bakery,Bakery,0.996,Bakery,no,yes,Tagged by OpenStreetMap mappers.
+Mars Barbecue Express,6.690220,124.683272,node/6167340194,Fast Food & Restaurant,Fast Food & Restaurant,0.955,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+McDonald's,6.688374,124.677379,way/1327112109,Fast Food & Restaurant,Fast Food & Restaurant,0.883,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Medical Mission Group Hospital Services Cooperative of Tacurong,6.694129,124.675805,way/907605166,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Mercury Drug,6.688621,124.676871,node/1504776809,Pharmacy & Health,Pharmacy & Health,0.995,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Mercury Drug,6.689382,124.678659,node/3772753717,Pharmacy & Health,Pharmacy & Health,0.995,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Mercury Drug,6.689158,124.674817,node/6167541695,Pharmacy & Health,Pharmacy & Health,0.995,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Minute Burger,6.689913,124.682518,node/6167340196,Fast Food & Restaurant,Fast Food & Restaurant,0.985,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Minute Burger,6.687063,124.674520,node/6177444886,Fast Food & Restaurant,Fast Food & Restaurant,0.985,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Mones Dental Clinic,6.689981,124.685773,node/6167345285,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Mr. Droy,6.699016,124.731828,node/12773518032,,,0.436,,yes,,Confidence 0.44 is below 0.75 or location out of bounds; flagged for human review
+Nanay Elen's BBQ,6.692181,124.675082,node/6169536386,Fast Food & Restaurant,Fast Food & Restaurant,0.925,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Nanding Barbecue,6.686335,124.679883,node/1818449023,Fast Food & Restaurant,Fast Food & Restaurant,0.930,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+ND Agri Tacurong,6.689129,124.680982,node/10820789509,Retail & General Merchandise,Retail & General Merchandise,0.827,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Nice Shot Arms and Ammo,6.685987,124.673396,node/6167534987,Retail & General Merchandise,Retail & General Merchandise,0.737,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+One Click,6.699005,124.731730,node/12773518030,,Retail & General Merchandise,0.617,Retail & General Merchandise,yes,,Confidence 0.62 is below 0.75 or location out of bounds; flagged for human review
+Orix Metro Leasing and Financing Corporation,6.686856,124.673963,node/6167541690,,,0.376,,yes,,Confidence 0.38 is below 0.75 or location out of bounds; flagged for human review
+Portside Unlimited Streetfoods,6.631326,124.605530,node/13197336770,Fast Food & Restaurant,Fast Food & Restaurant,0.914,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+President Quirino Public Market,6.699521,124.729552,way/1167465016,Supermarket & Grocery,Supermarket & Grocery,1.000,Supermarket & Grocery,no,yes,Tagged by OpenStreetMap mappers.
+Primark Town Center,6.689484,124.675594,node/6167420485,Retail & General Merchandise,Retail & General Merchandise,0.635,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Protech Agri Solutiona,6.690466,124.684153,node/6167350185,Retail & General Merchandise,Retail & General Merchandise,0.991,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Purok 4 Barangay Health Station,6.694015,124.679613,node/6167541697,Pharmacy & Health,Pharmacy & Health,0.956,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+QBC Best Quality Gen. Marketing Corp.,6.689131,124.675727,node/6167420486,Retail & General Merchandise,Retail & General Merchandise,0.730,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Ramos Farm Supplies,6.689466,124.680900,node/6207141587,Retail & General Merchandise,Retail & General Merchandise,0.940,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Rocral General Merchandise,6.686024,124.673494,node/6167540693,Retail & General Merchandise,Retail & General Merchandise,0.720,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Rogelio's Bakery Café,6.678539,124.674934,node/9071735517,Bakery,Bakery,0.989,Bakery,no,yes,Tagged by OpenStreetMap mappers.
+Romualdez Katiku Community Hospital,6.756668,124.723312,node/5243668521,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+RPR Prime Marketing Services,6.689474,124.673525,node/6167542885,Retail & General Merchandise,Retail & General Merchandise,0.947,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Rpublik Barber & Co.,6.687805,124.673896,node/13980279721,,,0.480,,yes,,Confidence 0.48 is below 0.75 or location out of bounds; flagged for human review
+Rueland Agri Supply,6.690009,124.675872,node/6167540690,Retail & General Merchandise,Retail & General Merchandise,0.985,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Saint Louis Hospital,6.678453,124.666784,way/784831060,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Save More Market,6.689613,124.676001,node/6167420585,Supermarket & Grocery,Supermarket & Grocery,0.990,Supermarket & Grocery,no,yes,Tagged by OpenStreetMap mappers.
+Soup # 5,6.692781,124.681647,node/10703277511,Fast Food & Restaurant,Fast Food & Restaurant,0.824,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+St. Louis Molecular Diagnostics Lab,6.665317,124.691503,node/12761842101,Pharmacy & Health,Pharmacy & Health,0.978,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+St. Peter,6.690617,124.683015,node/6167340189,,,0.546,,yes,,Confidence 0.55 is below 0.75 or location out of bounds; flagged for human review
+Sultan Kudarat Doctor's Hospital,6.686422,124.674635,node/6167541691,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+"Sultan Kudarat Electric Cooperative, Inc.",6.686052,124.673605,node/6167541692,Retail & General Merchandise,Retail & General Merchandise,0.820,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Sultan Kudarat Provincial Hospital,6.643967,124.607914,way/142749991,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Sunshine Fire Extinguisher Center,6.698289,124.679318,node/6177444885,Retail & General Merchandise,Retail & General Merchandise,0.817,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Tacurong City Animal Bite Treatment Center,6.693540,124.674888,node/6207141390,,Pharmacy & Health,0.980,Pharmacy & Health,no,,Confidence 0.98 satisfies auto-acceptance threshold (>= 0.75)
+Tacurong City Birthing Clinic,6.693613,124.675089,node/6207141389,Pharmacy & Health,Pharmacy & Health,1.000,Pharmacy & Health,no,yes,Tagged by OpenStreetMap mappers.
+Tacurong Fitmart,6.687806,124.678309,node/1504769095,Supermarket & Grocery,Supermarket & Grocery,0.858,Supermarket & Grocery,no,yes,Tagged by OpenStreetMap mappers.
+Tacurong Public Market,6.688138,124.676187,way/311356393,Supermarket & Grocery,Supermarket & Grocery,1.000,Supermarket & Grocery,no,yes,Tagged by OpenStreetMap mappers.
+Triple Ace Machine Shop,6.686451,124.679835,node/6167376585,Retail & General Merchandise,Retail & General Merchandise,0.843,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+UF,6.674263,124.684559,node/12761834901,Fast Food & Restaurant,Convenience Store,0.635,Fast Food & Restaurant,yes,no,Mappers tag it Fast Food & Restaurant; the model reads the name as Convenience Store (0.64). Check it.
+Victory,6.688240,124.673788,node/10703277314,Retail & General Merchandise,,0.534,Retail & General Merchandise,no,,Tagged by OpenStreetMap mappers.
+Victory Marketing,6.690292,124.683802,node/6167348185,Retail & General Merchandise,Retail & General Merchandise,0.878,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Water Science Purified Drinking Water,6.690890,124.674414,node/6167540695,Supermarket & Grocery,Supermarket & Grocery,0.998,Supermarket & Grocery,no,yes,Tagged by OpenStreetMap mappers.
+Woodland Restobar,6.683572,124.681140,node/4737813421,Fast Food & Restaurant,Fast Food & Restaurant,0.974,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+Xylie,6.700519,124.737456,node/10820789512,Retail & General Merchandise,Retail & General Merchandise,0.632,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Yamaha,6.685901,124.680126,node/6167375585,Retail & General Merchandise,Retail & General Merchandise,0.821,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Ybañez Furniture Shop,6.690025,124.682353,node/6167345386,Retail & General Merchandise,Retail & General Merchandise,0.991,Retail & General Merchandise,no,yes,Tagged by OpenStreetMap mappers.
+Yes Bbq,6.691536,124.687474,node/10820789510,Fast Food & Restaurant,Fast Food & Restaurant,0.965,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.
+YES BBQ,6.638215,124.601320,node/4810951224,Fast Food & Restaurant,Fast Food & Restaurant,0.965,Fast Food & Restaurant,no,yes,Tagged by OpenStreetMap mappers.

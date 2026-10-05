@@ -18,7 +18,8 @@
     "test:watch": "vitest",
     "seed:users": "tsx src/seed.ts",
     "seed:places": "tsx prisma/seedPlaces.ts",
-    "seed:sysadmin": "tsx src/scripts/seedSysAdmin.ts"
+    "seed:sysadmin": "tsx src/scripts/seedSysAdmin.ts",
+    "security:unban": "tsx src/scripts/emergencyUnban.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

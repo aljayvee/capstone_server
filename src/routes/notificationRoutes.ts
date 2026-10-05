@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listNotifications, markNotificationRead } from "../controllers/notificationController.js";
+import { listNotifications, markNotificationRead, markAllNotificationsRead } from "../controllers/notificationController.js";
 import { authenticateToken } from "../middleware/auth.js";
 import { readLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
 
@@ -10,6 +10,7 @@ const router = Router();
 // not via requireRole (customers aren't a RoleType, matching how every other
 // customer-facing route already works — see errandRoutes.ts's POST /errands).
 router.get("/", authenticateToken, readLimiter, listNotifications);
+router.patch("/read-all", authenticateToken, userApiLimiter, markAllNotificationsRead);
 router.patch("/:id/read", authenticateToken, userApiLimiter, markNotificationRead);
 
 export default router;

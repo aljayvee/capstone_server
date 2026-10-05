@@ -127,7 +127,13 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
     }
 
     // ── a purchase nothing corroborates ───────────────────────────────────
-    if (proof.verified === false) {
+    //
+    // Keyed on the kind, not on `verified` alone. CASH_COLLECTED is stored
+    // unverified too (the rider's typed figure, no OCR), but it is the
+    // customer's money taken at the door, not goods bought at a shop. Reading
+    // it as a purchase listed every cash errand twice in the queue and held
+    // the collected amount against the run as if it had been spent.
+    if (proof.kind === "NO_RECEIPT" && proof.verified === false) {
       push(
         "UNVERIFIED_PURCHASE",
         proof.declaredTotal ?? 0,

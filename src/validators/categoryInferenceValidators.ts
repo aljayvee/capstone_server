@@ -49,3 +49,13 @@ export const suggestItemPlacementsSchema = z.object({
 });
 
 export type SuggestItemPlacementsInput = z.infer<typeof suggestItemPlacementsSchema>;
+
+/**
+ * Store prediction for one errand. `names` is the step 1 list as the screen
+ * holds it; when omitted, the server reads the list last saved on the errand.
+ */
+export const predictStoresSchema = z.object({
+  names: z.array(z.string().trim().min(1).max(200)).max(100, "At most 100 items can be predicted at once.").optional(),
+});
+
+export type PredictStoresInput = z.infer<typeof predictStoresSchema>;

@@ -5,6 +5,7 @@ import type {
   MatchResult,
   MatrixResult,
   RouteLeg,
+  RouteOptions,
   RouteResult,
   RouteStep,
   RoutingProvider,
@@ -78,7 +79,7 @@ export class GoogleRoutingProvider implements RoutingProvider {
     return Boolean(apiKey());
   }
 
-  async route(points: GeoPoint[]): Promise<RouteResult | null> {
+  async route(points: GeoPoint[], options: RouteOptions = {}): Promise<RouteResult | null> {
     if (!this.isConfigured() || points.length < 2) return null;
 
     const origin = points[0];
@@ -100,7 +101,10 @@ export class GoogleRoutingProvider implements RoutingProvider {
       key: apiKey(),
     });
     if (waypoints.length > 0) {
-      params.set("waypoints", waypoints.map(toLatLng).join("|"));
+      // "via:" makes a point a road to pass along rather than a stop, so the
+      // answer stays one leg (and Google does not stop there).
+      const prefix = options.passThrough ? "via:" : "";
+      params.set("waypoints", waypoints.map((point) => prefix + toLatLng(point)).join("|"));
     }
 
     const data = await getJson(`${DIRECTIONS_URL}?${params.toString()}`);

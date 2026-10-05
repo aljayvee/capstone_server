@@ -7,7 +7,7 @@ const SAVEMORE_TOTAL = 994.0;
 const ERRAND_ID = "ERR-2-STOPS";
 const RIDER_ID = 7;
 
-const markItemsPurchased = vi.fn();
+const applyReceiptTotal = vi.fn();
 const emitToErrand = vi.fn();
 
 /** Rows standing in for errand_proof_images joined to receipt_extractions. */
@@ -56,7 +56,7 @@ vi.mock("../src/repositories/errandRepository.js", () => ({
 }));
 
 vi.mock("../src/services/errandService.js", () => ({
-  markItemsPurchased: (...a: unknown[]) => markItemsPurchased(...a),
+  applyReceiptTotal: (...a: unknown[]) => applyReceiptTotal(...a),
 }));
 
 const { confirmProofImage } = await import("../src/services/proofImageService.js");
@@ -90,12 +90,12 @@ describe("confirming a receipt total", () => {
     // Store one.
     confirmed(JOLLIBEE_TOTAL);
     await confirmProofImage(ERRAND_ID, 1, RIDER_ID, JOLLIBEE_TOTAL);
-    expect(markItemsPurchased).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 176.0);
+    expect(applyReceiptTotal).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 176.0);
 
     // Store two. The Jollibee spend must survive.
     confirmed(JOLLIBEE_TOTAL, SAVEMORE_TOTAL);
     await confirmProofImage(ERRAND_ID, 2, RIDER_ID, SAVEMORE_TOTAL);
-    expect(markItemsPurchased).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 1170.0);
+    expect(applyReceiptTotal).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 1170.0);
   });
 
   it("counts only receipts the rider has actually confirmed", async () => {
@@ -105,7 +105,7 @@ describe("confirming a receipt total", () => {
     confirmed(JOLLIBEE_TOTAL, null);
 
     await confirmProofImage(ERRAND_ID, 1, RIDER_ID, JOLLIBEE_TOTAL);
-    expect(markItemsPurchased).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 176.0);
+    expect(applyReceiptTotal).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 176.0);
   });
 
   it("recomputes rather than double-counts when a total is corrected", async () => {
@@ -118,14 +118,14 @@ describe("confirming a receipt total", () => {
     confirmed(186.5);
     await confirmProofImage(ERRAND_ID, 1, RIDER_ID, 186.5);
 
-    expect(markItemsPurchased).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 186.5);
+    expect(applyReceiptTotal).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 186.5);
   });
 
   it("rounds to centavos rather than carrying float drift", async () => {
     addReceipt(1, 0.1);
     confirmed(0.1, 0.2);
     await confirmProofImage(ERRAND_ID, 1, RIDER_ID, 0.1);
-    expect(markItemsPurchased).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 0.3);
+    expect(applyReceiptTotal).toHaveBeenLastCalledWith(ERRAND_ID, RIDER_ID, 0.3);
   });
 
   it("tells dispatch when the rider's figure is far off what was read", async () => {

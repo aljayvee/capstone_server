@@ -1,0 +1,752 @@
+{
+  "generatedAt": "2026-09-24T13:36:50.715Z",
+  "oneNeuron": [
+    {
+      "gate": "AND",
+      "accuracy": 1,
+      "loss": 0.0043,
+      "weights": {
+        "w1": 10.23,
+        "w2": 10.23,
+        "bias": -15.51
+      },
+      "outputs": [
+        0,
+        0.005,
+        0.005,
+        0.993
+      ]
+    },
+    {
+      "gate": "OR",
+      "accuracy": 1,
+      "loss": 0.0023,
+      "weights": {
+        "w1": 11.49,
+        "w2": 11.49,
+        "bias": -5.28
+      },
+      "outputs": [
+        0.005,
+        0.998,
+        0.998,
+        1
+      ]
+    },
+    {
+      "gate": "XOR",
+      "accuracy": 0.25,
+      "loss": 0.6931,
+      "weights": {
+        "w1": 0,
+        "w2": 0,
+        "bias": 0
+      },
+      "outputs": [
+        0.499,
+        0.5,
+        0.5,
+        0.501
+      ]
+    }
+  ],
+  "threeNeurons": {
+    "solvedOutOf20": {
+      "sigmoid": 11,
+      "tanh": 11
+    },
+    "example": {
+      "seed": 1,
+      "activation": "sigmoid",
+      "hiddenOutputs": [
+        [
+          0.01,
+          0.99,
+          0.99,
+          1
+        ],
+        [
+          0,
+          0.02,
+          0.02,
+          0.98
+        ]
+      ],
+      "finalOutputs": [
+        0,
+        1,
+        1,
+        0
+      ]
+    }
+  },
+  "networkSize": [
+    {
+      "name": "No hidden layer (24 output neurons)",
+      "parameters": 888,
+      "epochsRun": 316,
+      "bestEpoch": 256,
+      "updatesToBest": 12288,
+      "diverged": false,
+      "seconds": 8.3,
+      "trainAccuracy": 0.8909,
+      "valLoss": 0.4214,
+      "valAccuracy": 0.8892,
+      "testAccuracy": 0.8913,
+      "coverageAtThreshold": 0.5901,
+      "accuracyWhenConfident": 0.9421
+    },
+    {
+      "name": "3 hidden neurons",
+      "parameters": 207,
+      "epochsRun": 600,
+      "bestEpoch": 593,
+      "updatesToBest": 28464,
+      "diverged": false,
+      "seconds": 8.9,
+      "trainAccuracy": 0.8909,
+      "valLoss": 0.4177,
+      "valAccuracy": 0.8831,
+      "testAccuracy": 0.8478,
+      "coverageAtThreshold": 0.6832,
+      "accuracyWhenConfident": 0.9409
+    },
+    {
+      "name": "8 hidden neurons",
+      "parameters": 512,
+      "epochsRun": 315,
+      "bestEpoch": 255,
+      "updatesToBest": 12240,
+      "diverged": false,
+      "seconds": 6.6,
+      "trainAccuracy": 0.9128,
+      "valLoss": 0.3218,
+      "valAccuracy": 0.9169,
+      "testAccuracy": 0.8975,
+      "coverageAtThreshold": 0.8509,
+      "accuracyWhenConfident": 0.9489
+    },
+    {
+      "name": "24 hidden neurons",
+      "parameters": 1488,
+      "epochsRun": 240,
+      "bestEpoch": 180,
+      "updatesToBest": 8640,
+      "diverged": false,
+      "seconds": 10.7,
+      "trainAccuracy": 0.9154,
+      "valLoss": 0.3198,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.8944,
+      "coverageAtThreshold": 0.8602,
+      "accuracyWhenConfident": 0.9495
+    },
+    {
+      "name": "64 hidden neurons",
+      "parameters": 3928,
+      "epochsRun": 164,
+      "bestEpoch": 104,
+      "updatesToBest": 4992,
+      "diverged": false,
+      "seconds": 16,
+      "trainAccuracy": 0.9194,
+      "valLoss": 0.3207,
+      "valAccuracy": 0.9138,
+      "testAccuracy": 0.8975,
+      "coverageAtThreshold": 0.8727,
+      "accuracyWhenConfident": 0.9466
+    },
+    {
+      "name": "Two layers, 24 and 12",
+      "parameters": 1500,
+      "epochsRun": 139,
+      "bestEpoch": 79,
+      "updatesToBest": 3792,
+      "diverged": false,
+      "seconds": 7.4,
+      "trainAccuracy": 0.9174,
+      "valLoss": 0.3449,
+      "valAccuracy": 0.8954,
+      "testAccuracy": 0.8944,
+      "coverageAtThreshold": 0.8727,
+      "accuracyWhenConfident": 0.9395
+    }
+  ],
+  "activations": [
+    {
+      "name": "sigmoid",
+      "parameters": 1488,
+      "epochsRun": 318,
+      "bestEpoch": 258,
+      "updatesToBest": 12384,
+      "diverged": false,
+      "seconds": 19.2,
+      "trainAccuracy": 0.8989,
+      "valLoss": 0.4188,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.8975,
+      "coverageAtThreshold": 0.528,
+      "accuracyWhenConfident": 0.9471
+    },
+    {
+      "name": "tanh",
+      "parameters": 1488,
+      "epochsRun": 352,
+      "bestEpoch": 292,
+      "updatesToBest": 14016,
+      "diverged": false,
+      "seconds": 22.6,
+      "trainAccuracy": 0.9161,
+      "valLoss": 0.3168,
+      "valAccuracy": 0.9108,
+      "testAccuracy": 0.8913,
+      "coverageAtThreshold": 0.8602,
+      "accuracyWhenConfident": 0.9422
+    },
+    {
+      "name": "relu",
+      "parameters": 1488,
+      "epochsRun": 240,
+      "bestEpoch": 180,
+      "updatesToBest": 8640,
+      "diverged": false,
+      "seconds": 14.2,
+      "trainAccuracy": 0.9154,
+      "valLoss": 0.3198,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.8944,
+      "coverageAtThreshold": 0.8602,
+      "accuracyWhenConfident": 0.9495
+    },
+    {
+      "name": "leakyRelu",
+      "parameters": 1488,
+      "epochsRun": 315,
+      "bestEpoch": 255,
+      "updatesToBest": 12240,
+      "diverged": false,
+      "seconds": 17.2,
+      "trainAccuracy": 0.9134,
+      "valLoss": 0.3138,
+      "valAccuracy": 0.9046,
+      "testAccuracy": 0.8913,
+      "coverageAtThreshold": 0.8727,
+      "accuracyWhenConfident": 0.9502
+    }
+  ],
+  "vanishingGradients": [
+    {
+      "activation": "sigmoid",
+      "firstLayer": 0.000002013112666387482,
+      "lastLayer": 0.009103573562154467,
+      "ratio": 0.0002211343328686252
+    },
+    {
+      "activation": "tanh",
+      "firstLayer": 0.003926215333264348,
+      "lastLayer": 0.0029866339059974032,
+      "ratio": 1.314595446526
+    },
+    {
+      "activation": "relu",
+      "firstLayer": 0.008670267430320948,
+      "lastLayer": 0.00699308384415231,
+      "ratio": 1.2398346171083185
+    },
+    {
+      "activation": "leakyRelu",
+      "firstLayer": 0.008504401537018765,
+      "lastLayer": 0.006893571956961603,
+      "ratio": 1.2336712505670497
+    }
+  ],
+  "gradientDescent": [
+    {
+      "name": "Batch GD (all rows per step)",
+      "parameters": 1488,
+      "epochsRun": 2000,
+      "bestEpoch": 2000,
+      "updatesToBest": 2000,
+      "diverged": false,
+      "seconds": 71.3,
+      "trainAccuracy": 0.9167,
+      "valLoss": 0.3238,
+      "valAccuracy": 0.9138,
+      "testAccuracy": 0.8913,
+      "coverageAtThreshold": 0.8509,
+      "accuracyWhenConfident": 0.9489
+    },
+    {
+      "name": "Stochastic GD (1 row per step)",
+      "parameters": 1488,
+      "epochsRun": 154,
+      "bestEpoch": 124,
+      "updatesToBest": 187612,
+      "diverged": false,
+      "seconds": 30.3,
+      "trainAccuracy": 0.9108,
+      "valLoss": 0.3071,
+      "valAccuracy": 0.92,
+      "testAccuracy": 0.8851,
+      "coverageAtThreshold": 0.8882,
+      "accuracyWhenConfident": 0.9371
+    },
+    {
+      "name": "Mini-batch GD (32 rows)",
+      "parameters": 1488,
+      "epochsRun": 224,
+      "bestEpoch": 164,
+      "updatesToBest": 7872,
+      "diverged": false,
+      "seconds": 7.8,
+      "trainAccuracy": 0.9114,
+      "valLoss": 0.325,
+      "valAccuracy": 0.92,
+      "testAccuracy": 0.8851,
+      "coverageAtThreshold": 0.8292,
+      "accuracyWhenConfident": 0.9513
+    },
+    {
+      "name": "Momentum",
+      "parameters": 1488,
+      "epochsRun": 315,
+      "bestEpoch": 255,
+      "updatesToBest": 12240,
+      "diverged": false,
+      "seconds": 12,
+      "trainAccuracy": 0.9147,
+      "valLoss": 0.3185,
+      "valAccuracy": 0.9138,
+      "testAccuracy": 0.8944,
+      "coverageAtThreshold": 0.8665,
+      "accuracyWhenConfident": 0.9391
+    },
+    {
+      "name": "RMSProp",
+      "parameters": 1488,
+      "epochsRun": 274,
+      "bestEpoch": 214,
+      "updatesToBest": 10272,
+      "diverged": false,
+      "seconds": 10.7,
+      "trainAccuracy": 0.9174,
+      "valLoss": 0.3131,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.9006,
+      "coverageAtThreshold": 0.8634,
+      "accuracyWhenConfident": 0.9496
+    },
+    {
+      "name": "Adam",
+      "parameters": 1488,
+      "epochsRun": 240,
+      "bestEpoch": 180,
+      "updatesToBest": 8640,
+      "diverged": false,
+      "seconds": 10.9,
+      "trainAccuracy": 0.9154,
+      "valLoss": 0.3198,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.8944,
+      "coverageAtThreshold": 0.8602,
+      "accuracyWhenConfident": 0.9495
+    }
+  ],
+  "learningRate": [
+    {
+      "name": "rate 0.001",
+      "parameters": 1488,
+      "epochsRun": 300,
+      "bestEpoch": 300,
+      "updatesToBest": 14400,
+      "diverged": false,
+      "seconds": 9.7,
+      "trainAccuracy": 0.6305,
+      "valLoss": 0.9935,
+      "valAccuracy": 0.5815,
+      "testAccuracy": 0.6335,
+      "coverageAtThreshold": 0,
+      "accuracyWhenConfident": 0
+    },
+    {
+      "name": "rate 0.01",
+      "parameters": 1488,
+      "epochsRun": 300,
+      "bestEpoch": 300,
+      "updatesToBest": 14400,
+      "diverged": false,
+      "seconds": 10.2,
+      "trainAccuracy": 0.879,
+      "valLoss": 0.4474,
+      "valAccuracy": 0.8862,
+      "testAccuracy": 0.8882,
+      "coverageAtThreshold": 0.5466,
+      "accuracyWhenConfident": 0.9545
+    },
+    {
+      "name": "rate 0.1",
+      "parameters": 1488,
+      "epochsRun": 300,
+      "bestEpoch": 249,
+      "updatesToBest": 11952,
+      "diverged": false,
+      "seconds": 11.9,
+      "trainAccuracy": 0.9141,
+      "valLoss": 0.3243,
+      "valAccuracy": 0.9169,
+      "testAccuracy": 0.8882,
+      "coverageAtThreshold": 0.8323,
+      "accuracyWhenConfident": 0.9366
+    },
+    {
+      "name": "rate 1",
+      "parameters": 1488,
+      "epochsRun": 300,
+      "bestEpoch": 249,
+      "updatesToBest": 11952,
+      "diverged": false,
+      "seconds": 11.1,
+      "trainAccuracy": 0.9009,
+      "valLoss": 0.3328,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.8913,
+      "coverageAtThreshold": 0.8261,
+      "accuracyWhenConfident": 0.9474
+    },
+    {
+      "name": "rate 10",
+      "parameters": 1488,
+      "epochsRun": 300,
+      "bestEpoch": 130,
+      "updatesToBest": 6240,
+      "diverged": false,
+      "seconds": 9.6,
+      "trainAccuracy": 0.3331,
+      "valLoss": 1.2053,
+      "valAccuracy": 0.3323,
+      "testAccuracy": 0.3292,
+      "coverageAtThreshold": 0,
+      "accuracyWhenConfident": 0
+    }
+  ],
+  "overfitting": [
+    {
+      "name": "No protection",
+      "trainAccuracy": 1,
+      "valAccuracy": 0.7446,
+      "gap": 0.2554,
+      "lowestValLossEpoch": 14,
+      "lowestValLoss": 0.6608,
+      "valLossKept": 1.9083,
+      "testAccuracy": 0.7547
+    },
+    {
+      "name": "L2 weight decay",
+      "trainAccuracy": 0.9671,
+      "valAccuracy": 0.6831,
+      "gap": 0.284,
+      "lowestValLossEpoch": 137,
+      "lowestValLoss": 0.6971,
+      "valLossKept": 0.7686,
+      "testAccuracy": 0.764
+    },
+    {
+      "name": "Dropout 50%",
+      "trainAccuracy": 0.9934,
+      "valAccuracy": 0.7723,
+      "gap": 0.2211,
+      "lowestValLossEpoch": 68,
+      "lowestValLoss": 0.6274,
+      "valLossKept": 1.2564,
+      "testAccuracy": 0.7826
+    },
+    {
+      "name": "Early stopping",
+      "trainAccuracy": 0.8947,
+      "valAccuracy": 0.7077,
+      "gap": 0.187,
+      "lowestValLossEpoch": 14,
+      "lowestValLoss": 0.6608,
+      "valLossKept": 0.6608,
+      "testAccuracy": 0.736
+    },
+    {
+      "name": "All three",
+      "trainAccuracy": 0.8816,
+      "valAccuracy": 0.6677,
+      "gap": 0.2139,
+      "lowestValLossEpoch": 153,
+      "lowestValLoss": 0.7036,
+      "valLossKept": 0.7036,
+      "testAccuracy": 0.705
+    }
+  ],
+  "learningCurve": [
+    {
+      "name": "10% (152 rows)",
+      "parameters": 1488,
+      "epochsRun": 144,
+      "bestEpoch": 84,
+      "updatesToBest": 420,
+      "diverged": false,
+      "seconds": 1.1,
+      "trainAccuracy": 0.9079,
+      "valLoss": 0.6708,
+      "valAccuracy": 0.7231,
+      "testAccuracy": 0.736,
+      "coverageAtThreshold": 0.4969,
+      "accuracyWhenConfident": 0.8188,
+      "rows": 152,
+      "gap": 0.1848
+    },
+    {
+      "name": "25% (379 rows)",
+      "parameters": 1488,
+      "epochsRun": 173,
+      "bestEpoch": 113,
+      "updatesToBest": 1356,
+      "diverged": false,
+      "seconds": 2.5,
+      "trainAccuracy": 0.9525,
+      "valLoss": 0.4471,
+      "valAccuracy": 0.8431,
+      "testAccuracy": 0.8447,
+      "coverageAtThreshold": 0.7764,
+      "accuracyWhenConfident": 0.9,
+      "rows": 379,
+      "gap": 0.1094
+    },
+    {
+      "name": "50% (757 rows)",
+      "parameters": 1488,
+      "epochsRun": 137,
+      "bestEpoch": 77,
+      "updatesToBest": 1848,
+      "diverged": false,
+      "seconds": 3.6,
+      "trainAccuracy": 0.9207,
+      "valLoss": 0.3537,
+      "valAccuracy": 0.8923,
+      "testAccuracy": 0.8882,
+      "coverageAtThreshold": 0.7857,
+      "accuracyWhenConfident": 0.9447,
+      "rows": 757,
+      "gap": 0.0284
+    },
+    {
+      "name": "100% (1513 rows)",
+      "parameters": 1488,
+      "epochsRun": 240,
+      "bestEpoch": 180,
+      "updatesToBest": 8640,
+      "diverged": false,
+      "seconds": 12.9,
+      "trainAccuracy": 0.9154,
+      "valLoss": 0.3198,
+      "valAccuracy": 0.9077,
+      "testAccuracy": 0.8944,
+      "coverageAtThreshold": 0.8602,
+      "accuracyWhenConfident": 0.9495,
+      "rows": 1513,
+      "gap": 0.0077
+    }
+  ],
+  "realLifeJobs": {
+    "rows": [
+      {
+        "errand": "0b3873b9",
+        "kind": "UNVERIFIED_PURCHASE",
+        "amount": 50,
+        "shop": "Kimsan Plaza",
+        "dispatcherReason": "",
+        "label": "",
+        "labelNote": "Still open: no dispatcher has decided yet.",
+        "suggestion": "UNVERIFIED_RECEIPT_LOST",
+        "confidence": 0.825,
+        "agrees": null,
+        "outcome": "unlabelled"
+      },
+      {
+        "errand": "812843d3",
+        "kind": "UNVERIFIED_PURCHASE",
+        "amount": 57,
+        "shop": "Julie's Bakeshop Mabini-Dona Alicia",
+        "dispatcherReason": "Unverified purhcase because it has nor receipt.",
+        "label": "UNVERIFIED_SMALL_SHOP",
+        "labelNote": "Dispatcher: cleared because the shop gave no receipt. A bakeshop, so the small-shop reason.",
+        "suggestion": "UNVERIFIED_SMALL_SHOP",
+        "confidence": 0.852,
+        "agrees": true,
+        "outcome": "yes"
+      },
+      {
+        "errand": "fb2b0b0a",
+        "kind": "CASH_VARIANCE",
+        "amount": 100,
+        "shop": "",
+        "dispatcherReason": "The customer paid a balance in cash",
+        "label": "",
+        "labelNote": "Dispatcher: the customer paid a balance in cash. None of the 5 cash reasons covers an over-collection that was really a balance payment.",
+        "suggestion": "CASH_OVER_TO_RETURN",
+        "confidence": 0.879,
+        "agrees": null,
+        "outcome": "unlabelled"
+      },
+      {
+        "errand": "fb2b0b0a",
+        "kind": "UNVERIFIED_PURCHASE",
+        "amount": 50,
+        "shop": "Julie's Bakeshop Mabini-Dona Alicia",
+        "dispatcherReason": "the customer paid in cash",
+        "label": "UNVERIFIED_PAID_IN_FULL",
+        "labelNote": "Dispatcher: the customer paid in cash. That is the paid-in-full reason, although the settlement shows no full match.",
+        "suggestion": "(no suggestion)",
+        "confidence": 0.572,
+        "agrees": false,
+        "outcome": "no suggestion"
+      },
+      {
+        "errand": "01a924d8",
+        "kind": "UNVERIFIED_PURCHASE",
+        "amount": 5688,
+        "shop": "Kimsan Plaza",
+        "dispatcherReason": "Unverified purchase because it has no receipt. This is pass and verified by me.",
+        "label": "",
+        "labelNote": "Dispatcher: no receipt, checked and accepted by me. Says who decided, not which reason; left unlabelled.",
+        "suggestion": "UNVERIFIED_PAID_IN_FULL",
+        "confidence": 0.768,
+        "agrees": null,
+        "outcome": "unlabelled"
+      },
+      {
+        "errand": "01a924d8",
+        "kind": "UNVERIFIED_PURCHASE",
+        "amount": 500,
+        "shop": "Mercury Drug - Tacurong City Buenaflor",
+        "dispatcherReason": "Unverified purchase because it has no receipt. This is pass and verified by me.",
+        "label": "",
+        "labelNote": "Dispatcher: no receipt, checked and accepted by me. Says who decided, not which reason; left unlabelled.",
+        "suggestion": "UNVERIFIED_PAID_IN_FULL",
+        "confidence": 0.847,
+        "agrees": null,
+        "outcome": "unlabelled"
+      },
+      {
+        "errand": "01a924d8",
+        "kind": "UNVERIFIED_PURCHASE",
+        "amount": 2000,
+        "shop": "Kimsan Plaza",
+        "dispatcherReason": "Unverified purchase because it has no receipt. This is pass and verified by me.",
+        "label": "",
+        "labelNote": "Dispatcher: no receipt, checked and accepted by me. Says who decided, not which reason; left unlabelled.",
+        "suggestion": "UNVERIFIED_PAID_IN_FULL",
+        "confidence": 0.831,
+        "agrees": null,
+        "outcome": "unlabelled"
+      }
+    ],
+    "labelled": 2,
+    "matched": 1,
+    "abstained": 1,
+    "wrong": 0
+  },
+  "settings": {
+    "seeds": [
+      7,
+      8,
+      9
+    ],
+    "grid": [
+      {
+        "activation": "tanh",
+        "optimizer": "adam",
+        "losses": [
+          0.3168,
+          0.3236,
+          0.3202
+        ],
+        "mean": 0.3202,
+        "sd": 0.0034
+      },
+      {
+        "activation": "tanh",
+        "optimizer": "rmsprop",
+        "losses": [
+          0.3205,
+          0.3213,
+          0.3154
+        ],
+        "mean": 0.3191,
+        "sd": 0.0032
+      },
+      {
+        "activation": "relu",
+        "optimizer": "adam",
+        "losses": [
+          0.3198,
+          0.3122,
+          0.3153
+        ],
+        "mean": 0.3158,
+        "sd": 0.0038
+      },
+      {
+        "activation": "relu",
+        "optimizer": "rmsprop",
+        "losses": [
+          0.3131,
+          0.3193,
+          0.3125
+        ],
+        "mean": 0.315,
+        "sd": 0.0038
+      },
+      {
+        "activation": "leakyRelu",
+        "optimizer": "adam",
+        "losses": [
+          0.3138,
+          0.3223,
+          0.3135
+        ],
+        "mean": 0.3165,
+        "sd": 0.005
+      },
+      {
+        "activation": "leakyRelu",
+        "optimizer": "rmsprop",
+        "losses": [
+          0.3114,
+          0.3192,
+          0.313
+        ],
+        "mean": 0.3145,
+        "sd": 0.0041
+      }
+    ],
+    "best": {
+      "activation": "leakyRelu",
+      "optimizer": "rmsprop",
+      "losses": [
+        0.3114,
+        0.3192,
+        0.313
+      ],
+      "mean": 0.3145,
+      "sd": 0.0041
+    },
+    "shipped": {
+      "activation": "relu",
+      "optimizer": "adam",
+      "losses": [
+        0.3198,
+        0.3122,
+        0.3153
+      ],
+      "mean": 0.3158,
+      "sd": 0.0038
+    },
+    "typicalSeedSpread": 0.0039,
+    "keptShipped": true
+  }
+}

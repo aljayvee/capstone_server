@@ -1,0 +1,270 @@
+{
+  "model": "exception-reasons-2026-09-24",
+  "trainedAt": "2026-09-24T12:42:19.186Z",
+  "dataset": {
+    "file": "ml/exception-reasons/dataset.csv",
+    "rows": 2160,
+    "sources": {
+      "scenario": 2160
+    },
+    "split": {
+      "train": 1513,
+      "validation": 325,
+      "test": 322
+    }
+  },
+  "architecture": {
+    "network": "36-24-24, relu, softmax",
+    "parameters": 1488,
+    "outputs": "24 softmax, masked to the exception's kind",
+    "loss": "cross-entropy + L2",
+    "hidden": [
+      24
+    ],
+    "activation": "relu",
+    "optimizer": "adam",
+    "learningRate": 0.003,
+    "batchSize": 32,
+    "l2": 0.001,
+    "dropout": 0,
+    "epochs": 600,
+    "patience": 60,
+    "clipNorm": 5,
+    "seed": 7
+  },
+  "training": {
+    "epochsRun": 240,
+    "bestEpoch": 180,
+    "seconds": 11.887,
+    "trainAccuracy": 0.9154,
+    "bestValidationLoss": 0.3198,
+    "validationAccuracy": 0.9077
+  },
+  "threshold": 0.75,
+  "test": {
+    "accuracy": 0.8944,
+    "coverageAtThreshold": 0.8602,
+    "accuracyWhenConfident": 0.9495,
+    "byKind": [
+      {
+        "kind": "CASH_VARIANCE",
+        "rows": 68,
+        "accuracy": 0.8824,
+        "coverageAtThreshold": 0.7794,
+        "accuracyWhenConfident": 0.9623
+      },
+      {
+        "kind": "RECEIPT_DIVERGENCE",
+        "rows": 41,
+        "accuracy": 0.9512,
+        "coverageAtThreshold": 0.9024,
+        "accuracyWhenConfident": 1
+      },
+      {
+        "kind": "UNVERIFIED_PURCHASE",
+        "rows": 40,
+        "accuracy": 0.925,
+        "coverageAtThreshold": 0.85,
+        "accuracyWhenConfident": 0.9706
+      },
+      {
+        "kind": "WRONG_BRANCH",
+        "rows": 27,
+        "accuracy": 0.9259,
+        "coverageAtThreshold": 0.963,
+        "accuracyWhenConfident": 0.9615
+      },
+      {
+        "kind": "MISSING_RECEIPT",
+        "rows": 27,
+        "accuracy": 0.9259,
+        "coverageAtThreshold": 0.8889,
+        "accuracyWhenConfident": 1
+      },
+      {
+        "kind": "STALLED_STOP",
+        "rows": 40,
+        "accuracy": 0.8,
+        "coverageAtThreshold": 0.9,
+        "accuracyWhenConfident": 0.8056
+      },
+      {
+        "kind": "OVERAGE_PENDING",
+        "rows": 40,
+        "accuracy": 0.875,
+        "coverageAtThreshold": 0.8,
+        "accuracyWhenConfident": 0.9375
+      },
+      {
+        "kind": "UNPAID_BALANCE",
+        "rows": 39,
+        "accuracy": 0.8974,
+        "coverageAtThreshold": 0.8974,
+        "accuracyWhenConfident": 0.9714
+      }
+    ],
+    "reliability": [
+      {
+        "band": "0.00-0.50",
+        "rows": 4,
+        "meanConfidence": 0.4441,
+        "accuracy": 0.75
+      },
+      {
+        "band": "0.50-0.75",
+        "rows": 41,
+        "meanConfidence": 0.6384,
+        "accuracy": 0.5366
+      },
+      {
+        "band": "0.75-0.90",
+        "rows": 116,
+        "meanConfidence": 0.8383,
+        "accuracy": 0.9224
+      },
+      {
+        "band": "0.90-1.00",
+        "rows": 161,
+        "meanConfidence": 0.9555,
+        "accuracy": 0.9689
+      }
+    ],
+    "majorityBaselineAccuracy": 0.3478
+  },
+  "features": [
+    "kind:CASH_VARIANCE",
+    "kind:RECEIPT_DIVERGENCE",
+    "kind:UNVERIFIED_PURCHASE",
+    "kind:WRONG_BRANCH",
+    "kind:MISSING_RECEIPT",
+    "kind:STALLED_STOP",
+    "kind:OVERAGE_PENDING",
+    "kind:UNPAID_BALANCE",
+    "amount_log",
+    "amount_share_of_bill",
+    "plan_downpayment",
+    "plan_other",
+    "cash_short",
+    "cash_over",
+    "note_mentions_change",
+    "note_mentions_transfer",
+    "note_mentions_tip",
+    "note_empty",
+    "receipt_photos",
+    "no_receipt_photos",
+    "has_cash_photo",
+    "has_delivery_photo",
+    "transfer_proofs",
+    "has_rider_balance_proof",
+    "settled_in_full",
+    "paid_fraction",
+    "divergence_ratio",
+    "confirmed_above_scan",
+    "decimal_slip",
+    "store_is_small_shop",
+    "store_cooks_to_order",
+    "same_chain_as_pinned",
+    "observed_place_unknown",
+    "items_at_stop",
+    "receipts_cover_basket",
+    "dwell_log"
+  ],
+  "reasons": [
+    {
+      "code": "CASH_NO_EXACT_CHANGE",
+      "kind": "CASH_VARIANCE"
+    },
+    {
+      "code": "CASH_PAID_BY_TRANSFER",
+      "kind": "CASH_VARIANCE"
+    },
+    {
+      "code": "CASH_RIDER_TO_REMIT",
+      "kind": "CASH_VARIANCE"
+    },
+    {
+      "code": "CASH_OVER_TIP",
+      "kind": "CASH_VARIANCE"
+    },
+    {
+      "code": "CASH_OVER_TO_RETURN",
+      "kind": "CASH_VARIANCE"
+    },
+    {
+      "code": "RECEIPT_SCAN_MISREAD",
+      "kind": "RECEIPT_DIVERGENCE"
+    },
+    {
+      "code": "RECEIPT_PARTLY_READ",
+      "kind": "RECEIPT_DIVERGENCE"
+    },
+    {
+      "code": "RECEIPT_DISCOUNT_APPLIED",
+      "kind": "RECEIPT_DIVERGENCE"
+    },
+    {
+      "code": "UNVERIFIED_SMALL_SHOP",
+      "kind": "UNVERIFIED_PURCHASE"
+    },
+    {
+      "code": "UNVERIFIED_PAID_IN_FULL",
+      "kind": "UNVERIFIED_PURCHASE"
+    },
+    {
+      "code": "UNVERIFIED_RECEIPT_LOST",
+      "kind": "UNVERIFIED_PURCHASE"
+    },
+    {
+      "code": "BRANCH_SAME_CHAIN",
+      "kind": "WRONG_BRANCH"
+    },
+    {
+      "code": "BRANCH_PINNED_UNAVAILABLE",
+      "kind": "WRONG_BRANCH"
+    },
+    {
+      "code": "MISSING_ITEMS_UNAVAILABLE",
+      "kind": "MISSING_RECEIPT"
+    },
+    {
+      "code": "MISSING_ON_OTHER_RECEIPT",
+      "kind": "MISSING_RECEIPT"
+    },
+    {
+      "code": "STALL_COOKED_TO_ORDER",
+      "kind": "STALLED_STOP"
+    },
+    {
+      "code": "STALL_LONG_QUEUE",
+      "kind": "STALLED_STOP"
+    },
+    {
+      "code": "STALL_LARGE_ORDER",
+      "kind": "STALLED_STOP"
+    },
+    {
+      "code": "OVERAGE_CUSTOMER_AGREED",
+      "kind": "OVERAGE_PENDING"
+    },
+    {
+      "code": "OVERAGE_TOPUP_PAID",
+      "kind": "OVERAGE_PENDING"
+    },
+    {
+      "code": "OVERAGE_ITEMS_REMOVED",
+      "kind": "OVERAGE_PENDING"
+    },
+    {
+      "code": "BALANCE_CASH_AT_DOOR",
+      "kind": "UNPAID_BALANCE"
+    },
+    {
+      "code": "BALANCE_TRANSFER_UNRECORDED",
+      "kind": "UNPAID_BALANCE"
+    },
+    {
+      "code": "BALANCE_COLLECT_LATER",
+      "kind": "UNPAID_BALANCE"
+    }
+  ]
+}

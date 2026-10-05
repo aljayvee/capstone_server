@@ -12,7 +12,7 @@ import { z } from "zod";
  * an invitation to type one number and upload another.
  */
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"] as const;
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
 
 export const paymentProofUploadSchema = z.object({
   imageData: z
@@ -35,7 +35,7 @@ export const paymentProofUploadSchema = z.object({
     .number()
     .int()
     .positive()
-    .max(MAX_FILE_SIZE_BYTES, "That image is too large. Please use one under 5MB."),
+    .max(MAX_FILE_SIZE_BYTES, "That image is too large. Please use one under 15MB."),
 });
 
 export type PaymentProofUploadInput = z.infer<typeof paymentProofUploadSchema>;

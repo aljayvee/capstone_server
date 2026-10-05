@@ -3,6 +3,7 @@ import { userRepository } from "../repositories/userRepository.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import * as riderPresenceService from "./riderPresenceService.js";
 import * as riderBeaconService from "./riderBeaconService.js";
+import { describeReason } from "../lib/riderAvailability.js";
 import { ServiceError } from "./ServiceError.js";
 import { withFullName } from "./authService.js";
 import { buildUserCreateData } from "./patterns/userFactory.js";
@@ -13,6 +14,7 @@ import type { PushTokenInput } from "../validators/pushTokenValidators.js";
 import { riderPhotoRepository } from "../repositories/riderPhotoRepository.js";
 import type { RiderPhotoUploadInput } from "../validators/riderPhotoValidators.js";
 import * as userPresenceStore from "../lib/userPresenceStore.js";
+import { sendPushNotification } from "../lib/pushNotifications.js";
 
 function sanitize<T extends { passwordHash: string }>(user: T) {
   const { passwordHash: _, ...rest } = user;
@@ -300,6 +302,13 @@ export async function listAllRiders() {
     availability: availability.get(r.id)?.state ?? "OFFLINE",
     presumed: availability.get(r.id)?.presumed ?? true,
     impediments: availability.get(r.id)?.impediments ?? [],
+    // The three statuses the dispatcher and owner screens show (see
+    // riderStatusOf), with the reason in words and when the rider was last
+    // heard from, so "signal lost" can say for how long.
+    riderStatus: availability.get(r.id)?.riderStatus ?? "OFFLINE",
+    riderStatusReason: availability.get(r.id)?.riderStatusReason ?? "never_connected",
+    riderStatusText: describeReason(availability.get(r.id)?.riderStatusReason ?? "never_connected"),
+    lastBeaconAt: availability.get(r.id)?.lastBeaconAt ?? null,
   }));
 }
 
@@ -310,3 +319,49 @@ export async function listOnlineRiders() {
   const allRiders = await listAllRiders();
   return allRiders.filter((r) => r.online && r.status === "Active");
 }
+
+const lastRiderChatNotifyTime = new Map<number, number>();
+
+export async function notifyRiderChatMessage(
+  riderId: number,
+  dispatcherId: number,
+  text: string,
+  senderName?: string,
+  hasImage?: boolean
+) {
+  const rider = await userRepository.findById(riderId);
+  if (!rider) {
+    throw new ServiceError(404, "Rider not found");
+  }
+
+  // 2-second cooldown per rider to avoid notification spam
+  const now = Date.now();
+  const lastTime = lastRiderChatNotifyTime.get(riderId) || 0;
+  if (now - lastTime < 2000) {
+    return { skipped: true, reason: "cooldown" };
+  }
+  lastRiderChatNotifyTime.set(riderId, now);
+
+  const name = (senderName || "").trim() || "Dispatcher";
+  const bodyText = text
+    ? (text.length > 120 ? `${text.slice(0, 117)}...` : text)
+    : "Sent a photo";
+
+  if (rider.expoPushToken) {
+    await sendPushNotification(rider.expoPushToken, {
+      title: name,
+      body: bodyText,
+      data: {
+        type: "DISPATCHER_CHAT",
+        riderId,
+        dispatcherId,
+      },
+      urgent: true,
+      channelId: "chats",
+      tag: `rider_chat_${riderId}`,
+    });
+  }
+
+  return { success: true };
+}
+

@@ -4,9 +4,11 @@ import {
   inferItemCategoriesSchema,
   inferStoreCategorySchema,
   suggestItemPlacementsSchema,
+  predictStoresSchema,
 } from "../validators/categoryInferenceValidators.js";
 import * as categoryInferenceService from "../services/categoryInferenceService.js";
 import * as itemPlacementService from "../services/itemPlacementService.js";
+import * as storePredictionService from "../services/storePredictionService.js";
 
 /**
  * Category guessing for the dispatcher console.
@@ -50,4 +52,17 @@ export const suggestItemPlacements = asyncHandler(async (req, res) => {
     input.names
   );
   res.json({ placements });
+});
+
+/**
+ * Which stores to pin for this errand, predicted from its item list.
+ *
+ * Answers 200 with an empty prediction rather than failing, for the same reason
+ * as the endpoints above: it is a suggestion on a panel, and "nothing to
+ * suggest" is a normal answer. Only a missing errand is an error.
+ */
+export const predictStores = asyncHandler(async (req, res) => {
+  const input = parseOrThrow(predictStoresSchema, req.body ?? {});
+  const prediction = await storePredictionService.predictStores(req.params.errandId, input.names);
+  res.json(prediction);
 });

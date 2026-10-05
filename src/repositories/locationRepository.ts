@@ -5,6 +5,10 @@ export interface LocationInput {
   address: string;
   latitude: number;
   longitude: number;
+  // undefined leaves the column untouched on update; null clears it.
+  streetName?: string | null;
+  landmark?: string | null;
+  notes?: string | null;
 }
 
 export const locationRepository = {

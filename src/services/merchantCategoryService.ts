@@ -2,6 +2,9 @@ import { merchantCategoryRepository } from "../repositories/merchantCategoryRepo
 import { ServiceError } from "./ServiceError.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
 import { findBlockedCategoryTerm } from "../lib/blockedCategoryNames.js";
+import { triggerCategoryAutoLearning } from "./categoryRetrainingService.js";
+import { prisma } from "../lib/prisma.js";
+import { logger } from "../lib/logger.js";
 import type {
   CreateMerchantCategoryInput,
   UpdateMerchantCategoryInput,
@@ -57,6 +60,7 @@ export async function createMerchantCategory(input: CreateMerchantCategoryInput)
 
   const category = await merchantCategoryRepository.create(input);
   announceCatalogueChange("created", category.id);
+  triggerCategoryAutoLearning({ reason: "created", categoryId: category.id });
   return category;
 }
 
@@ -72,12 +76,67 @@ export async function updateMerchantCategory(id: number, input: UpdateMerchantCa
 
   const category = await merchantCategoryRepository.update(id, input);
 
+  // A rename has to reach every place that stores the category by NAME, or
+  // what was learned under the old name is cut loose: filed items (the
+  // "Store 1 - Julie's | Bakery" text), the customer's original picks, and
+  // crawled catalogue items. Handling-fee modes and revenue allocation read
+  // the same text. Pins and verified places are linked by id and follow on
+  // their own.
+  if (input.name && existing.name && input.name.trim() !== existing.name.trim()) {
+    try {
+      const moved = await renameFiledCategory(existing.name.trim(), input.name.trim());
+      logger.info(`[Categories] "${existing.name}" renamed "${input.name}": ${moved} stored rows follow it.`);
+    } catch (err: any) {
+      // The rename itself stands. The trainer also resolves the old name
+      // through the category's role (sugo_category/catalogue.py), so a row
+      // missed here is still learned under the right category.
+      logger.warn(`[Categories] Could not move stored rows to the new name: ${err?.message ?? err}`);
+    }
+  }
+
   // Fires for a status flip in particular. Deactivating a category in the owner
   // portal is meant to remove it from the customer's Bento grid, and until this
   // event existed the app had no way to learn that had happened — the tile sat
   // there until the customer pulled to refresh or killed the app.
   announceCatalogueChange("updated", id);
+  triggerCategoryAutoLearning({ reason: "updated", categoryId: id });
   return category;
+}
+
+/**
+ * Rewrites stored category text from `oldName` to `newName`: the bare name,
+ * and the composite "Store N - <shop> | <name>" the console writes. Only the
+ * text after the last " | " is the category, so a shop whose name merely
+ * contains the category name is left alone. Returns how many rows changed.
+ */
+export async function renameFiledCategory(oldName: string, newName: string): Promise<number> {
+  if (!oldName || !newName || oldName === newName) return 0;
+  const suffix = ` | ${oldName}`;
+  const composite = async (model: "pabiliDetail" | "pabiliItemRequest") => {
+    const rows: Array<{ storeCategory: string | null }> = await (prisma as any)[model].findMany({
+      where: { storeCategory: { endsWith: suffix } },
+      select: { storeCategory: true },
+      distinct: ["storeCategory"],
+    });
+    return rows
+      .map((r) => r.storeCategory)
+      .filter((value): value is string => Boolean(value && value.endsWith(suffix)))
+      .map((value) => ({ from: value, to: `${value.slice(0, value.length - suffix.length)} | ${newName}` }));
+  };
+  const [details, requests] = await Promise.all([composite("pabiliDetail"), composite("pabiliItemRequest")]);
+
+  const results = await prisma.$transaction([
+    prisma.pabiliDetail.updateMany({ where: { storeCategory: oldName }, data: { storeCategory: newName } }),
+    prisma.pabiliItemRequest.updateMany({ where: { storeCategory: oldName }, data: { storeCategory: newName } }),
+    prisma.crawledMerchantItem.updateMany({ where: { categoryName: oldName }, data: { categoryName: newName } }),
+    ...details.map(({ from, to }) =>
+      prisma.pabiliDetail.updateMany({ where: { storeCategory: from }, data: { storeCategory: to } })
+    ),
+    ...requests.map(({ from, to }) =>
+      prisma.pabiliItemRequest.updateMany({ where: { storeCategory: from }, data: { storeCategory: to } })
+    ),
+  ]);
+  return results.reduce((sum, r) => sum + r.count, 0);
 }
 
 // --- Hero image (`store_cat_image`) ---------------------------------------

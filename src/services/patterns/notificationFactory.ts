@@ -86,4 +86,40 @@ export const notificationFactory = {
       body: `We got your ₱${amount.toFixed(2)}. Your rider is on the way with your items.`,
     };
   },
+
+  itemOutOfStock(itemName: string, storeName?: string): NotificationContent {
+    return {
+      type: "ITEM_OUT_OF_STOCK",
+      title: `Item Out of Stock: ${itemName}`,
+      body: storeName
+        ? `Rider reported ${itemName} is out of stock at ${storeName}. Check with customer for substitutes.`
+        : `Rider reported ${itemName} is out of stock. Check with customer for substitutes.`,
+    };
+  },
+
+  substituteDeclined(itemName: string): NotificationContent {
+    return {
+      type: "SUBSTITUTE_DECLINED",
+      title: `No Substitute: ${itemName}`,
+      body: `Customer declined substitute for ${itemName}. Proceeding without this item.`,
+    };
+  },
+
+  riderNearby(storeSummary: string): NotificationContent {
+    return {
+      type: "RIDER_NEARBY",
+      title: "Your rider is almost there",
+      body: storeSummary
+        ? `Your rider for ${storeSummary} is within 500m of your delivery address. Please prepare your payment (COD)!`
+        : "Your rider is within 500m of your delivery address. Please prepare your payment (COD)!",
+    };
+  },
+
+  customerChat(errandId: string, customerName: string, snippet: string): NotificationContent {
+    return {
+      type: "CUSTOMER_CHAT_MESSAGE",
+      title: `Message from ${customerName || "Customer"}`,
+      body: `Errand #${errandId.slice(0, 8)}: ${snippet ? (snippet.length > 80 ? snippet.slice(0, 77) + "..." : snippet) : "Sent a message"}`,
+    };
+  },
 };

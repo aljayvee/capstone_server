@@ -135,12 +135,29 @@ export interface AvailabilityResult {
   beaconAgeMs: number | null;
   /** True when OFFLINE was inferred from silence rather than reported. */
   presumed: boolean;
+  /** The three-value status the operations screens show. See riderStatusOf. */
+  riderStatus: RiderStatus;
+  riderStatusReason: RiderStatusReason;
+  /** Epoch ms of the last beacon, so a screen can say how long a signal has been lost. */
+  lastBeaconAt: number | null;
 }
+
+type CoreAvailability = Omit<AvailabilityResult, "riderStatus" | "riderStatusReason" | "lastBeaconAt">;
 
 export function availabilityOf(
   snapshot: PresenceSnapshot,
   now: number = Date.now()
 ): AvailabilityResult {
+  const core = coreAvailabilityOf(snapshot, now);
+  const { status, reason } = riderStatusOf(
+    core,
+    { onDuty: snapshot.onDuty, shutdownAt: snapshot.shutdownAt, lastBeaconAt: snapshot.lastBeaconAt },
+    now
+  );
+  return { ...core, riderStatus: status, riderStatusReason: reason, lastBeaconAt: snapshot.lastBeaconAt };
+}
+
+function coreAvailabilityOf(snapshot: PresenceSnapshot, now: number): CoreAvailability {
   const beaconAgeMs =
     snapshot.lastBeaconAt === null ? null : Math.max(0, now - snapshot.lastBeaconAt);
 
@@ -187,3 +204,131 @@ export function availabilityOf(
 
   return { ...base, state: "AVAILABLE", dispatchable: true };
 }
+
+// ── The three statuses dispatch and the owner see ────────────────────────────
+
+/**
+ * The rider status the operations screens show, as the business defines it
+ * (2026-09-23). Three values, derived from the detailed state above, which
+ * stays the authority for dispatch logic and is kept alongside for the
+ * detail it carries.
+ *
+ * - AVAILABLE_ONLINE: signed in, on duty, reachable, background location
+ *   allowed, so the app keeps reporting when closed. Assignable.
+ * - AVAILABLE_SIGNAL_LOST: on duty but not heard from. Not assignable, and
+ *   dispatchers are reminded. This deliberately includes the long silence
+ *   the detailed state calls a presumed OFFLINE: a rider who never signed off
+ *   has not gone offline, their phone has gone quiet. The midnight reset is
+ *   what finally clears a rider whose phone died mid-shift.
+ * - OFFLINE: signed out, off duty, the background service stopped, missing a
+ *   permission the app needs to run in the background, or reset at midnight.
+ */
+export type RiderStatus = "AVAILABLE_ONLINE" | "AVAILABLE_SIGNAL_LOST" | "OFFLINE";
+
+export type RiderStatusReason =
+  | "online"
+  | "signal_lost"
+  | "no_signal"
+  | "logged_out"
+  | "off_duty"
+  | "service_stopped"
+  | "never_connected"
+  | "midnight_reset"
+  | Impediment;
+
+/** Manila is UTC+8 all year; the Philippines has no daylight saving time. */
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The most recent 12:00 AM in Manila at or before `now`, as epoch ms. */
+export function mostRecentManilaMidnight(now: number = Date.now()): number {
+  return Math.floor((now + MANILA_OFFSET_MS) / DAY_MS) * DAY_MS - MANILA_OFFSET_MS;
+}
+
+/**
+ * How close to midnight a shutdown must be stamped to count as the reset.
+ * The job stamps the midnight instant itself; the window absorbs a job that
+ * ran a little late.
+ */
+const MIDNIGHT_STAMP_WINDOW_MS = 10 * 60 * 1000;
+
+export function isMidnightReset(shutdownAt: number | null, now: number = Date.now()): boolean {
+  if (shutdownAt === null) return false;
+  const midnight = mostRecentManilaMidnight(now);
+  return shutdownAt >= midnight && shutdownAt - midnight <= MIDNIGHT_STAMP_WINDOW_MS;
+}
+
+/** What the presence row says, when there is one. */
+export interface PresenceFacts {
+  onDuty: boolean;
+  shutdownAt: number | null;
+  lastBeaconAt: number | null;
+}
+
+export function riderStatusOf(
+  result: CoreAvailability,
+  presence: PresenceFacts | null,
+  now: number = Date.now()
+): { status: RiderStatus; reason: RiderStatusReason } {
+  // First, because the reset also closes the session and turns duty off, and
+  // "logged out" would hide why.
+  if (isMidnightReset(presence?.shutdownAt ?? null, now)) {
+    return { status: "OFFLINE", reason: "midnight_reset" };
+  }
+
+  // A session closed by the abandoned-session sweep, not by the rider. Signing
+  // out stamps the presence row off duty (riderPresenceRepository.clearForRider);
+  // the sweep leaves it on duty. So an on-duty row with no shutdown, a beacon in
+  // its past and no session is a rider whose phone went quiet, not one who left.
+  if (
+    result.state === "LOGGED_OUT" &&
+    presence?.onDuty &&
+    presence.shutdownAt === null &&
+    presence.lastBeaconAt !== null
+  ) {
+    return { status: "AVAILABLE_SIGNAL_LOST", reason: "no_signal" };
+  }
+
+  switch (result.state) {
+    case "AVAILABLE":
+      return { status: "AVAILABLE_ONLINE", reason: "online" };
+    case "SIGNAL_LOST":
+      return { status: "AVAILABLE_SIGNAL_LOST", reason: "signal_lost" };
+    case "OFFLINE":
+      if (!result.presumed) return { status: "OFFLINE", reason: "service_stopped" };
+      return result.beaconAgeMs === null
+        ? { status: "OFFLINE", reason: "never_connected" }
+        : { status: "AVAILABLE_SIGNAL_LOST", reason: "no_signal" };
+    case "NEEDS_PERMISSIONS":
+      return { status: "OFFLINE", reason: result.impediments[0] ?? "background_location" };
+    case "OFF_DUTY":
+      return { status: "OFFLINE", reason: "off_duty" };
+    case "LOGGED_OUT":
+      return { status: "OFFLINE", reason: "logged_out" };
+  }
+}
+
+const REASON_TEXT: Record<RiderStatusReason, string> = {
+  online: "Online and ready",
+  signal_lost: "Signal lost",
+  no_signal: "No signal",
+  logged_out: "Logged out",
+  off_duty: "Went offline",
+  service_stopped: "Background service stopped",
+  never_connected: "Not connected yet",
+  midnight_reset: "Shift ended at 12:00 AM",
+  background_location: "Background location not allowed",
+  notifications: "Notifications turned off",
+  exact_alarms: "Alarms permission missing",
+};
+
+export function describeReason(reason: RiderStatusReason): string {
+  return REASON_TEXT[reason] ?? reason;
+}
+
+/** How a status reads on the dispatch and owner screens. */
+export const STATUS_LABEL: Record<RiderStatus, string> = {
+  AVAILABLE_ONLINE: "Available Online",
+  AVAILABLE_SIGNAL_LOST: "Available Signal Lost",
+  OFFLINE: "Offline",
+};

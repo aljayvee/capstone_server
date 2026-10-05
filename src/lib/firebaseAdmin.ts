@@ -98,6 +98,16 @@ export function isFirebaseConfigured(): boolean {
   return ensureApp() !== null;
 }
 
+/**
+ * The initialized Admin app, or null when no service account is configured.
+ * Push notifications send through it (lib/pushNotifications.ts): the same
+ * service account is a member of the Firebase project both mobile apps are
+ * registered in, so it can reach their devices over FCM directly.
+ */
+export function getFirebaseAdminApp(): App | null {
+  return ensureApp();
+}
+
 /** Why token minting is unavailable, for an operator reading a health check. */
 export function firebaseConfigurationError(): string | null {
   ensureApp();

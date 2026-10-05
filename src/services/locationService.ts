@@ -15,11 +15,20 @@ export async function createLocation(customerId: number, input: LocationInput) {
   }
 
   const isFirstLocation = count === 0;
-  return locationRepository.create(
-    customerId,
-    { label: input.label, address: input.address, latitude: input.latitude, longitude: input.longitude },
-    isFirstLocation
-  );
+  return locationRepository.create(customerId, toRepositoryInput(input), isFirstLocation);
+}
+
+// The fields a saved location stores, and nothing else from the request body.
+function toRepositoryInput(input: LocationInput) {
+  return {
+    label: input.label,
+    address: input.address,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    streetName: input.streetName,
+    landmark: input.landmark,
+    notes: input.notes,
+  };
 }
 
 export async function getLocationOwner(id: number) {
@@ -34,7 +43,7 @@ export async function updateLocation(id: number, customerId: number, input: Loca
   return locationRepository.updateWithOptionalDefault(
     id,
     customerId,
-    { label: input.label, address: input.address, latitude: input.latitude, longitude: input.longitude },
+    toRepositoryInput(input),
     input.isDefault === true
   );
 }

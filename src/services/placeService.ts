@@ -1,7 +1,8 @@
 import { IPlaceRepository, placeRepository } from "../repositories/placeRepository.js";
 import type { GeoPoint } from "../lib/geo.js";
-import { isWithinServiceArea } from "../lib/serviceArea.js";
+import { isWithinServiceArea, isWithinServiceBuffer, isServiceAreaConfigured } from "../lib/serviceArea.js";
 import { IVerifiedPlace, PlaceCreateInput, PlaceUpdateInput, PlaceSearchFilters } from "../types/place.js";
+import { triggerCategoryAutoLearning } from "./categoryRetrainingService.js";
 
 // How close a pin has to be before we are willing to call it "at" a place.
 //
@@ -67,7 +68,21 @@ export class PlaceService {
   }
 
   async createPlace(input: PlaceCreateInput): Promise<IVerifiedPlace> {
-    return this.repo.create(input);
+    if (
+      isServiceAreaConfigured() &&
+      !isWithinServiceBuffer({ latitude: input.latitude, longitude: input.longitude }, 0.1)
+    ) {
+      const error: any = new Error("Place location is outside Tacurong City service area.");
+      error.status = 422;
+      throw error;
+    }
+    const created = await this.repo.create(input);
+    // A verified place is a shop the owner catalogued under a category: the
+    // store model's best-labelled kind of row. Learned within minutes rather
+    // than at the nightly retrain (the retrain is debounced, so a batch of
+    // places costs one run).
+    triggerCategoryAutoLearning({ reason: "verified place created" });
+    return created;
   }
 
   async updatePlace(id: string, input: PlaceUpdateInput): Promise<IVerifiedPlace> {
@@ -77,7 +92,19 @@ export class PlaceService {
       error.status = 404;
       throw error;
     }
-    return this.repo.update(id, input);
+    if (
+      isServiceAreaConfigured() &&
+      input.latitude !== undefined &&
+      input.longitude !== undefined &&
+      !isWithinServiceBuffer({ latitude: input.latitude, longitude: input.longitude }, 0.1)
+    ) {
+      const error: any = new Error("Place location is outside Tacurong City service area.");
+      error.status = 422;
+      throw error;
+    }
+    const updated = await this.repo.update(id, input);
+    triggerCategoryAutoLearning({ reason: "verified place updated" });
+    return updated;
   }
 
   async deletePlace(id: string): Promise<IVerifiedPlace> {
@@ -87,7 +114,9 @@ export class PlaceService {
       error.status = 404;
       throw error;
     }
-    return this.repo.delete(id);
+    const deleted = await this.repo.delete(id);
+    triggerCategoryAutoLearning({ reason: "verified place deleted" });
+    return deleted;
   }
 
   async getCategories() {

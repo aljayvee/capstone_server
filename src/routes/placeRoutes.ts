@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { placeController } from "../controllers/placeController.js";
+import { checkStoreLocationHandler } from "../controllers/storeLocationController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { readLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
 
@@ -39,6 +40,18 @@ router.get("/reverse", authenticateToken, readLimiter, (req, res) =>
 
 // GET /api/places/:id - single place detail
 router.get("/:id", authenticateToken, readLimiter, (req, res) => placeController.getById(req, res));
+
+// POST /api/places/location-check - may a store be pinned at this spot?
+// Staff only: it answers from the service border and the loaded road graph
+// (see services/storeLocationGuard.ts), which the console needs and a customer
+// does not.
+router.post(
+  "/location-check",
+  authenticateToken,
+  requireRole(["DISPATCHER", "OWNER"]),
+  userApiLimiter,
+  checkStoreLocationHandler
+);
 
 // POST /api/places - create a verified place (Owner only)
 router.post("/", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>

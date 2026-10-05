@@ -15,6 +15,8 @@ const WITH_ERRAND_DETAILS = {
       pabiliDetails: true,
       pinpoints: { orderBy: { sequence: "asc" as const } },
       rider: { select: { firstName: true, lastName: true } },
+      paymentMode: { select: { name: true } },
+      paymentSelection: { select: { paymentMode: { select: { name: true } } } },
     },
   },
 } as const;
@@ -99,6 +101,13 @@ export const customerTransactionRepository = {
     return prisma.customerTransaction.updateMany({
       where: { errandId },
       data: { amount },
+    });
+  },
+
+  updatePaymentMethodByErrandId(errandId: string, paymentMethod: string) {
+    return prisma.customerTransaction.updateMany({
+      where: { errandId },
+      data: { paymentMethod },
     });
   },
 

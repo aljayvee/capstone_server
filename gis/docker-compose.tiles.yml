@@ -1,0 +1,53 @@
+# Self-hosted OpenStreetMap map tiles, for Sugo Rider's "OpenStreetMap" map.
+#
+# Why self-hosted: the public tile.openstreetmap.org servers forbid this use.
+# Their tile policy bars apps from relying on them, and they block requests
+# they cannot attribute. Rendering our own from the same extract OSRM routes
+# on (data/sugo-region.osm.pbf) also means the map and the route line come
+# from the same roads, which is the whole point of the option: on Google's
+# base map an OSM route can sit metres beside the painted road.
+#
+# Run import-tiles.sh FIRST. It loads the extract into the database volume;
+# this service then renders tiles on demand and keeps them in the tile volume.
+#
+# nginx exposes it as https://api.sugo-express.org/tiles/{z}/{x}/{y}.png with a
+# per-IP rate limit and a proxy cache (see README.md, "Map tiles").
+services:
+  tiles:
+    image: overv/openstreetmap-tile-server:2.3.0
+    container_name: capstone-tiles
+    restart: unless-stopped
+    # SECURITY: like osrm-routed, the renderer has no authentication or rate
+    # limiting. Loopback only; nginx is the one public door.
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - sugo-osm-db:/data/database/
+      - sugo-osm-tiles:/data/tiles/
+    environment:
+      # Two render threads: the VPS also runs the API, OSRM and the category
+      # service on four cores. Tiles are cached after the first render.
+      THREADS: "2"
+      # Never pull minutely diffs from openstreetmap.org. The data changes when
+      # the extract is rebuilt, together with the OSRM graph.
+      UPDATES: "disabled"
+    shm_size: "192m"
+    command: run
+    healthcheck:
+      # The z12 tile over Tacurong (6.6975, 124.675). bash /dev/tcp rather than
+      # an HTTP client, for the reason given in docker-compose.osrm.yml.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/80 && printf 'GET /tile/12/3466/1971.png HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  sugo-osm-db:
+    name: sugo-osm-db
+  sugo-osm-tiles:
+    name: sugo-osm-tiles

@@ -7,5 +7,6 @@ export class ServiceError extends Error {
     this.name = "ServiceError";
     this.status = status;
     this.details = details;
+    Object.setPrototypeOf(this, ServiceError.prototype);
   }
 }

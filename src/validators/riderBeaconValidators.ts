@@ -48,6 +48,14 @@ export const riderBeaconSchema = z.object({
    * PRESUMED offline.
    */
   shuttingDown: z.boolean().default(false),
+
+  /**
+   * When the rider went on duty, epoch ms. Lets the server end a shift at
+   * 12:00 AM Manila time even when the phone missed it: a beacon from a shift
+   * that began before the last midnight is recorded as offline, and the reply
+   * tells the device to stop. Optional so builds that predate it still beacon.
+   */
+  dutySince: z.number().int().positive().nullish(),
 });
 
 export type RiderBeaconInput = z.infer<typeof riderBeaconSchema>;

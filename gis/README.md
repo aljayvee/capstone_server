@@ -1,5 +1,55 @@
 # GIS layer — OSM data, OSRM routing engine, QGIS workflow
 
+> ### Rider profile and map tiles, live since 2026-09-24
+>
+> **Routing profile.** `capstone-osrm` now serves `sugo-rider`: the same region
+> and extract as `sugo-region`, built with `profiles/sugo-rider.lua`, which is
+> the stock car profile with no road faster than 60 km/h. The car profile's
+> 85 km/h on trunk roads decided which road OSRM chose, not just the time it
+> quoted: Banga to Tacurong went 52.9 km up the Isulan–Surallah Road instead of
+> 44.8 km on the Maharlika Highway. It now takes the Maharlika route (54 min),
+> as Google does (45.1 km, 55 min). In-town routes are unchanged. Roll back
+> with `OSRM_GRAPH=sugo-region` in `gis/.env` and `up -d`; that graph is still
+> on disk. `build-graph.sh` uses this profile by default (`OSRM_PROFILE`
+> overrides it).
+>
+> **Map tiles.** `capstone-tiles` (`docker-compose.tiles.yml`,
+> `overv/openstreetmap-tile-server:2.3.0`) renders OpenStreetMap tiles from the
+> same extract, for Sugo Rider's "OpenStreetMap" map option. On it, the route
+> line sits exactly on the drawn road, because both come from one dataset. Load
+> or reload the data with `./import-tiles.sh` after every extract rebuild.
+> Loopback only (`127.0.0.1:8080`); nginx serves it publicly as
+> `https://api.sugo-express.org/tiles/{z}/{x}/{y}.png` (zoom 0 to 20),
+> 30 req/s per IP with a burst of 120, cached for 30 days in
+> `/var/cache/nginx/sugo-tiles` (config: `/etc/nginx/conf.d/sugo_tiles.conf`
+> and a `location` in the api site). `/root/warm-tiles.sh` pre-renders zooms
+> 10 to 16 over the region. Self-hosted because `tile.openstreetmap.org`'s
+> usage policy forbids apps from relying on it.
+>
+> **Google fallback.** Production `.env` had the key as `Google_MAPS_API_KEY`,
+> which the server never read (`GOOGLE_MAPS_API_KEY`), so the chain was
+> effectively osrm → haversine. Renamed on 2026-09-24; `configuredProviderNames()`
+> now reports `osrm,google,haversine`.
+
+> ### Region graph: Tacurong + Banga, live since 2026-09-23
+>
+> `capstone-osrm` now serves `sugo-region`, bbox `124.58,6.26,124.94,6.78`:
+> Tacurong City, Banga (South Cotabato), and the Tantangan / Koronadal roads
+> between them. Built on the VPS by `build-graph.sh` in about two minutes (29 MB
+> on disk, 25 MB peak RAM). Tacurong to Banga town proper routes at 42.8 km /
+> 51 min via the Koronadal–Tacurong National Highway and Maharlika Highway;
+> before this it returned `NoRoute` and fell through to Google's generalised
+> polyline, which is why those route lines did not sit on the road.
+>
+> `OSRM_GRAPH` in `gis/.env` selects the served graph. The old city-only
+> `tacurong` graph is still on disk: `echo OSRM_GRAPH=tacurong > .env` and
+> `docker compose -f docker-compose.osrm.yml up -d` rolls back.
+>
+> The **service area was not widened**. `tacurong-service-area.geojson` and the
+> web `SERVICE_AREA_BOUNDS` (`src/constants/serviceArea.ts`) still describe Tacurong only, so Banga addresses route
+> correctly but are not yet orderable. Widening them is a business decision; the
+> graph already covers it. The section below describes the original city graph.
+
 > ### Status: live since 2026-08-22
 >
 > Container `capstone-osrm` serves the Tacurong graph on `127.0.0.1:5001`, and

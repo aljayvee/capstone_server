@@ -15,6 +15,11 @@ import {
 import { ServiceError } from "./ServiceError.js";
 import type { TrackPointInput } from "../validators/trackingValidators.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
+import { broadcastRiderLocation } from "../lib/riderLocationBroadcast.js";
+import { haversineDistanceKm } from "../lib/geo.js";
+import { customerRepository } from "../repositories/customerRepository.js";
+import * as notificationService from "./notificationService.js";
+import { logger } from "../lib/logger.js";
 
 // Below this many points, map matching costs a round trip and buys little — a
 // couple of fixes carry too little shape for the engine to choose a road from.
@@ -114,6 +119,20 @@ export async function ingestBatch(
     accuracyMeters: newest.accuracyMeters ?? null,
     headingDeg: newest.headingDeg ?? null,
   });
+  // Map-matched when the batch was long enough, so this fix sits on the road.
+  // A flushed offline backlog older than the live stream is dropped inside.
+  broadcastRiderLocation(
+    riderId,
+    {
+      latitude: newest.latitude,
+      longitude: newest.longitude,
+      headingDeg: newest.headingDeg ?? null,
+      accuracyMeters: newest.accuracyMeters ?? null,
+      speedMps: newest.speedMps ?? null,
+      recordedAt: newest.recordedAt.getTime(),
+    },
+    "track"
+  );
 
   const stops = await pinpointRepository.findByErrandId(errandId);
   const transitions = await applyGeofenceTransitions(
@@ -172,6 +191,11 @@ export async function ingestBatch(
     }))
   ).catch(() => {});
 
+  // Check if rider is approaching (within 500m) of customer delivery address during IN_TRANSIT
+  void checkRiderProximity(errand, accepted).catch((err) => {
+    logger.error(`[tracking] Proximity check failed for errand ${errandId}:`, err);
+  });
+
   return {
     accepted: accepted.length,
     stored: count,
@@ -180,6 +204,68 @@ export async function ingestBatch(
     transitions,
   };
 }
+
+async function checkRiderProximity(
+  errand: {
+    id: string;
+    status: string;
+    customerId: number;
+    deliveryLatitude: number | null;
+    deliveryLongitude: number | null;
+    proximityAlertSentAt: Date | null;
+    itemsPurchasedAt?: Date | null;
+    pinpoints?: any[];
+  },
+  points: TrackPointInput[]
+): Promise<void> {
+  if (errand.status !== "IN_TRANSIT" || errand.proximityAlertSentAt) return;
+  // The delivery run only. Passing near the customer while still shopping is
+  // not the rider arriving (see deliveryReminderService, which sends the same
+  // alert from the live position).
+  if (!errand.itemsPurchasedAt) return;
+  if (points.length === 0) return;
+  if (errand.deliveryLatitude == null || errand.deliveryLongitude == null) return;
+
+  const latestFix = points[points.length - 1];
+  const distKm = haversineDistanceKm(
+    { latitude: latestFix.latitude, longitude: latestFix.longitude },
+    { latitude: errand.deliveryLatitude, longitude: errand.deliveryLongitude }
+  );
+
+  // 500 meters threshold
+  if (distKm <= 0.5) {
+    const updated = await errandRepository.markProximityAlertSent(errand.id);
+    if (updated.count > 0) {
+      const customer = await customerRepository.findById(errand.customerId);
+      if (customer) {
+        const storeSummary = (errand.pinpoints || [])
+          .map((p: { storeName?: string | null }) => p.storeName)
+          .filter(Boolean)
+          .join(" & ");
+
+        const record = await notificationService.notifyRiderNearby(
+          { id: customer.id, expoPushToken: customer.expoPushToken },
+          errand.id,
+          storeSummary
+        );
+
+        eventPublisher.emitToErrand(errand.id, "errand:rider_nearby", {
+          errandId: errand.id,
+          distanceKm: distKm,
+          notificationId: record.id,
+        });
+
+        eventPublisher.emitToCustomer(customer.id, "notification:new", {
+          id: record.id,
+          type: "RIDER_NEARBY",
+          title: record.title,
+          body: record.body,
+        });
+      }
+    }
+  }
+}
+
 
 // Snaps the batch onto the road network, returning corrected coordinates keyed
 // by their index in the accepted list. Falls back to an empty map — and so to

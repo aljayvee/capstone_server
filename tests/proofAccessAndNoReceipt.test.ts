@@ -4,12 +4,13 @@ const ERRAND_ID = "ERR-SARI";
 const CUSTOMER_ID = 11;
 const RIDER_ID = 7;
 
-const markItemsPurchased = vi.fn();
+const applyReceiptTotal = vi.fn();
 const emitToErrand = vi.fn();
 const readText = vi.fn();
 
 let storedProofs: any[] = [];
 let created: any[] = [];
+let pabiliItems: any[] = [];
 
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
@@ -23,6 +24,14 @@ vi.mock("../src/lib/prisma.js", () => ({
       }),
     },
     receiptExtraction: { update: vi.fn() },
+    pabiliDetail: {
+      findMany: vi.fn(async ({ where }: any) => {
+        if (where?.pinpointId != null) {
+          return pabiliItems.filter((i) => i.pinpointId === where.pinpointId);
+        }
+        return pabiliItems;
+      }),
+    },
   },
 }));
 
@@ -56,7 +65,7 @@ vi.mock("../src/repositories/errandRepository.js", () => ({
 }));
 
 vi.mock("../src/services/errandService.js", () => ({
-  markItemsPurchased: (...a: unknown[]) => markItemsPurchased(...a),
+  applyReceiptTotal: (...a: unknown[]) => applyReceiptTotal(...a),
 }));
 
 const proofs = await import("../src/services/proofImageService.js");
@@ -71,6 +80,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   storedProofs = [];
   created = [];
+  pabiliItems = [];
 });
 
 describe("a shop that issues no receipt", () => {
@@ -140,7 +150,7 @@ describe("a shop that issues no receipt", () => {
       declaredTotal: 176,
     } as any);
 
-    expect(markItemsPurchased).toHaveBeenCalledWith(ERRAND_ID, RIDER_ID, 1170);
+    expect(applyReceiptTotal).toHaveBeenCalledWith(ERRAND_ID, RIDER_ID, 1170);
   });
 });
 
@@ -163,7 +173,7 @@ describe("the handover photo", () => {
       kind: "PROOF_OF_DELIVERY",
     } as any);
 
-    expect(markItemsPurchased).not.toHaveBeenCalled();
+    expect(applyReceiptTotal).not.toHaveBeenCalled();
   });
 });
 
@@ -227,3 +237,41 @@ describe("fetching one image", () => {
     await expect(proofs.getProofImage(ERRAND_ID, 5)).resolves.toMatchObject({ imageData: "AAAA" });
   });
 });
+
+describe("checking items before receipt photo / no-receipt", () => {
+  it("rejects receipt upload if there are unchecked items for the store", async () => {
+    pabiliItems = [
+      { id: 1, itemName: "1kg Rice", fulfillmentStatus: "PENDING", pinpointId: 101 },
+      { id: 2, itemName: "Cooking Oil", fulfillmentStatus: "PURCHASED", pinpointId: 101 },
+    ];
+
+    await expect(
+      proofs.uploadProofImage(ERRAND_ID, RIDER_ID, {
+        ...IMAGE,
+        kind: "NO_RECEIPT",
+        declaredTotal: 150,
+        pinpointId: 101,
+      } as any)
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("Please check all items"),
+    });
+  });
+
+  it("permits receipt upload once all items for the store are verified", async () => {
+    pabiliItems = [
+      { id: 1, itemName: "1kg Rice", fulfillmentStatus: "PURCHASED", pinpointId: 101 },
+      { id: 2, itemName: "Cooking Oil", fulfillmentStatus: "OUT_OF_STOCK", pinpointId: 101 },
+    ];
+
+    const row = await proofs.uploadProofImage(ERRAND_ID, RIDER_ID, {
+      ...IMAGE,
+      kind: "NO_RECEIPT",
+      declaredTotal: 150,
+      pinpointId: 101,
+    } as any);
+
+    expect(row.kind).toBe("NO_RECEIPT");
+  });
+});
+

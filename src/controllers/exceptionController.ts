@@ -1,8 +1,9 @@
 import { Response } from "express";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { parseOrThrow } from "../validators/validate.js";
-import { resolveExceptionSchema } from "../validators/exceptionValidators.js";
+import { resolveExceptionSchema, reasonSuggestionQuerySchema } from "../validators/exceptionValidators.js";
 import * as exceptionService from "../services/exceptionService.js";
+import * as exceptionReasonService from "../services/exceptionReasonService.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 
 /**
@@ -35,4 +36,13 @@ export const resolveException = asyncHandler<AuthenticatedRequest>(async (req, r
   });
 
   res.status(201).json(review);
+});
+
+/**
+ * The model's suggested reason for clearing one exception. Suggests only: the
+ * record is written by resolveException, from whatever the person submits.
+ */
+export const suggestExceptionReason = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const query = parseOrThrow(reasonSuggestionQuerySchema, req.query);
+  res.json(await exceptionReasonService.suggestExceptionReason(req.params.id, query.kind, query.occurredAt));
 });

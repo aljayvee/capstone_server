@@ -4,6 +4,7 @@ import * as riderPositionStore from "../lib/riderPositionStore.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { pinpointRepository } from "../repositories/pinpointRepository.js";
 import { defaultEtaStrategy, type EtaStopInput } from "./patterns/etaStrategy.js";
+import * as deliveryReminders from "./deliveryReminderService.js";
 
 // A position older than this is not evidence of where a rider is now. Kept
 // identical to the web dashboard's SIGNAL_LOST_THRESHOLD_MS so a rider painted
@@ -35,7 +36,12 @@ export async function recomputeForErrand(errandId: string, options: { force?: bo
     if (sinceLast < MIN_RECOMPUTE_INTERVAL_MS) return null;
   }
 
-  const pinpoints = await pinpointRepository.findByErrandIdWithCategory(errandId);
+  // Once everything is bought, no store is still ahead, whatever the geofence
+  // recorded: a stop never marked departed used to keep a detour back through
+  // it inside the customer's ETA for the whole delivery run.
+  const pinpoints = errand.itemsPurchasedAt
+    ? []
+    : await pinpointRepository.findByErrandIdWithCategory(errandId);
   const stops: EtaStopInput[] = pinpoints.map((pin) => ({
     pinpointId: pin.id,
     point: { latitude: pin.latitude, longitude: pin.longitude },
@@ -68,6 +74,12 @@ export async function recomputeForErrand(errandId: string, options: { force?: bo
     etaIsDegraded: result.degraded,
   });
 
+  // The delivery run's "about 10 / 5 min away" pushes ride on this recompute.
+  deliveryReminders.inBackground(
+    deliveryReminders.onDeliveryEta(errand, result.travelSeconds, result.remainingStopCount),
+    "ETA reminder"
+  );
+
   // Scoped to the parties who should see it — never the global broadcast the
   // legacy events use (see lib/eventPublisher.ts).
   eventPublisher.emitToErrand(errandId, "errand:eta_updated", {
@@ -90,6 +102,32 @@ export function recomputeInBackground(errandId: string, options: { force?: boole
   void recomputeForErrand(errandId, options).catch((error) => {
     logger.error(`ETA recompute failed for errand ${errandId}:`, error);
   });
+}
+
+// When each errand was last refreshed from a live position, in this process.
+const lastLiveRecomputeAt = new Map<string, number>();
+
+// Refreshes the ETA from the live position stream (socket fixes, beacons).
+//
+// Breadcrumb uploads used to be the only trigger besides status changes, and a
+// rider whose phone uploads none (a stationary one, or one stuck behind a
+// failing flush) left the customer looking at a window computed at assignment:
+// errand ...99e1b3 still showed its 01:03 estimate at 01:47. Positions arrive
+// up to once a second per rider, so this lets one through per errand per
+// MIN_RECOMPUTE_INTERVAL_MS and drops the rest before any database read.
+export function recomputeFromLivePosition(errandId: string, now: number = Date.now()): void {
+  const last = lastLiveRecomputeAt.get(errandId) ?? 0;
+  if (now - last < MIN_RECOMPUTE_INTERVAL_MS) return;
+  lastLiveRecomputeAt.set(errandId, now);
+
+  // Finished errands stop sending positions; forget them rather than grow forever.
+  if (lastLiveRecomputeAt.size > 1000) {
+    for (const [id, at] of lastLiveRecomputeAt) {
+      if (now - at > 10 * MIN_RECOMPUTE_INTERVAL_MS) lastLiveRecomputeAt.delete(id);
+    }
+  }
+
+  recomputeInBackground(errandId);
 }
 
 // A rider who has been inside a stop's geofence longer than that store type's

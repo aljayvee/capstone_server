@@ -15,18 +15,26 @@ import {
   declineErrandReview,
   getDeclineReasons,
   setPinpoints,
+  quotePinpoints,
   updateItems,
+  updateItemFulfillmentStatus,
+  suggestItemSubstitutes,
+  declineItemSubstitute,
   markItemsPurchased,
   enablePayment,
   confirmOrder,
   quoteErrand,
   uploadProofImage,
+  scanProofImage,
+  confirmScannedProof,
   confirmProofImage,
   listProofImages,
   getProofImage,
+  notifyChatMessage,
+  notifyCustomerChat,
 } from "../controllers/errandController.js";
 import { getPaymentSelection, confirmPaymentSelection } from "../controllers/paymentSelectionController.js";
-import { getOpenExceptions, resolveException } from "../controllers/exceptionController.js";
+import { getOpenExceptions, resolveException, suggestExceptionReason } from "../controllers/exceptionController.js";
 import { uploadTrackBatch, getTrack } from "../controllers/trackingController.js";
 import { getRating, submitRating } from "../controllers/ratingController.js";
 import { submitSettlement } from "../controllers/settlementController.js";
@@ -81,6 +89,16 @@ router.post(
   resolveException
 );
 
+// GET /api/errands/:id/exceptions/reason-suggestion?kind=&occurredAt= - the
+// model's suggested reason for clearing one. Suggests only; nothing is recorded.
+router.get(
+  "/:id/exceptions/reason-suggestion",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  readLimiter,
+  suggestExceptionReason
+);
+
 // GET /api/errands - Fetch all errands (Owner/Dispatcher view)
 router.get("/", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, listErrands);
 
@@ -100,6 +118,27 @@ router.post(
   requireRole(["RIDER"]),
   userApiLimiter,
   uploadProofImage
+);
+
+// POST /api/errands/:id/proof-images/scan - read a receipt and hold it, unsaved,
+// until the rider confirms the total. A retake is then never stored. Declared
+// before the "/:imageId" routes, though none of those take a POST.
+router.post(
+  "/:id/proof-images/scan",
+  authenticateToken,
+  requireRole(["RIDER"]),
+  userApiLimiter,
+  scanProofImage
+);
+
+// POST /api/errands/:id/proof-images/scans/:scanId/confirm - the rider confirms
+// the total and only now is the photo saved.
+router.post(
+  "/:id/proof-images/scans/:scanId/confirm",
+  authenticateToken,
+  requireRole(["RIDER"]),
+  userApiLimiter,
+  confirmScannedProof
 );
 
 // PATCH /api/errands/:id/proof-images/:imageId/confirm - rider accepts or corrects
@@ -189,6 +228,16 @@ router.post(
   setPinpoints
 );
 
+// POST /api/errands/:id/pinpoints/quote - the fee for stops being placed, before
+// they are saved. Writes nothing and notifies nobody; step 3 calls it live.
+router.post(
+  "/:id/pinpoints/quote",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  quotePinpoints
+);
+
 // PATCH /api/errands/:id/items - Dispatcher corrects the working item list
 // (PabiliDetail) post-creation. See PabiliItemRequest for the untouched
 // original the customer submitted.
@@ -208,6 +257,35 @@ router.patch(
   requireRole(["RIDER"]),
   userApiLimiter,
   markItemsPurchased
+);
+
+// PATCH /api/errands/:id/items/:itemId/status - Rider or staff marks an item as
+// PENDING, PURCHASED, or OUT_OF_STOCK in pabili_details_tbl.
+router.patch(
+  "/:id/items/:itemId/status",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER", "RIDER"]),
+  userApiLimiter,
+  updateItemFulfillmentStatus
+);
+
+// POST /api/errands/:id/items/:itemId/suggest-substitutes - Suggest local substitutes
+// and draft a customer chat message for an out-of-stock item.
+router.post(
+  "/:id/items/:itemId/suggest-substitutes",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  suggestItemSubstitutes
+);
+
+// POST /api/errands/:id/items/:itemId/decline-substitute - Dispatcher signals customer declined substitute
+router.post(
+  "/:id/items/:itemId/decline-substitute",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER", "ADMIN"]),
+  userApiLimiter,
+  declineItemSubstitute
 );
 
 // POST /api/errands/:id/enable-payment - Dispatcher unlocks the chat-embedded
@@ -368,4 +446,22 @@ router.get(
   getTrack
 );
 
+// POST /api/errands/:id/chat-notify - Staff triggers push notification to customer for new chat message
+router.post(
+  "/:id/chat-notify",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  userApiLimiter,
+  notifyChatMessage
+);
+
+// POST /api/errands/:id/customer-chat-notify - Customer triggers notification to dispatcher for incoming chat message
+router.post(
+  "/:id/customer-chat-notify",
+  authenticateToken,
+  userApiLimiter,
+  notifyCustomerChat
+);
+
 export default router;
+

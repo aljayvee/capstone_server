@@ -16,6 +16,8 @@ export function isRiderOnline(riderId: number): boolean {
 }
 
 export async function openLoginSession(riderId: number) {
+  const existing = await riderLoginSessionRepository.findOpenForRider(riderId);
+  if (existing) return existing;
   return riderLoginSessionRepository.open(riderId);
 }
 
@@ -37,32 +39,77 @@ export async function closeLoginSession(riderId: number) {
 // login session left open by a rider who force-quit without logging out.
 export async function recordStatusSnapshot() {
   const riders = await userRepository.findAllRiders();
-  const entries = riders.map((r) => ({
-    riderId: r.id,
-    status: (riderPresenceStore.isOnline(r.id) ? "ONLINE" : "OFFLINE") as "ONLINE" | "OFFLINE",
-  }));
+  if (riders.length === 0) return;
+  const presenceRows = await riderPresenceRepository.findMany(riders.map((r) => r.id));
+  const presenceByRider = new Map(presenceRows.map((r) => [r.riderId, r]));
+  const now = Date.now();
+
+  const entries = riders.map((r) => {
+    const p = presenceByRider.get(r.id);
+    const hasFreshBeacon = Boolean(
+      p &&
+      p.onDuty &&
+      p.shutdownAt === null &&
+      p.lastBeaconAt &&
+      now - p.lastBeaconAt.getTime() < ABANDONED_SESSION_GRACE_MS
+    );
+    const online = riderPresenceStore.isOnline(r.id) || hasFreshBeacon;
+    return {
+      riderId: r.id,
+      status: (online ? "ONLINE" : "OFFLINE") as "ONLINE" | "OFFLINE",
+    };
+  });
   await riderStatusLogRepository.createMany(entries);
 }
 
 export async function sweepAbandonedLoginSessions() {
   const openSessions = await riderLoginSessionRepository.findAllOpen();
+  if (openSessions.length === 0) return;
   const now = Date.now();
+
+  const riderIds = openSessions.map((s) => s.riderId);
+  const presenceRows = await riderPresenceRepository.findMany(riderIds);
+  const presenceByRider = new Map(presenceRows.map((r) => [r.riderId, r]));
 
   for (const session of openSessions) {
     if (riderPresenceStore.isOnline(session.riderId)) {
       continue;
     }
+
+    const presence = presenceByRider.get(session.riderId);
+
+    // Active beacon check: if rider is on duty and sending beacons within grace window, do NOT close
+    if (presence && presence.onDuty && presence.shutdownAt === null && presence.lastBeaconAt) {
+      const beaconAgeMs = now - presence.lastBeaconAt.getTime();
+      if (beaconAgeMs < ABANDONED_SESSION_GRACE_MS) {
+        continue;
+      }
+    }
+
     const lastDisconnectedAt = riderPresenceStore.getLastDisconnectedAt(session.riderId);
-    // No recorded disconnect time (e.g. the server restarted since this rider
-    // last connected) — nothing better to go on, so treat it as abandoned now.
-    const effectiveLogoutAt = lastDisconnectedAt !== undefined ? new Date(lastDisconnectedAt) : new Date(now);
-    if (now - effectiveLogoutAt.getTime() < ABANDONED_SESSION_GRACE_MS) {
+    const lastBeaconAtTime = presence?.lastBeaconAt?.getTime();
+
+    const lastActivityTimestamp = Math.max(
+      lastDisconnectedAt ?? 0,
+      lastBeaconAtTime ?? 0
+    );
+
+    const effectiveLogoutAtMs = lastActivityTimestamp > 0 ? lastActivityTimestamp : now;
+
+    if (now - effectiveLogoutAtMs < ABANDONED_SESSION_GRACE_MS) {
       continue;
     }
+
+    // Clamp effectiveLogoutAt so it is NEVER before session.loginAt
+    const loginAtMs = session.loginAt.getTime();
+    const safeLogoutAtMs = Math.max(loginAtMs, effectiveLogoutAtMs);
+    const effectiveLogoutAt = new Date(safeLogoutAtMs);
+
     const durationSeconds = Math.max(
       0,
-      Math.round((effectiveLogoutAt.getTime() - session.loginAt.getTime()) / 1000)
+      Math.round((effectiveLogoutAt.getTime() - loginAtMs) / 1000)
     );
+
     try {
       await riderLoginSessionRepository.close(session.id, effectiveLogoutAt, durationSeconds);
     } catch (error) {

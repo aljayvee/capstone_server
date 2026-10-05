@@ -35,7 +35,14 @@ const READS: [string, string][] = [
   ["get", "/categories"],
   ["get", "/reverse"],
 ];
-const WRITES: [string, string][] = [["post", "/"], ["put", "/:id"], ["delete", "/:id"]];
+const WRITES: [string, string][] = [
+  ["post", "/"],
+  ["put", "/:id"],
+  ["delete", "/:id"],
+  // Not a write, but staff-only in the same way: role-guarded, so it carries
+  // the same one extra handler.
+  ["post", "/location-check"],
+];
 
 // Index of a path in the router's declaration order.
 function positionOf(method: string, path: string): number {
@@ -73,7 +80,7 @@ describe("place routes authorization", () => {
 
   it("registers every route behind authentication", () => {
     const routed = stack().filter((entry) => entry.route);
-    expect(routed).toHaveLength(7);
+    expect(routed).toHaveLength(8);
     for (const entry of routed) {
       expect(entry.route!.stack.map((h) => h.name)).toContain("authenticateToken");
     }

@@ -39,6 +39,74 @@ export const ERRAND_INCLUDE = {
   },
 } as const;
 
+// Everything an exception could be derived from. Shared by the range query
+// behind the queue and the one-errand query behind a reason suggestion, so the
+// two can never read different evidence for the same errand.
+const RECONCILIATION_EVIDENCE_SELECT = {
+  id: true,
+  createdAt: true,
+  totalCost: true,
+  estimatedCost: true,
+  status: true,
+  riderId: true,
+  // The downpayment plan's two failure modes: goods held for an overage
+  // nobody has arranged, and a delivery that happened without the balance
+  // being collected. Both are money the business fronted and has not got
+  // back, which is exactly what this report is for.
+  overageEscalatedAt: true,
+  overageResolvedAt: true,
+  quotedHandlingBasket: true,
+  payments: { select: { kind: true, amount: true } },
+  paymentSelection: { select: { paymentMode: { select: { name: true } } } },
+  rider: { select: { firstName: true, lastName: true } },
+  settlement: {
+    select: { collectedAmount: true, expectedAmount: true, variance: true, status: true, shortReason: true, settledAt: true },
+  },
+  pabiliDetails: {
+    select: {
+      id: true,
+      itemName: true,
+      quantity: true,
+      fulfillmentStatus: true,
+      pinpointId: true,
+    },
+  },
+  pinpoints: {
+    select: {
+      id: true,
+      storeName: true,
+      mismatchDetectedAt: true,
+      observedPlace: { select: { name: true } },
+      items: { select: { id: true, itemName: true, quantity: true, fulfillmentStatus: true } },
+    },
+  },
+  proofImages: {
+    select: {
+      id: true,
+      kind: true,
+      pinpointId: true,
+      verified: true,
+      declaredTotal: true,
+      riderNote: true,
+      capturedAt: true,
+      // A replaced payment screenshot is the same payment uploaded twice, so a
+      // reason suggestion must not count it as a second one.
+      supersededAt: true,
+      extraction: { select: { extractedTotal: true, confirmedTotal: true } },
+    },
+  },
+  dwellObservations: { select: { pinpointId: true, dwellSeconds: true, stalled: true, departedAt: true } },
+  exceptionReviews: {
+    select: {
+      kind: true,
+      reason: true,
+      amountAtRisk: true,
+      resolvedAt: true,
+      reviewer: { select: { firstName: true, lastName: true } },
+    },
+  },
+} as const;
+
 export const errandRepository = {
   findMany() {
     return prisma.errand.findMany({ include: ERRAND_INCLUDE, orderBy: { createdAt: "desc" } });
@@ -270,59 +338,14 @@ export const errandRepository = {
   findWithReconciliationEvidenceBetween(start: Date, end: Date) {
     return prisma.errand.findMany({
       where: { createdAt: { gte: start, lt: end } },
-      select: {
-        id: true,
-        createdAt: true,
-        totalCost: true,
-        estimatedCost: true,
-        status: true,
-        riderId: true,
-        // The downpayment plan's two failure modes: goods held for an overage
-        // nobody has arranged, and a delivery that happened without the balance
-        // being collected. Both are money the business fronted and has not got
-        // back, which is exactly what this report is for.
-        overageEscalatedAt: true,
-        overageResolvedAt: true,
-        quotedHandlingBasket: true,
-        payments: { select: { kind: true, amount: true } },
-        paymentSelection: { select: { paymentMode: { select: { name: true } } } },
-        rider: { select: { firstName: true, lastName: true } },
-        settlement: {
-          select: { collectedAmount: true, expectedAmount: true, variance: true, status: true, shortReason: true, settledAt: true },
-        },
-        pinpoints: {
-          select: {
-            id: true,
-            storeName: true,
-            mismatchDetectedAt: true,
-            observedPlace: { select: { name: true } },
-            items: { select: { id: true } },
-          },
-        },
-        proofImages: {
-          select: {
-            id: true,
-            kind: true,
-            pinpointId: true,
-            verified: true,
-            declaredTotal: true,
-            capturedAt: true,
-            extraction: { select: { extractedTotal: true, confirmedTotal: true } },
-          },
-        },
-        dwellObservations: { select: { pinpointId: true, dwellSeconds: true, stalled: true, departedAt: true } },
-        exceptionReviews: {
-          select: {
-            kind: true,
-            reason: true,
-            amountAtRisk: true,
-            resolvedAt: true,
-            reviewer: { select: { firstName: true, lastName: true } },
-          },
-        },
-      },
+      select: RECONCILIATION_EVIDENCE_SELECT,
       orderBy: { createdAt: "desc" },
     });
+  },
+
+  /** The same evidence for one errand, for suggesting why an exception can be cleared. */
+  findWithReconciliationEvidenceById(id: string) {
+    return prisma.errand.findUnique({ where: { id }, select: RECONCILIATION_EVIDENCE_SELECT });
   },
 
   findWithSettlementBetween(start: Date, end: Date) {
@@ -440,6 +463,15 @@ export const errandRepository = {
   // "already claimed?" check in errandService.claimErrand and this update.
   claimIfAvailable(id: string) {
     return prisma.errand.updateMany({ where: { id, status: "AVAILABLE" }, data: { status: "PENDING" } });
+  },
+
+  // Atomic proximity alert guard: sets proximityAlertSentAt only if it was null,
+  // returning count > 0 if this call won the race to send the proximity alert.
+  markProximityAlertSent(id: string) {
+    return prisma.errand.updateMany({
+      where: { id, proximityAlertSentAt: null },
+      data: { proximityAlertSentAt: new Date() },
+    });
   },
 };
 

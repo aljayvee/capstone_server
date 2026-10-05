@@ -331,6 +331,48 @@ export async function requestHalfPayment(errandId: string, riderId: number) {
     throw new ServiceError(409, "The customer's half-payment is already settled. Head to the customer.");
   }
 
+  // Multi-Store Invariant: If the errand has assigned store pins, verify that
+  // EVERY store pin has recorded proof (RECEIPT or NO_RECEIPT) before requesting half-payment.
+  const pinpoints = await prisma.errandPinpoint.findMany({
+    where: { errandId },
+    select: { id: true, storeName: true },
+  });
+
+  if (pinpoints.length > 0) {
+    const proofs = await prisma.errandProofImage.findMany({
+      where: {
+        errandId,
+        kind: { in: ["RECEIPT", "NO_RECEIPT"] },
+        pinpointId: { not: null },
+      },
+      select: { pinpointId: true },
+    });
+    const provenPinpointIds = new Set(proofs.map((p) => p.pinpointId));
+    const uncompletedStores = pinpoints.filter((p) => !provenPinpointIds.has(p.id));
+    if (uncompletedStores.length > 0) {
+      const missingNames = uncompletedStores.map((s) => s.storeName).join(", ");
+      throw new ServiceError(
+        422,
+        `Cannot request half-payment yet. Complete shopping and file receipts for remaining stores first: ${missingNames}.`
+      );
+    }
+  }
+
+  // Items Completion Invariant: Verify that all items on the errand have been checked
+  // (either PURCHASED or OUT_OF_STOCK). No items may remain PENDING.
+  const pendingItems = await prisma.pabiliDetail.findMany({
+    where: { errandId, fulfillmentStatus: "PENDING" },
+    select: { id: true, itemName: true },
+  });
+
+  if (pendingItems.length > 0) {
+    const itemNames = pendingItems.map((i) => i.itemName).join(", ");
+    throw new ServiceError(
+      422,
+      `Cannot request half-payment yet. All items must be checked (Purchased or Out of Stock) first: ${itemNames}.`
+    );
+  }
+
   const goodsTotal = await confirmedReceiptTotal(errandId);
   if (goodsTotal <= 0) {
     throw new ServiceError(
@@ -341,7 +383,7 @@ export async function requestHalfPayment(errandId: string, riderId: number) {
   // Normally already equal. Re-synced through the one existing path in case a
   // receiptless declaration landed without a confirm to fold it in.
   if (Math.abs(goodsTotal - errand.estimatedCost) > 0.005) {
-    await errandService.markItemsPurchased(errandId, riderId, goodsTotal);
+    await errandService.applyReceiptTotal(errandId, riderId, goodsTotal);
   }
 
   const firstAsk = errand.halfPaymentRequestedAt == null;
@@ -538,7 +580,7 @@ export async function recordRefund(
 /**
  * The receipt beat what the customer agreed to. Hold the goods.
  *
- * Called from markItemsPurchased, at the one moment the real total becomes
+ * Called from markItemsPurchased and applyReceiptTotal, at the one moment the real total becomes
  * known — which is also, unavoidably, after the rider has already paid for the
  * goods. There is no longer any way to ask the customer first, so the choice is
  * between billing them something they never agreed to and stopping to ask. This

@@ -1,11 +1,12 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { getClientIp } from "../lib/requestContext.js";
 
 const isDev = process.env.NODE_ENV === "development" || !process.env.NODE_ENV;
 
 /**
  * Smart key generator that scopes limits by authenticated user ID when available,
- * falling back to client IP for unauthenticated requests. This prevents multiple
- * users sharing a Wi-Fi/NAT network or local test environment from blocking each other.
+ * falling back to device ID, and then real client IP (respecting Cloudflare CF-Connecting-IP).
+ * This prevents Cloudflare proxy IPs or multiple users on NAT from colliding.
  */
 const smartKeyGenerator = (req: any): string => {
   if (req.user?.id) {
@@ -14,6 +15,10 @@ const smartKeyGenerator = (req: any): string => {
   const deviceId = req.headers?.["x-device-id"];
   if (deviceId && typeof deviceId === "string") {
     return `device_${deviceId.slice(0, 64)}`;
+  }
+  const realIp = getClientIp(req);
+  if (realIp) {
+    return `ip_${realIp}`;
   }
   // Use express-rate-limit's helper for IPv4/IPv6 normalization if available
   if (typeof ipKeyGenerator === "function") {
@@ -30,6 +35,7 @@ const smartKeyGenerator = (req: any): string => {
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15-minute sliding window
   max: isDev ? 100 : 10, // 10 failed login attempts in prod
+  keyGenerator: smartKeyGenerator,
   skipSuccessfulRequests: true, // Successful logins never count against the user!
   standardHeaders: true,
   legacyHeaders: false,

@@ -16,6 +16,7 @@ import * as sessionService from "./sessionService.js";
 import { normalizeUsername, normalizeEmail } from "../lib/identity.js";
 import crypto from "node:crypto";
 import type { TokenPayload } from "../middleware/auth.js";
+import { logger } from "../lib/logger.js";
 
 // Computes a display-only "name" field from firstName/lastName.
 // Not stored in the DB (3NF: name is derivable from firstName + lastName,
@@ -424,6 +425,11 @@ export async function refreshAccessToken(
   // profile (name, phone, avatar, ...) so the client can restore `user`
   // state without depending on sessionStorage as a source of truth.
   const role = String(payload.role || "").toUpperCase();
+  if (role === "RIDER") {
+    void riderPresenceService.openLoginSession(payload.id).catch((err) => {
+      logger.error(`Failed to ensure rider login session on refresh for rider ${payload.id}:`, err);
+    });
+  }
   const user =
     role === "CUSTOMER"
       ? await (async () => {

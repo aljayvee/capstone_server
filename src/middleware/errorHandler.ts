@@ -10,10 +10,16 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
     return next(err);
   }
 
-  if (err instanceof ServiceError) {
-    return res.status(err.status).json({
-      error: err.message,
-      ...(err.details !== undefined ? { details: err.details } : {}),
+  const isServiceError =
+    err instanceof ServiceError ||
+    (err instanceof Error && err.name === "ServiceError" && typeof (err as any).status === "number") ||
+    (typeof err === "object" && err !== null && "status" in err && typeof (err as any).status === "number" && "message" in err);
+
+  if (isServiceError) {
+    const serviceErr = err as ServiceError;
+    return res.status(serviceErr.status).json({
+      error: serviceErr.message,
+      ...(serviceErr.details !== undefined ? { details: serviceErr.details } : {}),
     });
   }
 

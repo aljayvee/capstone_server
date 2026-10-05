@@ -32,6 +32,10 @@ export interface IEventPublisher {
   emitToRole(role: string, event: string, payload: unknown): void;
 
   emitToRider(riderId: number, event: string, payload: unknown): void;
+
+  emitToUser(userId: number, event: string, payload: unknown): void;
+
+  emitToCustomer(customerId: number, event: string, payload: unknown): void;
 }
 
 class SocketIOEventPublisher implements IEventPublisher {
@@ -66,6 +70,14 @@ class SocketIOEventPublisher implements IEventPublisher {
 
   emitToRider(riderId: number, event: string, payload: unknown): void {
     io.to(rooms.rider(riderId)).emit(event, payload);
+  }
+
+  emitToUser(userId: number, event: string, payload: unknown): void {
+    io.to(rooms.user(userId)).emit(event, payload);
+  }
+
+  emitToCustomer(customerId: number, event: string, payload: unknown): void {
+    io.to(rooms.customer(customerId)).to(rooms.user(customerId)).emit(event, payload);
   }
 }
 

@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma.js";
+import { eventPublisher } from "../lib/eventPublisher.js";
 
 export interface CreateNotificationData {
   userId?: number;
@@ -21,11 +22,36 @@ export const notificationRepository = {
     return prisma.notification.findUnique({ where: { id } });
   },
 
-  create(data: CreateNotificationData) {
-    return prisma.notification.create({ data });
+  async create(data: CreateNotificationData) {
+    const record = await prisma.notification.create({ data });
+    try {
+      if (record.userId) {
+        eventPublisher.emitToUser(record.userId, "notification:new", record);
+      }
+      if (record.customerId) {
+        eventPublisher.emitToCustomer(record.customerId, "notification:new", record);
+      }
+    } catch {
+      // Socket notification delivery must never fail database persistence
+    }
+    return record;
   },
 
   markRead(id: number) {
     return prisma.notification.update({ where: { id }, data: { isRead: true } });
+  },
+
+  markAllReadForCustomer(customerId: number) {
+    return prisma.notification.updateMany({
+      where: { customerId, isRead: false },
+      data: { isRead: true },
+    });
+  },
+
+  markAllReadForUser(userId: number) {
+    return prisma.notification.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true },
+    });
   },
 };

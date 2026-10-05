@@ -1,0 +1,2386 @@
+{
+ "data": {
+  "categories": [
+   "Fast Food & Restaurant",
+   "Pharmacy & Health",
+   "Supermarket & Grocery",
+   "Retail & General Merchandise",
+   "Bakery",
+   "Convenience Store"
+  ],
+  "train_rows": 60148,
+  "seed_rows": 303,
+  "osm_train_names": 59845,
+  "validation_names": 12820,
+  "test_names": 12799,
+  "features": 202211,
+  "nonzeros_per_name": 70.4,
+  "subsample_rows": 15000
+ },
+ "quick": false,
+ "learning_data": {
+  "results": {
+   "live": {
+    "rows": 12820,
+    "accuracy": 0.6019,
+    "unpredictable_rows": 2328,
+    "log_loss": 0.7002,
+    "coverage": 0.5356,
+    "accuracy_when_answered": 0.8018,
+    "auto_accepted": 0.3913,
+    "accuracy_when_auto": 0.831,
+    "reliability": [
+     {
+      "from": 0.0,
+      "to": 0.55,
+      "rows": 5953,
+      "right": 0.3712
+     },
+     {
+      "from": 0.55,
+      "to": 0.75,
+      "rows": 1850,
+      "right": 0.7227
+     },
+     {
+      "from": 0.75,
+      "to": 0.9,
+      "rows": 2895,
+      "right": 0.7686
+     },
+     {
+      "from": 0.9,
+      "to": 1.0,
+      "rows": 2122,
+      "right": 0.9161
+     }
+    ],
+    "per_class": {
+     "Fast Food & Restaurant": {
+      "rows": 4153,
+      "recall": 0.7852,
+      "precision": 0.581
+     },
+     "Pharmacy & Health": {
+      "rows": 1791,
+      "recall": 0.8565,
+      "precision": 0.8903
+     },
+     "Retail & General Merchandise": {
+      "rows": 3550,
+      "recall": 0.6254,
+      "precision": 0.6553
+     },
+     "Supermarket & Grocery": {
+      "rows": 998,
+      "recall": 0.7024,
+      "precision": 0.3344
+     }
+    }
+   },
+   "lexicon_6": {
+    "rows": 12820,
+    "accuracy": 0.6435,
+    "unpredictable_rows": 0,
+    "log_loss": 1.0703,
+    "coverage": 0.4768,
+    "accuracy_when_answered": 0.9015,
+    "auto_accepted": 0.3194,
+    "accuracy_when_auto": 0.9333,
+    "reliability": [
+     {
+      "from": 0.0,
+      "to": 0.55,
+      "rows": 6708,
+      "right": 0.4085
+     },
+     {
+      "from": 0.55,
+      "to": 0.75,
+      "rows": 2017,
+      "right": 0.8369
+     },
+     {
+      "from": 0.75,
+      "to": 0.9,
+      "rows": 2624,
+      "right": 0.9223
+     },
+     {
+      "from": 0.9,
+      "to": 1.0,
+      "rows": 1471,
+      "right": 0.9531
+     }
+    ],
+    "per_class": {
+     "Bakery": {
+      "rows": 427,
+      "recall": 0.7143,
+      "precision": 0.7457
+     },
+     "Convenience Store": {
+      "rows": 1901,
+      "recall": 0.1662,
+      "precision": 0.6825
+     },
+     "Fast Food & Restaurant": {
+      "rows": 4153,
+      "recall": 0.7443,
+      "precision": 0.6308
+     },
+     "Pharmacy & Health": {
+      "rows": 1791,
+      "recall": 0.8576,
+      "precision": 0.8848
+     },
+     "Retail & General Merchandise": {
+      "rows": 3550,
+      "recall": 0.6727,
+      "precision": 0.6039
+     },
+     "Supermarket & Grocery": {
+      "rows": 998,
+      "recall": 0.6152,
+      "precision": 0.4521
+     }
+    }
+   },
+   "lexicon_osm": {
+    "rows": 12820,
+    "accuracy": 0.8001,
+    "unpredictable_rows": 0,
+    "log_loss": 0.5875,
+    "coverage": 0.8562,
+    "accuracy_when_answered": 0.8684,
+    "auto_accepted": 0.7048,
+    "accuracy_when_auto": 0.9294,
+    "reliability": [
+     {
+      "from": 0.0,
+      "to": 0.55,
+      "rows": 1843,
+      "right": 0.3934
+     },
+     {
+      "from": 0.55,
+      "to": 0.75,
+      "rows": 1941,
+      "right": 0.5842
+     },
+     {
+      "from": 0.75,
+      "to": 0.9,
+      "rows": 1853,
+      "right": 0.7831
+     },
+     {
+      "from": 0.9,
+      "to": 1.0,
+      "rows": 7183,
+      "right": 0.9671
+     }
+    ],
+    "per_class": {
+     "Bakery": {
+      "rows": 427,
+      "recall": 0.7845,
+      "precision": 0.7701
+     },
+     "Convenience Store": {
+      "rows": 1901,
+      "recall": 0.708,
+      "precision": 0.5651
+     },
+     "Fast Food & Restaurant": {
+      "rows": 4153,
+      "recall": 0.8382,
+      "precision": 0.8735
+     },
+     "Pharmacy & Health": {
+      "rows": 1791,
+      "recall": 0.9179,
+      "precision": 0.9728
+     },
+     "Retail & General Merchandise": {
+      "rows": 3550,
+      "recall": 0.7794,
+      "precision": 0.8279
+     },
+     "Supermarket & Grocery": {
+      "rows": 998,
+      "recall": 0.6854,
+      "precision": 0.6937
+     }
+    }
+   }
+  },
+  "lr_seconds": 156.6
+ },
+ "one_neuron": {
+  "gates": {
+   "AND": {
+    "solved_starts": 20,
+    "best": 1.0,
+    "weights": [
+     12.17,
+     12.13
+    ],
+    "bias": -18.28,
+    "outputs": [
+     0.0,
+     0.002,
+     0.002,
+     0.998
+    ]
+   },
+   "OR": {
+    "solved_starts": 20,
+    "best": 1.0,
+    "weights": [
+     12.49,
+     12.41
+    ],
+    "bias": -5.74,
+    "outputs": [
+     0.003,
+     0.999,
+     0.999,
+     1.0
+    ]
+   },
+   "XOR": {
+    "solved_starts": 0,
+    "best": 0.75,
+    "weights": [
+     0.0,
+     0.0
+    ],
+    "bias": 0.0,
+    "outputs": [
+     0.5,
+     0.5,
+     0.5,
+     0.5
+    ]
+   }
+  },
+  "pharmacy_neuron": {
+   "accuracy": 0.9802,
+   "recall": 0.9162,
+   "precision": 0.9404,
+   "share": 0.1397,
+   "seconds": 31.4
+  },
+  "one_neuron_per_category": {
+   "rows": 12820,
+   "accuracy": 0.7849,
+   "unpredictable_rows": 0,
+   "log_loss": 0.6399,
+   "coverage": 0.8427,
+   "accuracy_when_answered": 0.8582,
+   "auto_accepted": 0.6898,
+   "accuracy_when_auto": 0.9248,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 2017,
+     "right": 0.3922
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 1960,
+     "right": 0.5577
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 1761,
+     "right": 0.7621
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 7082,
+     "right": 0.9653
+    }
+   ],
+   "per_class": {
+    "Bakery": {
+     "rows": 427,
+     "recall": 0.7892,
+     "precision": 0.6754
+    },
+    "Convenience Store": {
+     "rows": 1901,
+     "recall": 0.667,
+     "precision": 0.5542
+    },
+    "Fast Food & Restaurant": {
+     "rows": 4153,
+     "recall": 0.8127,
+     "precision": 0.875
+    },
+    "Pharmacy & Health": {
+     "rows": 1791,
+     "recall": 0.9196,
+     "precision": 0.9626
+    },
+    "Retail & General Merchandise": {
+     "rows": 3550,
+     "recall": 0.7752,
+     "precision": 0.8164
+    },
+    "Supermarket & Grocery": {
+     "rows": 998,
+     "recall": 0.6844,
+     "precision": 0.6243
+    }
+   }
+  }
+ },
+ "three_neurons": {
+  "xor_solved": {
+   "sigmoid": 10,
+   "tanh": 10
+  },
+  "starts": 20,
+  "hidden_roles": {
+   "activation": "sigmoid",
+   "seed": 0,
+   "hidden": [
+    "OR",
+    "AND"
+   ]
+  },
+  "three_hidden": {
+   "rows": 12820,
+   "accuracy": 0.6636,
+   "unpredictable_rows": 0,
+   "log_loss": 0.9931,
+   "coverage": 0.6593,
+   "accuracy_when_answered": 0.8344,
+   "auto_accepted": 0.5122,
+   "accuracy_when_auto": 0.9265,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 4368,
+     "right": 0.3331
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 1885,
+     "right": 0.5135
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 2766,
+     "right": 0.8814
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 3801,
+     "right": 0.9592
+    }
+   ],
+   "per_class": {
+    "Bakery": {
+     "rows": 427,
+     "recall": 0.7447,
+     "precision": 0.3911
+    },
+    "Convenience Store": {
+     "rows": 1901,
+     "recall": 0.4292,
+     "precision": 0.3559
+    },
+    "Fast Food & Restaurant": {
+     "rows": 4153,
+     "recall": 0.6889,
+     "precision": 0.8365
+    },
+    "Pharmacy & Health": {
+     "rows": 1791,
+     "recall": 0.8515,
+     "precision": 0.7959
+    },
+    "Retail & General Merchandise": {
+     "rows": 3550,
+     "recall": 0.6583,
+     "precision": 0.7793
+    },
+    "Supermarket & Grocery": {
+     "rows": 998,
+     "recall": 0.6513,
+     "precision": 0.4714
+    }
+   }
+  },
+  "no_hidden": {
+   "rows": 12820,
+   "accuracy": 0.7543,
+   "unpredictable_rows": 0,
+   "log_loss": 0.7363,
+   "coverage": 0.803,
+   "accuracy_when_answered": 0.8461,
+   "auto_accepted": 0.6433,
+   "accuracy_when_auto": 0.9139,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 2525,
+     "right": 0.3798
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 2048,
+     "right": 0.5732
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 1846,
+     "right": 0.76
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 6401,
+     "right": 0.9583
+    }
+   ],
+   "per_class": {
+    "Bakery": {
+     "rows": 427,
+     "recall": 0.733,
+     "precision": 0.6589
+    },
+    "Convenience Store": {
+     "rows": 1901,
+     "recall": 0.5839,
+     "precision": 0.5062
+    },
+    "Fast Food & Restaurant": {
+     "rows": 4153,
+     "recall": 0.804,
+     "precision": 0.8354
+    },
+    "Pharmacy & Health": {
+     "rows": 1791,
+     "recall": 0.9023,
+     "precision": 0.9528
+    },
+    "Retail & General Merchandise": {
+     "rows": 3550,
+     "recall": 0.7414,
+     "precision": 0.7819
+    },
+    "Supermarket & Grocery": {
+     "rows": 998,
+     "recall": 0.6613,
+     "precision": 0.6038
+    }
+   }
+  }
+ },
+ "network_size": {
+  "results": [
+   {
+    "hidden": [],
+    "params": 1213272,
+    "seconds": 13.2,
+    "best_epoch": 7,
+    "accuracy": 0.7543,
+    "log_loss": 0.7363,
+    "coverage": 0.803,
+    "accuracy_when_auto": 0.9139
+   },
+   {
+    "hidden": [
+     3
+    ],
+    "params": 606660,
+    "seconds": 19.4,
+    "best_epoch": 11,
+    "accuracy": 0.6636,
+    "log_loss": 0.9931,
+    "coverage": 0.6593,
+    "accuracy_when_auto": 0.9265
+   },
+   {
+    "hidden": [
+     16
+    ],
+    "params": 3235494,
+    "seconds": 30.0,
+    "best_epoch": 6,
+    "accuracy": 0.7146,
+    "log_loss": 0.8507,
+    "coverage": 0.7631,
+    "accuracy_when_auto": 0.9149
+   },
+   {
+    "hidden": [
+     64
+    ],
+    "params": 12941958,
+    "seconds": 62.5,
+    "best_epoch": 4,
+    "accuracy": 0.7276,
+    "log_loss": 0.8083,
+    "coverage": 0.7838,
+    "accuracy_when_auto": 0.9135
+   },
+   {
+    "hidden": [
+     64,
+     32
+    ],
+    "params": 12943846,
+    "seconds": 52.6,
+    "best_epoch": 3,
+    "accuracy": 0.6998,
+    "log_loss": 0.8405,
+    "coverage": 0.6867,
+    "accuracy_when_auto": 0.9372
+   }
+  ]
+ },
+ "activations": {
+  "results": [
+   {
+    "activation": "sigmoid",
+    "best_val_loss": 0.6826,
+    "best_epoch": 5,
+    "accuracy": 0.7647,
+    "seconds": 55.6,
+    "vanishing_ratio": 0.003021887569641517
+   },
+   {
+    "activation": "tanh",
+    "best_val_loss": 0.7712,
+    "best_epoch": 3,
+    "accuracy": 0.7271,
+    "seconds": 51.8,
+    "vanishing_ratio": 1.020207882983417
+   },
+   {
+    "activation": "relu",
+    "best_val_loss": 0.8284,
+    "best_epoch": 5,
+    "accuracy": 0.7241,
+    "seconds": 49.6,
+    "vanishing_ratio": 1.2906884305188493
+   },
+   {
+    "activation": "leaky_relu",
+    "best_val_loss": 0.8262,
+    "best_epoch": 5,
+    "accuracy": 0.7256,
+    "seconds": 51.8,
+    "vanishing_ratio": 1.291121562904844
+   }
+  ]
+ },
+ "gradient_descent": {
+  "optimizers": [
+   {
+    "optimizer": "sgd",
+    "learning_rate": 3.0,
+    "best_val_loss": 0.9503,
+    "seconds": 10.9,
+    "accuracy": 0.6534
+   },
+   {
+    "optimizer": "momentum",
+    "learning_rate": 0.3,
+    "best_val_loss": 0.9498,
+    "seconds": 10.8,
+    "accuracy": 0.6583
+   },
+   {
+    "optimizer": "rmsprop",
+    "learning_rate": 0.01,
+    "best_val_loss": 0.7451,
+    "seconds": 11.1,
+    "accuracy": 0.7543
+   },
+   {
+    "optimizer": "adam",
+    "learning_rate": 0.01,
+    "best_val_loss": 0.7363,
+    "seconds": 13.6,
+    "accuracy": 0.7543
+   }
+  ],
+  "batch_sizes": [
+   {
+    "label": "batch (all rows)",
+    "batch_size": 15000,
+    "learning_rate": 0.1,
+    "epochs": 60,
+    "best_val_loss": 0.7761,
+    "updates_to_best": 60,
+    "seconds_to_best": 41.45,
+    "seconds": 41.7
+   },
+   {
+    "label": "mini-batch 256",
+    "batch_size": 256,
+    "learning_rate": 0.01,
+    "epochs": 12,
+    "best_val_loss": 0.7363,
+    "updates_to_best": 413,
+    "seconds_to_best": 7.98,
+    "seconds": 14.0
+   },
+   {
+    "label": "mini-batch 32",
+    "batch_size": 32,
+    "learning_rate": 0.003,
+    "epochs": 8,
+    "best_val_loss": 0.7371,
+    "updates_to_best": 3752,
+    "seconds_to_best": 15.63,
+    "seconds": 15.9
+   },
+   {
+    "label": "stochastic (1 row)",
+    "batch_size": 1,
+    "learning_rate": 0.001,
+    "epochs": 3,
+    "best_val_loss": 0.8387,
+    "updates_to_best": 45000,
+    "seconds_to_best": 32.95,
+    "seconds": 33.3
+   }
+  ],
+  "learning_rates": [
+   {
+    "learning_rate": 0.0001,
+    "best_val_loss": 1.5779,
+    "final_val_loss": 1.5779,
+    "accuracy": 0.3761,
+    "diverged": false
+   },
+   {
+    "learning_rate": 0.001,
+    "best_val_loss": 0.8527,
+    "final_val_loss": 0.8564,
+    "accuracy": 0.7095,
+    "diverged": false
+   },
+   {
+    "learning_rate": 0.01,
+    "best_val_loss": 0.8039,
+    "final_val_loss": 1.3558,
+    "accuracy": 0.7188,
+    "diverged": false
+   },
+   {
+    "learning_rate": 0.1,
+    "best_val_loss": 0.8566,
+    "final_val_loss": 2.5825,
+    "accuracy": 0.7199,
+    "diverged": false
+   },
+   {
+    "learning_rate": 1.0,
+    "best_val_loss": 1.4845,
+    "final_val_loss": 1.4845,
+    "accuracy": 0.2784,
+    "diverged": false
+   }
+  ]
+ },
+ "overfitting": {
+  "oversized": {
+   "history": [
+    {
+     "epoch": 1,
+     "updates": 32,
+     "seconds": 0.88,
+     "train_loss": 1.5749551393538714,
+     "train_accuracy": 0.3795,
+     "val_loss": 1.666262466897505,
+     "val_accuracy": 0.3237129485179407
+    },
+    {
+     "epoch": 2,
+     "updates": 64,
+     "seconds": 2.0,
+     "train_loss": 1.229494010526687,
+     "train_accuracy": 0.5545,
+     "val_loss": 1.4387046659166247,
+     "val_accuracy": 0.4454758190327613
+    },
+    {
+     "epoch": 3,
+     "updates": 96,
+     "seconds": 2.99,
+     "train_loss": 0.9540396102215163,
+     "train_accuracy": 0.6795,
+     "val_loss": 1.288773182394272,
+     "val_accuracy": 0.5126365054602184
+    },
+    {
+     "epoch": 4,
+     "updates": 128,
+     "seconds": 3.98,
+     "train_loss": 0.713645333257824,
+     "train_accuracy": 0.7765,
+     "val_loss": 1.1754409228481084,
+     "val_accuracy": 0.559594383775351
+    },
+    {
+     "epoch": 5,
+     "updates": 160,
+     "seconds": 5.07,
+     "train_loss": 0.5453838951085418,
+     "train_accuracy": 0.843,
+     "val_loss": 1.1282291354250873,
+     "val_accuracy": 0.5842433697347894
+    },
+    {
+     "epoch": 6,
+     "updates": 192,
+     "seconds": 6.1,
+     "train_loss": 0.3989348303369352,
+     "train_accuracy": 0.8935,
+     "val_loss": 1.0958763604140827,
+     "val_accuracy": 0.6018720748829953
+    },
+    {
+     "epoch": 7,
+     "updates": 224,
+     "seconds": 7.17,
+     "train_loss": 0.28519089026822486,
+     "train_accuracy": 0.9325,
+     "val_loss": 1.0787064722427655,
+     "val_accuracy": 0.6159126365054602
+    },
+    {
+     "epoch": 8,
+     "updates": 256,
+     "seconds": 8.24,
+     "train_loss": 0.2025029018197954,
+     "train_accuracy": 0.958,
+     "val_loss": 1.0786959587621285,
+     "val_accuracy": 0.6253510140405616
+    },
+    {
+     "epoch": 9,
+     "updates": 288,
+     "seconds": 9.27,
+     "train_loss": 0.14560979518736936,
+     "train_accuracy": 0.9695,
+     "val_loss": 1.0937683674889822,
+     "val_accuracy": 0.6298751950078003
+    },
+    {
+     "epoch": 10,
+     "updates": 320,
+     "seconds": 10.19,
+     "train_loss": 0.10128565409045955,
+     "train_accuracy": 0.981,
+     "val_loss": 1.0915109640300362,
+     "val_accuracy": 0.6366614664586584
+    },
+    {
+     "epoch": 11,
+     "updates": 352,
+     "seconds": 11.05,
+     "train_loss": 0.07435667062774025,
+     "train_accuracy": 0.9895,
+     "val_loss": 1.1097292282832119,
+     "val_accuracy": 0.6386115444617785
+    },
+    {
+     "epoch": 12,
+     "updates": 384,
+     "seconds": 12.0,
+     "train_loss": 0.05376546076208824,
+     "train_accuracy": 0.9915,
+     "val_loss": 1.1135286321205928,
+     "val_accuracy": 0.6446177847113884
+    },
+    {
+     "epoch": 13,
+     "updates": 416,
+     "seconds": 12.99,
+     "train_loss": 0.04100526510181906,
+     "train_accuracy": 0.994,
+     "val_loss": 1.1274619822946759,
+     "val_accuracy": 0.6468798751950078
+    },
+    {
+     "epoch": 14,
+     "updates": 448,
+     "seconds": 14.0,
+     "train_loss": 0.032944293737006344,
+     "train_accuracy": 0.9945,
+     "val_loss": 1.140907464422445,
+     "val_accuracy": 0.6475819032761311
+    },
+    {
+     "epoch": 15,
+     "updates": 480,
+     "seconds": 15.06,
+     "train_loss": 0.026683661395904806,
+     "train_accuracy": 0.995,
+     "val_loss": 1.1581142930160753,
+     "val_accuracy": 0.6475819032761311
+    },
+    {
+     "epoch": 16,
+     "updates": 512,
+     "seconds": 16.06,
+     "train_loss": 0.02202886867748733,
+     "train_accuracy": 0.995,
+     "val_loss": 1.1660170493709805,
+     "val_accuracy": 0.6512480499219969
+    },
+    {
+     "epoch": 17,
+     "updates": 544,
+     "seconds": 17.04,
+     "train_loss": 0.01893319642725556,
+     "train_accuracy": 0.995,
+     "val_loss": 1.1764154638973372,
+     "val_accuracy": 0.6504680187207488
+    },
+    {
+     "epoch": 18,
+     "updates": 576,
+     "seconds": 18.08,
+     "train_loss": 0.016579475130854726,
+     "train_accuracy": 0.995,
+     "val_loss": 1.1874957929789909,
+     "val_accuracy": 0.6509360374414976
+    },
+    {
+     "epoch": 19,
+     "updates": 608,
+     "seconds": 19.11,
+     "train_loss": 0.014930363061324151,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.1943977287954481,
+     "val_accuracy": 0.6514040561622465
+    },
+    {
+     "epoch": 20,
+     "updates": 640,
+     "seconds": 20.17,
+     "train_loss": 0.013311972505532331,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.1958125371217851,
+     "val_accuracy": 0.6544461778471139
+    },
+    {
+     "epoch": 21,
+     "updates": 672,
+     "seconds": 21.16,
+     "train_loss": 0.012604988224264133,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2068829333577262,
+     "val_accuracy": 0.6531201248049922
+    },
+    {
+     "epoch": 22,
+     "updates": 704,
+     "seconds": 22.13,
+     "train_loss": 0.01184378752105141,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.211676600462963,
+     "val_accuracy": 0.6535101404056163
+    },
+    {
+     "epoch": 23,
+     "updates": 736,
+     "seconds": 23.13,
+     "train_loss": 0.011428291895852183,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2191417037385348,
+     "val_accuracy": 0.6536661466458659
+    },
+    {
+     "epoch": 24,
+     "updates": 768,
+     "seconds": 24.14,
+     "train_loss": 0.010742027200662016,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.224910636026425,
+     "val_accuracy": 0.6540561622464899
+    },
+    {
+     "epoch": 25,
+     "updates": 800,
+     "seconds": 25.11,
+     "train_loss": 0.010602868608133661,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2312236524687052,
+     "val_accuracy": 0.6536661466458659
+    },
+    {
+     "epoch": 26,
+     "updates": 832,
+     "seconds": 26.22,
+     "train_loss": 0.01030970703676401,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2367810713667577,
+     "val_accuracy": 0.6533541341653666
+    },
+    {
+     "epoch": 27,
+     "updates": 864,
+     "seconds": 27.23,
+     "train_loss": 0.009905530294959967,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2437757603347035,
+     "val_accuracy": 0.6540561622464899
+    },
+    {
+     "epoch": 28,
+     "updates": 896,
+     "seconds": 28.26,
+     "train_loss": 0.009955906886215523,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2507102587596113,
+     "val_accuracy": 0.6536661466458659
+    },
+    {
+     "epoch": 29,
+     "updates": 928,
+     "seconds": 29.28,
+     "train_loss": 0.00940649718211796,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2483111841509917,
+     "val_accuracy": 0.655616224648986
+    },
+    {
+     "epoch": 30,
+     "updates": 960,
+     "seconds": 30.31,
+     "train_loss": 0.00940110158924859,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2538381104535747,
+     "val_accuracy": 0.6542121684867395
+    },
+    {
+     "epoch": 31,
+     "updates": 992,
+     "seconds": 31.32,
+     "train_loss": 0.009123432507828759,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2564666832152296,
+     "val_accuracy": 0.6553822152886115
+    },
+    {
+     "epoch": 32,
+     "updates": 1024,
+     "seconds": 32.35,
+     "train_loss": 0.00882583765844842,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2569790169433497,
+     "val_accuracy": 0.6556942277691108
+    },
+    {
+     "epoch": 33,
+     "updates": 1056,
+     "seconds": 33.36,
+     "train_loss": 0.008866133300572471,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2656421645419724,
+     "val_accuracy": 0.6541341653666146
+    },
+    {
+     "epoch": 34,
+     "updates": 1088,
+     "seconds": 34.42,
+     "train_loss": 0.008825946147688626,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2693291091751902,
+     "val_accuracy": 0.6548361934477379
+    },
+    {
+     "epoch": 35,
+     "updates": 1120,
+     "seconds": 35.41,
+     "train_loss": 0.008722548221881652,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2760015066586712,
+     "val_accuracy": 0.6552262090483619
+    },
+    {
+     "epoch": 36,
+     "updates": 1152,
+     "seconds": 36.43,
+     "train_loss": 0.008558644388261698,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2803765897686197,
+     "val_accuracy": 0.6557722308892355
+    },
+    {
+     "epoch": 37,
+     "updates": 1184,
+     "seconds": 37.41,
+     "train_loss": 0.008450861931263973,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2950312171982177,
+     "val_accuracy": 0.6572542901716069
+    },
+    {
+     "epoch": 38,
+     "updates": 1216,
+     "seconds": 38.42,
+     "train_loss": 0.008239279338837058,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2772006873887323,
+     "val_accuracy": 0.6564742589703588
+    },
+    {
+     "epoch": 39,
+     "updates": 1248,
+     "seconds": 39.44,
+     "train_loss": 0.008377539533336162,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2853118641104397,
+     "val_accuracy": 0.6554602184087364
+    },
+    {
+     "epoch": 40,
+     "updates": 1280,
+     "seconds": 40.46,
+     "train_loss": 0.008087015308459549,
+     "train_accuracy": 0.9955,
+     "val_loss": 1.2889231568863426,
+     "val_accuracy": 0.6556942277691108
+    }
+   ],
+   "best_epoch": 8
+  },
+  "defences": [
+   {
+    "defence": "none",
+    "val_loss": 1.2889,
+    "accuracy": 0.6557,
+    "epochs": 40,
+    "best_epoch": 8
+   },
+   {
+    "defence": "L2 1e-5",
+    "val_loss": 1.2984,
+    "accuracy": 0.6302,
+    "epochs": 40,
+    "best_epoch": 7
+   },
+   {
+    "defence": "dropout 0.5",
+    "val_loss": 1.1835,
+    "accuracy": 0.6761,
+    "epochs": 40,
+    "best_epoch": 14
+   },
+   {
+    "defence": "early stopping",
+    "val_loss": 1.0787,
+    "accuracy": 0.6254,
+    "epochs": 11,
+    "best_epoch": 8
+   },
+   {
+    "defence": "all three",
+    "val_loss": 0.9757,
+    "accuracy": 0.6485,
+    "epochs": 17,
+    "best_epoch": 14
+   }
+  ],
+  "learning_curve": [
+   {
+    "names": 1000,
+    "train_accuracy": 0.999,
+    "val_accuracy": 0.6947,
+    "gap": 0.3043,
+    "seconds": 18.1
+   },
+   {
+    "names": 3000,
+    "train_accuracy": 0.9967,
+    "val_accuracy": 0.7433,
+    "gap": 0.2534,
+    "seconds": 30.2
+   },
+   {
+    "names": 10000,
+    "train_accuracy": 0.9908,
+    "val_accuracy": 0.7721,
+    "gap": 0.2187,
+    "seconds": 61.9
+   },
+   {
+    "names": 30000,
+    "train_accuracy": 0.9796,
+    "val_accuracy": 0.7931,
+    "gap": 0.1865,
+    "seconds": 89.4
+   },
+   {
+    "names": 60148,
+    "train_accuracy": 0.9654,
+    "val_accuracy": 0.8001,
+    "gap": 0.1653,
+    "seconds": 170.4
+   }
+  ]
+ },
+ "choice": {
+  "candidates": [
+   {
+    "name": "logistic regression, C = 1",
+    "classifier": "logistic",
+    "C": 1.0,
+    "seconds": 161.3,
+    "runs": [
+     {
+      "rows": 12820,
+      "accuracy": 0.8031,
+      "unpredictable_rows": 0,
+      "log_loss": 0.5814,
+      "coverage": 0.7715,
+      "accuracy_when_answered": 0.902,
+      "auto_accepted": 0.605,
+      "accuracy_when_auto": 0.9578,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2930,
+        "right": 0.4693
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 2134,
+        "right": 0.6992
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1922,
+        "right": 0.8907
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 5834,
+        "right": 0.9799
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.8009,
+        "precision": 0.7451
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.7738,
+        "precision": 0.5509
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8223,
+        "precision": 0.89
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9146,
+        "precision": 0.9803
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.771,
+        "precision": 0.8599
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6944,
+        "precision": 0.693
+       }
+      }
+     }
+    ],
+    "accuracy": 0.8031,
+    "spread": 0.0,
+    "log_loss": 0.5814,
+    "coverage": 0.7715
+   },
+   {
+    "name": "logistic regression, C = 4",
+    "classifier": "logistic",
+    "C": 4.0,
+    "seconds": 156.6,
+    "runs": [
+     {
+      "rows": 12820,
+      "accuracy": 0.8001,
+      "unpredictable_rows": 0,
+      "log_loss": 0.5875,
+      "coverage": 0.8562,
+      "accuracy_when_answered": 0.8684,
+      "auto_accepted": 0.7048,
+      "accuracy_when_auto": 0.9294,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 1843,
+        "right": 0.3934
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1941,
+        "right": 0.5842
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1853,
+        "right": 0.7831
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 7183,
+        "right": 0.9671
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7845,
+        "precision": 0.7701
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.708,
+        "precision": 0.5651
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8382,
+        "precision": 0.8735
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9179,
+        "precision": 0.9728
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7794,
+        "precision": 0.8279
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6854,
+        "precision": 0.6937
+       }
+      }
+     }
+    ],
+    "accuracy": 0.8001,
+    "spread": 0.0,
+    "log_loss": 0.5875,
+    "coverage": 0.8562
+   },
+   {
+    "name": "logistic regression, C = 16",
+    "classifier": "logistic",
+    "C": 16.0,
+    "seconds": 232.2,
+    "runs": [
+     {
+      "rows": 12820,
+      "accuracy": 0.7966,
+      "unpredictable_rows": 0,
+      "log_loss": 0.6585,
+      "coverage": 0.9054,
+      "accuracy_when_answered": 0.8386,
+      "auto_accepted": 0.7788,
+      "accuracy_when_auto": 0.8952,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 1213,
+        "right": 0.3941
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1623,
+        "right": 0.4904
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1641,
+        "right": 0.6587
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 8343,
+        "right": 0.9417
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7752,
+        "precision": 0.777
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.676,
+        "precision": 0.5719
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8428,
+        "precision": 0.8642
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9151,
+        "precision": 0.9692
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7839,
+        "precision": 0.8104
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6754,
+        "precision": 0.6934
+       }
+      }
+     }
+    ],
+    "accuracy": 0.7966,
+    "spread": 0.0,
+    "log_loss": 0.6585,
+    "coverage": 0.9054
+   },
+   {
+    "name": "softmax by backprop (no hidden layer)",
+    "classifier": "neural",
+    "params": {
+     "hidden": [],
+     "learning_rate": 0.01,
+     "batch_size": 256,
+     "epochs": 30,
+     "patience": 3
+    },
+    "seconds": 32.3,
+    "runs": [
+     {
+      "rows": 12820,
+      "accuracy": 0.7849,
+      "unpredictable_rows": 0,
+      "log_loss": 0.6399,
+      "coverage": 0.8427,
+      "accuracy_when_answered": 0.8582,
+      "auto_accepted": 0.6898,
+      "accuracy_when_auto": 0.9248,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2017,
+        "right": 0.3922
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1960,
+        "right": 0.5577
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1761,
+        "right": 0.7621
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 7082,
+        "right": 0.9653
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7892,
+        "precision": 0.6754
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.667,
+        "precision": 0.5542
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8127,
+        "precision": 0.875
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9196,
+        "precision": 0.9626
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7752,
+        "precision": 0.8164
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6844,
+        "precision": 0.6243
+       }
+      }
+     },
+     {
+      "rows": 12820,
+      "accuracy": 0.7847,
+      "unpredictable_rows": 0,
+      "log_loss": 0.64,
+      "coverage": 0.8193,
+      "accuracy_when_answered": 0.867,
+      "auto_accepted": 0.6614,
+      "accuracy_when_auto": 0.933,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2316,
+        "right": 0.4115
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 2025,
+        "right": 0.5906
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1641,
+        "right": 0.7794
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 6838,
+        "right": 0.9699
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7892,
+        "precision": 0.6395
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.6791,
+        "precision": 0.5468
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8165,
+        "precision": 0.8767
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9179,
+        "precision": 0.9637
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.758,
+        "precision": 0.8452
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.7074,
+        "precision": 0.6014
+       }
+      }
+     },
+     {
+      "rows": 12820,
+      "accuracy": 0.7852,
+      "unpredictable_rows": 0,
+      "log_loss": 0.6439,
+      "coverage": 0.8416,
+      "accuracy_when_answered": 0.8591,
+      "auto_accepted": 0.6873,
+      "accuracy_when_auto": 0.9243,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2031,
+        "right": 0.3924
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1978,
+        "right": 0.5688
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1695,
+        "right": 0.7628
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 7116,
+        "right": 0.9628
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7939,
+        "precision": 0.6557
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.6707,
+        "precision": 0.5548
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8144,
+        "precision": 0.8789
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9207,
+        "precision": 0.961
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7682,
+        "precision": 0.8304
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6954,
+        "precision": 0.5998
+       }
+      }
+     }
+    ],
+    "accuracy": 0.7849,
+    "spread": 0.0005,
+    "log_loss": 0.6413,
+    "coverage": 0.8345
+   },
+   {
+    "name": "network, 32 hidden ReLU, dropout 0.5",
+    "classifier": "neural",
+    "params": {
+     "hidden": [
+      32
+     ],
+     "learning_rate": 0.001,
+     "batch_size": 256,
+     "epochs": 30,
+     "patience": 3,
+     "dropout": 0.5,
+     "l2": 1e-05
+    },
+    "seconds": 395.9,
+    "runs": [
+     {
+      "rows": 12820,
+      "accuracy": 0.7808,
+      "unpredictable_rows": 0,
+      "log_loss": 0.6511,
+      "coverage": 0.7812,
+      "accuracy_when_answered": 0.8811,
+      "auto_accepted": 0.6317,
+      "accuracy_when_auto": 0.948,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2805,
+        "right": 0.4228
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1916,
+        "right": 0.5981
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1267,
+        "right": 0.8066
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 6832,
+        "right": 0.9742
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7845,
+        "precision": 0.7395
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.7512,
+        "precision": 0.4986
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.7946,
+        "precision": 0.8784
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9084,
+        "precision": 0.9778
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7462,
+        "precision": 0.849
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6723,
+        "precision": 0.6975
+       }
+      }
+     },
+     {
+      "rows": 12820,
+      "accuracy": 0.782,
+      "unpredictable_rows": 0,
+      "log_loss": 0.6478,
+      "coverage": 0.7971,
+      "accuracy_when_answered": 0.8758,
+      "auto_accepted": 0.6486,
+      "accuracy_when_auto": 0.94,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2601,
+        "right": 0.4133
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1904,
+        "right": 0.5956
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1373,
+        "right": 0.7749
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 6942,
+        "right": 0.9726
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7799,
+        "precision": 0.7335
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.7564,
+        "precision": 0.5017
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.7953,
+        "precision": 0.8872
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.909,
+        "precision": 0.9702
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7468,
+        "precision": 0.8557
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6733,
+        "precision": 0.6713
+       }
+      }
+     },
+     {
+      "rows": 12820,
+      "accuracy": 0.7832,
+      "unpredictable_rows": 0,
+      "log_loss": 0.6366,
+      "coverage": 0.77,
+      "accuracy_when_answered": 0.8902,
+      "auto_accepted": 0.6277,
+      "accuracy_when_auto": 0.9513,
+      "reliability": [
+       {
+        "from": 0.0,
+        "to": 0.55,
+        "rows": 2949,
+        "right": 0.4249
+       },
+       {
+        "from": 0.55,
+        "to": 0.75,
+        "rows": 1824,
+        "right": 0.6206
+       },
+       {
+        "from": 0.75,
+        "to": 0.9,
+        "rows": 1321,
+        "right": 0.8357
+       },
+       {
+        "from": 0.9,
+        "to": 1.0,
+        "rows": 6726,
+        "right": 0.974
+       }
+      ],
+      "per_class": {
+       "Bakery": {
+        "rows": 427,
+        "recall": 0.7869,
+        "precision": 0.7401
+       },
+       "Convenience Store": {
+        "rows": 1901,
+        "recall": 0.7359,
+        "precision": 0.5065
+       },
+       "Fast Food & Restaurant": {
+        "rows": 4153,
+        "recall": 0.8062,
+        "precision": 0.871
+       },
+       "Pharmacy & Health": {
+        "rows": 1791,
+        "recall": 0.9028,
+        "precision": 0.9729
+       },
+       "Retail & General Merchandise": {
+        "rows": 3550,
+        "recall": 0.7527,
+        "precision": 0.8537
+       },
+       "Supermarket & Grocery": {
+        "rows": 998,
+        "recall": 0.6693,
+        "precision": 0.6901
+       }
+      }
+     }
+    ],
+    "accuracy": 0.782,
+    "spread": 0.0024,
+    "log_loss": 0.6452,
+    "coverage": 0.7828
+   }
+  ],
+  "noise": 0.0035,
+  "chosen": "logistic regression, C = 4",
+  "kept_shipped": true,
+  "seed_spread": 0.0024,
+  "sampling_error": 0.0035
+ },
+ "result": {
+  "temperature": 1.18,
+  "calibration_before": {
+   "rows": 12820,
+   "accuracy": 0.8001,
+   "unpredictable_rows": 0,
+   "log_loss": 0.5875,
+   "coverage": 0.8562,
+   "accuracy_when_answered": 0.8684,
+   "auto_accepted": 0.7048,
+   "accuracy_when_auto": 0.9294,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 1843,
+     "right": 0.3934
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 1941,
+     "right": 0.5842
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 1853,
+     "right": 0.7831
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 7183,
+     "right": 0.9671
+    }
+   ],
+   "per_class": {
+    "Bakery": {
+     "rows": 427,
+     "recall": 0.7845,
+     "precision": 0.7701
+    },
+    "Convenience Store": {
+     "rows": 1901,
+     "recall": 0.708,
+     "precision": 0.5651
+    },
+    "Fast Food & Restaurant": {
+     "rows": 4153,
+     "recall": 0.8382,
+     "precision": 0.8735
+    },
+    "Pharmacy & Health": {
+     "rows": 1791,
+     "recall": 0.9179,
+     "precision": 0.9728
+    },
+    "Retail & General Merchandise": {
+     "rows": 3550,
+     "recall": 0.7794,
+     "precision": 0.8279
+    },
+    "Supermarket & Grocery": {
+     "rows": 998,
+     "recall": 0.6854,
+     "precision": 0.6937
+    }
+   }
+  },
+  "calibration_after": {
+   "rows": 12820,
+   "accuracy": 0.8001,
+   "unpredictable_rows": 0,
+   "log_loss": 0.5784,
+   "coverage": 0.8155,
+   "accuracy_when_answered": 0.8852,
+   "auto_accepted": 0.6498,
+   "accuracy_when_auto": 0.9455,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 2365,
+     "right": 0.4237
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 2124,
+     "right": 0.6488
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 2009,
+     "right": 0.8457
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 6322,
+     "right": 0.9772
+    }
+   ],
+   "per_class": {
+    "Bakery": {
+     "rows": 427,
+     "recall": 0.7845,
+     "precision": 0.7701
+    },
+    "Convenience Store": {
+     "rows": 1901,
+     "recall": 0.708,
+     "precision": 0.5651
+    },
+    "Fast Food & Restaurant": {
+     "rows": 4153,
+     "recall": 0.8382,
+     "precision": 0.8735
+    },
+    "Pharmacy & Health": {
+     "rows": 1791,
+     "recall": 0.9179,
+     "precision": 0.9728
+    },
+    "Retail & General Merchandise": {
+     "rows": 3550,
+     "recall": 0.7794,
+     "precision": 0.8279
+    },
+    "Supermarket & Grocery": {
+     "rows": 998,
+     "recall": 0.6854,
+     "precision": 0.6937
+    }
+   }
+  },
+  "test_live": {
+   "rows": 12799,
+   "accuracy": 0.6005,
+   "unpredictable_rows": 2367,
+   "log_loss": 0.6943,
+   "coverage": 0.5345,
+   "accuracy_when_answered": 0.7992,
+   "auto_accepted": 0.3921,
+   "accuracy_when_auto": 0.8218,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 5958,
+     "right": 0.3724
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 1823,
+     "right": 0.7367
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 2846,
+     "right": 0.7488
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 2172,
+     "right": 0.9176
+    }
+   ],
+   "per_class": {
+    "Fast Food & Restaurant": {
+     "rows": 4084,
+     "recall": 0.7933,
+     "precision": 0.5761
+    },
+    "Pharmacy & Health": {
+     "rows": 1775,
+     "recall": 0.8569,
+     "precision": 0.8952
+    },
+    "Retail & General Merchandise": {
+     "rows": 3528,
+     "recall": 0.6307,
+     "precision": 0.6523
+    },
+    "Supermarket & Grocery": {
+     "rows": 1045,
+     "recall": 0.6699,
+     "precision": 0.339
+    }
+   }
+  },
+  "test_shipped": {
+   "rows": 12799,
+   "accuracy": 0.8069,
+   "unpredictable_rows": 0,
+   "log_loss": 0.5664,
+   "coverage": 0.8134,
+   "accuracy_when_answered": 0.8871,
+   "auto_accepted": 0.6562,
+   "accuracy_when_auto": 0.9423,
+   "reliability": [
+    {
+     "from": 0.0,
+     "to": 0.55,
+     "rows": 2388,
+     "right": 0.4569
+    },
+    {
+     "from": 0.55,
+     "to": 0.75,
+     "rows": 2012,
+     "right": 0.6571
+    },
+    {
+     "from": 0.75,
+     "to": 0.9,
+     "rows": 1941,
+     "right": 0.8336
+    },
+    {
+     "from": 0.9,
+     "to": 1.0,
+     "rows": 6458,
+     "right": 0.9749
+    }
+   ],
+   "per_class": {
+    "Bakery": {
+     "rows": 448,
+     "recall": 0.7812,
+     "precision": 0.7479
+    },
+    "Convenience Store": {
+     "rows": 1919,
+     "recall": 0.7024,
+     "precision": 0.5863
+    },
+    "Fast Food & Restaurant": {
+     "rows": 4084,
+     "recall": 0.8416,
+     "precision": 0.8588
+    },
+    "Pharmacy & Health": {
+     "rows": 1775,
+     "recall": 0.9346,
+     "precision": 0.9776
+    },
+    "Retail & General Merchandise": {
+     "rows": 3528,
+     "recall": 0.7985,
+     "precision": 0.8386
+    },
+    "Supermarket & Grocery": {
+     "rows": 1045,
+     "recall": 0.6852,
+     "precision": 0.7351
+    }
+   }
+  },
+  "train_seconds": 509.7
+ },
+ "real_jobs": {
+  "stores": [
+   {
+    "name": "7-Eleven Tacurong New Isabela (3453)",
+    "dispatcher": "Convenience Store",
+    "live": "Supermarket & Grocery",
+    "live_conf": 0.8759,
+    "shipped": "Convenience Store",
+    "shipped_conf": 0.662
+   },
+   {
+    "name": "Jollibee Tacurong DT",
+    "dispatcher": "Fast Food & Restaurant",
+    "live": "Fast Food & Restaurant",
+    "live_conf": 0.8269,
+    "shipped": "Fast Food & Restaurant",
+    "shipped_conf": 0.8904
+   },
+   {
+    "name": "Julie's Bakeshop Mabini-Dona Alicia, Poblacion, Tacurong",
+    "dispatcher": "Bakery",
+    "live": "Fast Food & Restaurant",
+    "live_conf": 0.8357,
+    "shipped": "Bakery",
+    "shipped_conf": 0.8652
+   },
+   {
+    "name": "Kimsan Plaza",
+    "dispatcher": "Retail & General Merchandise",
+    "live": null,
+    "live_conf": 0.3689,
+    "shipped": null,
+    "shipped_conf": 0.4864
+   },
+   {
+    "name": "Mercury Drug - Tacurong City Buenaflor",
+    "dispatcher": "Pharmacy & Health",
+    "live": "Pharmacy & Health",
+    "live_conf": 0.8919,
+    "shipped": "Pharmacy & Health",
+    "shipped_conf": 0.6987
+   },
+   {
+    "name": "Mercury Drug Tacurong Center",
+    "dispatcher": "Pharmacy & Health",
+    "live": "Pharmacy & Health",
+    "live_conf": 0.9764,
+    "shipped": "Pharmacy & Health",
+    "shipped_conf": 0.9883
+   },
+   {
+    "name": "NCCC Supermarket Tacurong City",
+    "dispatcher": "Supermarket & Grocery",
+    "live": "Supermarket & Grocery",
+    "live_conf": 0.9473,
+    "shipped": "Supermarket & Grocery",
+    "shipped_conf": 0.9818
+   },
+   {
+    "name": "Rojon pharmacy",
+    "dispatcher": "Pharmacy & Health",
+    "live": "Pharmacy & Health",
+    "live_conf": 0.9493,
+    "shipped": "Pharmacy & Health",
+    "shipped_conf": 0.9998
+   },
+   {
+    "name": "Wednesday's Cafe",
+    "dispatcher": "Fast Food & Restaurant",
+    "live": "Fast Food & Restaurant",
+    "live_conf": 0.7219,
+    "shipped": "Fast Food & Restaurant",
+    "shipped_conf": 0.6735
+   }
+  ],
+  "items": [
+   {
+    "name": "70% Isopropyl Alcohol",
+    "dispatcher": "Pharmacy & Health",
+    "live": "Pharmacy & Health",
+    "shipped": "Pharmacy & Health",
+    "shipped_conf": 0.9043
+   },
+   {
+    "name": "AA Batteries (4pk)",
+    "dispatcher": "Retail & General Merchandise",
+    "live": "Retail & General Merchandise",
+    "shipped": "Retail & General Merchandise",
+    "shipped_conf": 0.5989
+   },
+   {
+    "name": "Ballpen Set",
+    "dispatcher": "Retail & General Merchandise",
+    "live": "Retail & General Merchandise",
+    "shipped": "Retail & General Merchandise",
+    "shipped_conf": 0.8318
+   },
+   {
+    "name": "Bond Paper (Ream)",
+    "dispatcher": "Retail & General Merchandise",
+    "live": "Retail & General Merchandise",
+    "shipped": "Retail & General Merchandise",
+    "shipped_conf": 0.796
+   },
+   {
+    "name": "Burger & Fries Meal",
+    "dispatcher": "Fast Food & Restaurant",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Fast Food & Restaurant",
+    "shipped_conf": 0.9976
+   },
+   {
+    "name": "coffee",
+    "dispatcher": "Supermarket & Grocery",
+    "live": "Supermarket & Grocery",
+    "shipped": null,
+    "shipped_conf": 0.5338
+   },
+   {
+    "name": "Delight",
+    "dispatcher": "Convenience Store",
+    "live": null,
+    "shipped": null,
+    "shipped_conf": 0.3756
+   },
+   {
+    "name": "Durex ultra thin",
+    "dispatcher": "Convenience Store",
+    "live": null,
+    "shipped": null,
+    "shipped_conf": 0.4258
+   },
+   {
+    "name": "Face Masks (Box)",
+    "dispatcher": "Pharmacy & Health",
+    "live": "Pharmacy & Health",
+    "shipped": "Pharmacy & Health",
+    "shipped_conf": 0.6696
+   },
+   {
+    "name": "Fresh Milk",
+    "dispatcher": "Supermarket & Grocery",
+    "live": "Supermarket & Grocery",
+    "shipped": "Supermarket & Grocery",
+    "shipped_conf": 0.8277
+   },
+   {
+    "name": "Fried Chicken (2pc)",
+    "dispatcher": "Fast Food & Restaurant",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Fast Food & Restaurant",
+    "shipped_conf": 0.9223
+   },
+   {
+    "name": "Gin",
+    "dispatcher": "Convenience Store",
+    "live": "Supermarket & Grocery",
+    "shipped": null,
+    "shipped_conf": 0.5188
+   },
+   {
+    "name": "Jolibee Bucket chicken",
+    "dispatcher": "Fast Food & Restaurant",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Fast Food & Restaurant",
+    "shipped_conf": 0.8736
+   },
+   {
+    "name": "Matcha Latte",
+    "dispatcher": "Fast Food & Restaurant",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Fast Food & Restaurant",
+    "shipped_conf": 0.7675
+   },
+   {
+    "name": "Pandesal (10pcs)",
+    "dispatcher": "Bakery",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Bakery",
+    "shipped_conf": 0.9256
+   },
+   {
+    "name": "pandesal",
+    "dispatcher": "Bakery",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Bakery",
+    "shipped_conf": 0.9256
+   },
+   {
+    "name": "Paracetamol 500mg",
+    "dispatcher": "Pharmacy & Health",
+    "live": "Pharmacy & Health",
+    "shipped": "Pharmacy & Health",
+    "shipped_conf": 0.8613
+   },
+   {
+    "name": "Rice (5kg)",
+    "dispatcher": "Supermarket & Grocery",
+    "live": "Supermarket & Grocery",
+    "shipped": "Supermarket & Grocery",
+    "shipped_conf": 0.678
+   },
+   {
+    "name": "Robust Extreme",
+    "dispatcher": "Pharmacy & Health",
+    "live": null,
+    "shipped": null,
+    "shipped_conf": 0.3584
+   },
+   {
+    "name": "Robust extreme",
+    "dispatcher": "Convenience Store",
+    "live": null,
+    "shipped": null,
+    "shipped_conf": 0.3584
+   },
+   {
+    "name": "Rose Pharmancy Lozartan",
+    "dispatcher": "Pharmacy & Health",
+    "live": null,
+    "shipped": null,
+    "shipped_conf": 0.2996
+   },
+   {
+    "name": "Sliced Bread",
+    "dispatcher": "Bakery",
+    "live": null,
+    "shipped": "Bakery",
+    "shipped_conf": 0.945
+   },
+   {
+    "name": "Spanish Bread",
+    "dispatcher": "Bakery",
+    "live": "Fast Food & Restaurant",
+    "shipped": "Bakery",
+    "shipped_conf": 0.9531
+   },
+   {
+    "name": "Super redhorse",
+    "dispatcher": "Supermarket & Grocery",
+    "live": null,
+    "shipped": null,
+    "shipped_conf": 0.3968
+   },
+   {
+    "name": "Tanduay 1 L",
+    "dispatcher": "Supermarket & Grocery",
+    "live": "Supermarket & Grocery",
+    "shipped": "Supermarket & Grocery",
+    "shipped_conf": 0.5927
+   },
+   {
+    "name": "Tuna Bread",
+    "dispatcher": "Bakery",
+    "live": "Supermarket & Grocery",
+    "shipped": "Bakery",
+    "shipped_conf": 0.7891
+   }
+  ],
+  "crawl": {
+   "places": 121,
+   "auto_accepted": 87,
+   "needs_review": 34,
+   "no_category": 5,
+   "model_agrees_with_mappers": "97 of 101",
+   "by_category": {
+    "Retail & General Merchandise": 46,
+    "Fast Food & Restaurant": 31,
+    "Pharmacy & Health": 19,
+    "Bakery": 9,
+    "Convenience Store": 6,
+    "(none)": 5,
+    "Supermarket & Grocery": 5
+   }
+  }
+ },
+ "seconds": 4152
+}

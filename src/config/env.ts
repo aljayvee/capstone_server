@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 // Ensure required environment variables exist (Fail fast per security standards)
 if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
@@ -55,6 +55,16 @@ export const REFRESH_SESSION_TTL_MS = parseDurationMs(
 export const REFRESH_ROTATION_GRACE_MS = Number(
   process.env.REFRESH_ROTATION_GRACE_MS || 10_000
 );
+
+// Cookie domain for cross-subdomain sessions (e.g. ".sugo-express.org" so both
+// sugo-express.org and api.sugo-express.org share the refresh cookie).
+export const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+
+// When true or in production with a cross-domain/cross-subdomain architecture,
+// cookies are issued with SameSite=None and Secure=true so modern browsers
+// attach the credentials on cross-origin AJAX refresh calls.
+export const CROSS_SITE_COOKIES =
+  process.env.CROSS_SITE_COOKIES === "true" || process.env.NODE_ENV === "production";
 
 // Signs the pre-authentication login-challenge token (see loginChallengeService).
 // It MUST NOT be JWT_SECRET: middleware/auth.ts verifies bearer tokens with
@@ -141,6 +151,22 @@ export const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 // since it needs no external service — see lib/routing/haversineProvider.ts.
 export const OSRM_BASE_URL = process.env.OSRM_BASE_URL || "";
 
+// Optional hard cap on how far past the service-area border a dispatcher may
+// pin a store, in km. Unset (the default) lets the loaded OSRM graph decide:
+// anything the road graph covers may be pinned with a warning, anything it
+// does not is refused. See services/storeLocationGuard.ts.
+const storePinCap = Number(process.env.STORE_PIN_MAX_KM_BEYOND_BORDER);
+export const STORE_PIN_MAX_KM_BEYOND_BORDER: number | null =
+  Number.isFinite(storePinCap) && storePinCap > 0 ? storePinCap : null;
+
+// Fastest a rider is assumed to travel on any stretch of road, in km/h. OSRM's
+// stock car profile allows 85 km/h on trunk roads, which made a 53 km Banga to
+// Tacurong run read 50 minutes; nobody rides a motorcycle through barangay
+// traffic at that average. Durations only: distances, and so fares, never use it.
+// 0 disables the cap. See lib/routing/speedCap.ts.
+const routeMaxSpeed = Number(process.env.ROUTE_MAX_SPEED_KMH ?? 60);
+export const ROUTE_MAX_SPEED_KMH = Number.isFinite(routeMaxSpeed) && routeMaxSpeed >= 0 ? routeMaxSpeed : 60;
+
 // Google Cloud Vision, used to read photographed store receipts (see lib/ocr/).
 // Deliberately a separate key from GOOGLE_MAPS_API_KEY and scoped to the Vision
 // API alone: if it leaks, the exposure is OCR calls rather than everything the
@@ -168,6 +194,15 @@ export const CATEGORY_SERVICE_URL = (process.env.CATEGORY_SERVICE_URL || "").rep
 // already picked the category by hand is worse than no guess at all.
 export const CATEGORY_SERVICE_TIMEOUT_MS =
   Number(process.env.CATEGORY_SERVICE_TIMEOUT_MS) || 1500;
+
+// The Conflict Management second opinion (POST /advise). Longer than the
+// category budget because a dispatcher pressed "Generate suggestion" and is
+// watching its spinner, and the service may try Gemini and then Gemma behind it.
+// Each gets under half (adviseChoice): 4.75 s, over Gemini 3.8 Flash's 90th
+// percentile of 3.5 s for one question (ml/exception-reasons/GEMINI.md). The
+// usual wait is about 2 s; 10 s is the worst case, both models slow.
+export const CATEGORY_ADVICE_TIMEOUT_MS =
+  Number(process.env.CATEGORY_ADVICE_TIMEOUT_MS) || 10000;
 
 // Straight-line distance under-states real road distance. Both constants below
 // were measured, not guessed: six real Tacurong POI pairs from prisma/seedPlaces.ts

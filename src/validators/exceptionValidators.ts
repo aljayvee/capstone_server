@@ -33,3 +33,13 @@ export const resolveExceptionSchema = z.object({
 });
 
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;
+
+/**
+ * Asking for a suggested reason. Wider than EXCEPTION_KINDS: a suggestion
+ * records nothing, so every kind the queue can show may ask for one.
+ */
+export const reasonSuggestionQuerySchema = z.object({
+  kind: z.enum([...EXCEPTION_KINDS, "OVERAGE_PENDING", "UNPAID_BALANCE"]),
+  // Which row, when an errand has two exceptions of one kind.
+  occurredAt: z.coerce.date().optional(),
+});

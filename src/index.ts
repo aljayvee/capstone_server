@@ -7,6 +7,8 @@ import cookieParser from "cookie-parser";
 import http from "http";
 
 import { io } from "./lib/socket.js";
+import { registerRiderLocationChannel } from "./lib/riderLocationBroadcast.js";
+import { registerRiderLiveLink } from "./lib/riderLiveLink.js";
 import { logger } from "./lib/logger.js";
 import { isEmailConfigured } from "./lib/mailer.js";
 import { PORT, ALLOWED_ORIGINS } from "./config/env.js";
@@ -14,14 +16,18 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { schedulePruneBlocklistJob } from "./jobs/pruneBlocklist.js";
 import { scheduleRiderStatusSnapshotJob } from "./jobs/riderStatusSnapshot.js";
 import { scheduleDwellLearningJob } from "./jobs/dwellLearning.js";
+import { scheduleNightlyBackupJob } from "./jobs/nightlyBackup.js";
+import { scheduleRiderShiftJobs } from "./jobs/riderShiftJobs.js";
+import { scheduleCategoryRetrainingJob } from "./jobs/categoryRetraining.js";
+import { threatInterceptor } from "./middleware/threatInterceptor.js";
+import { sysAdminThreatService } from "./services/sysAdminThreatService.js";
 import apiRoutes from "./routes/index.js";
 
 const app = express();
 
-// Behind a reverse proxy (Cloudflare Tunnel / nginx) the client IP arrives in
-// X-Forwarded-For. Without this, express-rate-limit throws ValidationError and
-// every rate-limited route fails for mobile clients.
-app.set("trust proxy", 1);
+// Behind a multi-hop reverse proxy (Cloudflare Anycast -> Nginx -> Express),
+// trust proxy must trust the upstream chain so req.ip reflects the real client.
+app.set("trust proxy", true);
 
 app.use(helmet());
 
@@ -45,13 +51,25 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// Early threat defense & directory probe interception
+app.use(threatInterceptor);
+
+app.use(express.json({ limit: "30mb" }));
+app.use(express.urlencoded({ extended: true, limit: "30mb" }));
 app.use(cookieParser());
 
 // Initialize HTTP Server and attach the shared Socket.IO singleton (lib/socket.ts)
 const httpServer = http.createServer(app);
 io.attach(httpServer);
+// Live rider positions over Socket.IO, alongside the Firebase RTDB feed.
+registerRiderLocationChannel();
+// One-second rider heartbeat over the same sockets (signal loss in ~3 s).
+registerRiderLiveLink();
+
+// Robots exclusion standard for API Gateway (Crawlers must not index API endpoints)
+app.get("/robots.txt", (_req, res) => {
+  res.type("text/plain").send("User-agent: *\nDisallow: /\n");
+});
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -128,10 +146,19 @@ app.use(errorHandler);
 schedulePruneBlocklistJob();
 scheduleRiderStatusSnapshotJob();
 scheduleDwellLearningJob();
+scheduleNightlyBackupJob();
+scheduleRiderShiftJobs();
+scheduleCategoryRetrainingJob();
 
 // Start HTTP Server (which includes Express and Socket.IO)
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   logger.info(`Backend Server running on http://0.0.0.0:${PORT}`);
+
+  // Initialize SysAdmin Dual-Tier Threat Cache and IP Defense
+  sysAdminThreatService.initThreatEngine().catch((err) => {
+    logger.error("Failed to initialize SysAdmin threat engine:", err);
+  });
+
   // Staff first-login verification cannot complete without outbound mail, so a
   // missing SMTP config is worth saying out loud at boot rather than letting it
   // surface as a mysterious 503 the first time someone new signs in.

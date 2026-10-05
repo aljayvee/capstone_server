@@ -6,7 +6,13 @@ import {
   triggerDatabaseBackupSnapshot,
   listItAdministrators,
   createItAdministrator,
+  restartService,
+  getServerErrorStatus,
+  setServerErrorStatus,
 } from "../services/sysAdminDevOpsService.js";
+import { sysAdminBackupService } from "../services/sysAdminBackupService.js";
+import { sysAdminLogService, type LogSource } from "../services/sysAdminLogService.js";
+import { sysAdminAlertService } from "../services/sysAdminAlertService.js";
 import { ServiceError } from "../services/ServiceError.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 
@@ -25,7 +31,7 @@ export async function getTelemetryHandler(req: AuthenticatedRequest, res: Respon
 
 export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: Response) {
   try {
-    const { portal, active, notice } = req.body;
+    const { portal, active, notice, maintenanceType, header, message, supportContact, customColor } = req.body;
     const validPortals = ["owner", "dispatcher", "rider", "customer"];
     if (!portal || !validPortals.includes(portal)) {
       return res.status(400).json({ error: `Property 'portal' must be one of: ${validPortals.join(", ")}.` });
@@ -33,8 +39,25 @@ export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: R
     if (typeof active !== "boolean") {
       return res.status(400).json({ error: "Property 'active' must be a boolean." });
     }
-    const result = toggleMaintenanceMode(portal, active, notice);
-    return res.status(200).json({ portal, ...result });
+    const validTypes = ["SCHEDULED", "EMERGENCY", "UPGRADE", "SECURITY"];
+    if (maintenanceType && !validTypes.includes(maintenanceType)) {
+      return res.status(400).json({ error: `Property 'maintenanceType' must be one of: ${validTypes.join(", ")}.` });
+    }
+
+    const operator = req.user?.username || req.user?.email || "Administrator";
+    const result = await toggleMaintenanceMode(
+      portal,
+      active,
+      {
+        maintenanceType,
+        header,
+        message: message || notice,
+        supportContact,
+        customColor,
+      },
+      operator
+    );
+    return res.status(200).json(result);
   } catch (err: unknown) {
     if (err instanceof ServiceError) {
       return res.status(err.status).json({ error: err.message });
@@ -54,10 +77,39 @@ export function getPublicMaintenanceStatusHandler(req: AuthenticatedRequest, res
   return res.status(200).json(status);
 }
 
+// Public endpoint — no auth required — for login screen error overlay check
+export function getServerErrorStatusHandler(req: AuthenticatedRequest, res: Response) {
+  const active = getServerErrorStatus();
+  return res.status(200).json({ active });
+}
+
+// SysAdmin mutation endpoint — toggles simulated 500 error overlay
+export async function toggleServerErrorHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { active } = req.body;
+    if (typeof active !== "boolean") {
+      return res.status(400).json({ error: "Property 'active' must be a boolean." });
+    }
+    const operator = req.user?.username || req.user?.email || "Administrator";
+    const result = await setServerErrorStatus(active, operator);
+    return res.status(200).json({
+      active: result.active,
+      message: result.active
+        ? "500 Server Error simulation activated on login screen."
+        : "500 Server Error simulation deactivated.",
+    });
+  } catch (err: unknown) {
+    if (err instanceof ServiceError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return res.status(500).json({ error: "Failed to update 500 server error status." });
+  }
+}
+
 
 export async function triggerBackupHandler(req: AuthenticatedRequest, res: Response) {
   try {
-    const result = await triggerDatabaseBackupSnapshot();
+    const result = await triggerDatabaseBackupSnapshot(req.user?.id);
     return res.status(200).json(result);
   } catch (err: unknown) {
     if (err instanceof ServiceError) {
@@ -91,3 +143,98 @@ export async function createItAdminHandler(req: AuthenticatedRequest, res: Respo
     return res.status(500).json({ error: message });
   }
 }
+
+export async function restartServiceHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { service } = req.params;
+    if (service !== "backend" && service !== "nginx") {
+      return res.status(400).json({ error: "Invalid service identifier. Supported: backend, nginx." });
+    }
+    const adminUsername = req.user?.username || "sysadmin";
+    const result = await restartService(service, adminUsername);
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    if (err instanceof ServiceError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    const message = err instanceof Error ? err.message : "Failed to restart service.";
+    return res.status(500).json({ error: message });
+  }
+}
+
+export async function listBackupsHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const backups = await sysAdminBackupService.listBackups();
+    return res.status(200).json({ backups });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to list backups.";
+    return res.status(500).json({ error: message });
+  }
+}
+
+export async function downloadBackupHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const { filePath, fileName } = await sysAdminBackupService.getBackupDownloadPath(id);
+    return res.download(filePath, fileName);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Backup not found or inaccessible.";
+    return res.status(404).json({ error: message });
+  }
+}
+
+export async function deleteBackupHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const backupId = Number(id);
+    if (isNaN(backupId)) {
+      return res.status(400).json({ error: "Invalid backup ID." });
+    }
+    const result = await sysAdminBackupService.deleteBackup(backupId);
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to delete backup.";
+    return res.status(500).json({ error: message });
+  }
+}
+
+export async function getLogsHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const source = (req.query.source as LogSource) || "pm2_out";
+    const validSources: LogSource[] = ["pm2_out", "pm2_error", "nginx_access", "nginx_error"];
+    if (!validSources.includes(source)) {
+      return res.status(400).json({ error: `Query param 'source' must be one of: ${validSources.join(", ")}.` });
+    }
+
+    const lines = req.query.lines ? parseInt(req.query.lines as string, 10) : 100;
+    const search = typeof req.query.search === "string" ? req.query.search : undefined;
+
+    const result = await sysAdminLogService.getTailLogs(source, lines, search);
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to read system logs.";
+    return res.status(500).json({ error: message });
+  }
+}
+
+export async function getAlertStatusHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const status = await sysAdminAlertService.getAlertStatus();
+    return res.status(200).json(status);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch alert configuration.";
+    return res.status(500).json({ error: message });
+  }
+}
+
+export async function sendTestAlertHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const adminUsername = req.user?.username || "sysadmin";
+    const result = await sysAdminAlertService.sendTestAlert(adminUsername);
+    return res.status(result.success ? 200 : 500).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to dispatch test alert.";
+    return res.status(500).json({ error: message });
+  }
+}
+

@@ -16,6 +16,7 @@ import routingRoutes from "./routingRoutes.js";
 import placeRoutes from "./placeRoutes.js";
 import sysAdminRoutes from "./sysAdminRoutes.js";
 import categoryInferenceRoutes from "./categoryInferenceRoutes.js";
+import catalogRoutes from "./catalogRoutes.js";
 
 const router = Router();
 
@@ -36,5 +37,6 @@ router.use("/connectivity-incidents", connectivityIncidentRoutes);
 router.use("/routing", routingRoutes);
 router.use("/places", placeRoutes);
 router.use("/category-inference", categoryInferenceRoutes);
+router.use("/catalog", catalogRoutes);
 
 export default router;

@@ -26,6 +26,7 @@ export function addSocket(riderId: number, socketId: string): boolean {
     socketsByRider.set(riderId, sockets);
   }
   sockets.add(socketId);
+  lastDisconnectedAt.delete(riderId);
   return !wasOnline;
 }
 

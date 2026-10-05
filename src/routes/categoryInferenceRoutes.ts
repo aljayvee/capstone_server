@@ -3,6 +3,7 @@ import {
   inferItemCategories,
   inferStoreCategory,
   suggestItemPlacements,
+  predictStores,
 } from "../controllers/categoryInferenceController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { userApiLimiter } from "../middleware/rateLimiters.js";
@@ -46,6 +47,19 @@ router.post(
   requireRole(["DISPATCHER", "OWNER"]),
   userApiLimiter,
   suggestItemPlacements
+);
+
+/**
+ * Store prediction from the step 1 item list, for step 3. Errand-scoped
+ * because the answer depends on where THIS customer is and what is already
+ * pinned, and because the errand never learns from its own filings.
+ */
+router.post(
+  "/errands/:errandId/store-predictions",
+  authenticateToken,
+  requireRole(["DISPATCHER", "OWNER"]),
+  userApiLimiter,
+  predictStores
 );
 
 export default router;

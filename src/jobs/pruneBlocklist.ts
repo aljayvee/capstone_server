@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { tokenBlocklistRepository } from "../repositories/tokenBlocklistRepository.js";
 import * as sessionService from "../services/sessionService.js";
+import { sysAdminThreatService } from "../services/sysAdminThreatService.js";
 import { logger } from "../lib/logger.js";
 
 // Hourly sweep of expired TokenBlocklist rows — nothing else ever deletes from
@@ -26,6 +27,13 @@ export function schedulePruneBlocklistJob() {
       }
     } catch (error) {
       logger.error("Failed to prune expired user_sessions rows:", error);
+    }
+
+    // Prune expired IP bans from tbl_blocked_ips and memory cache
+    try {
+      await sysAdminThreatService.pruneExpiredBans();
+    } catch (error) {
+      logger.error("Failed to prune expired IP bans:", error);
     }
   });
 }

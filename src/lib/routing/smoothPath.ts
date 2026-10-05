@@ -4,115 +4,174 @@ import { haversineDistanceKm, type GeoPoint } from "../geo.js";
  * Rounds the corners of a route line so it curves through a turn.
  *
  * The geometry OSRM returns already follows the road: a 7 km Tacurong route
- * comes back as 133 points at 43 m median spacing, and the handful of sharp
- * vertices in it are real street corners. Drawn as-is, those corners are hard
- * angles. A delivery map is expected to sweep through them, which is a
+ * comes back as 133 points at 43 m median spacing, and the sharp vertices in it
+ * are real street corners. Drawn as-is, those corners are hard angles, and a
+ * highway bend (a chain of 5-10 degree kinks, one per OSM node) reads as a
+ * faceted zigzag. A delivery map is expected to sweep through both, which is a
  * rendering convention rather than better data — so it is applied here, once,
  * for every client rather than reimplemented per map.
  *
- * The cut is capped at a fraction of each adjacent segment, and that cap is the
- * whole reason this is safe. Chaikin's algorithm — the usual answer — cuts at a
- * flat 25% of every segment, which on the 290 m straights this very route
- * contains would pull the drawn line some 70 m off the carriageway. Bounding the
- * cut keeps the curve inside a lane while still reading as a curve.
+ * ## Circular fillets, sized by how far the line may leave the road
+ *
+ * Every bend is replaced by a true circular arc tangent to both road segments,
+ * so a 90-degree street corner draws as a clean quarter circle and a highway
+ * curve as one continuous sweep. The fillet size comes from a single rule: the
+ * drawn line may never stray more than MAX_OFFSET_METERS from the road's
+ * centreline. That one rule does the right thing at both extremes:
+ *
+ * - A 90-degree corner may only pull ~3.5 m inside the junction, which gives a
+ *   fillet of about 8.5 m radius: visibly a curve, and about where a rider
+ *   actually takes the turn.
+ * - A 6-degree highway kink moves the line barely a metre however long its
+ *   fillet is, so the fillet can span most of both neighbouring segments, and
+ *   the arcs of consecutive kinks meet end to end into one smooth curve that
+ *   still sits on the carriageway.
+ *
+ * The previous version drew quadratic Béziers capped at 10 m and skipped any
+ * bend under 15 degrees. Every highway curve was a run of sub-15-degree kinks,
+ * so none of them were smoothed at all.
  *
  * Never used for measurement. Distance and duration stay exactly as the routing
  * engine reported them; this changes only what is drawn.
  */
 
 /**
- * How far back from a corner the curve begins, at most.
+ * The furthest the drawn line may sit from the road centreline, in metres.
  *
- * Ten metres, not three. Three was safe to the point of being invisible: on a
- * 90-degree turn a quadratic Bézier passes about 0.35 x this distance inside the
- * corner, so a 3 m radius moved the drawn line barely a metre — well under a
- * pixel at the zoom the rider actually navigates at, which left every junction
- * looking like a hard mitred angle. Ten puts the sweep at roughly a lane width
- * inside the corner, which is both visible and about where a rider genuinely
- * takes the turn.
- *
- * MAX_SEGMENT_SHARE below is what keeps this safe as the radius grows: on a
- * short block the cut collapses to a fraction of the block regardless of this
- * number, so a big radius cannot swallow a small street.
+ * Half of a 7 m two-lane carriageway: the curve stays inside the road the rider
+ * is on. This is the guarantee the "exact alignment" requirement rests on, and
+ * the tests hold the implementation to it on a real route.
  */
-export const TURN_RADIUS_METERS = 10;
+export const MAX_OFFSET_METERS = 3.5;
 
 /**
- * Never consume more than this share of a segment, so a curve cannot swallow a
- * short block whole and cut the corner off the road entirely.
+ * The longest a single fillet may run along either segment, in metres.
+ *
+ * Only reached on gentle bends between long segments, where the offset rule
+ * alone would allow a curve hundreds of metres long. Past this length a curve
+ * reads as a road drawn in the wrong place rather than as a smoothed one.
  */
-const MAX_SEGMENT_SHARE = 0.15;
-
-/** Below this the vertex is not a turn, and rounding it would only add points. */
-const MIN_TURN_DEGREES = 15;
+const MAX_TANGENT_METERS = 40;
 
 /**
- * Points drawn along each corner.
+ * The share of a segment each end's fillet may consume.
  *
- * Six rather than four, because the arc is now long enough for four to read as
- * two visible facets instead of a curve. Two extra points per corner — on a
- * route with a dozen turns that is 24 points, against the ~130 the engine
- * already returns.
+ * Half, so the fillets at the two ends of a segment can meet but never overlap.
+ * That meeting point is where consecutive highway kinks join into one curve.
  */
-const ARC_STEPS = 6;
+const MAX_SEGMENT_SHARE = 0.5;
+
+/** Below this the vertex is not a bend worth drawing; it is passed through as-is. */
+const MIN_DEFLECTION_DEGREES = 2;
+
+/**
+ * Beyond this the vertex is a turnaround, not a corner, and has no meaningful
+ * fillet. It is kept exactly, since a rounded U-turn would draw the line across
+ * the median.
+ */
+const MAX_DEFLECTION_DEGREES = 170;
+
+/** Angular resolution of each arc: a 90-degree corner gets 12 facets. */
+const DEGREES_PER_ARC_STEP = 7.5;
+
+const EARTH_METRES_PER_DEGREE = 111_195;
+
+interface Vec {
+  x: number;
+  y: number;
+}
+
+/**
+ * A small local plane in metres, centred on one vertex.
+ *
+ * Equirectangular about the vertex. Over the ≤40 m a fillet ever spans, the
+ * error against a true geodesic is well under a millimetre, and working in
+ * metres is what makes "3.5 m from the centreline" something the arithmetic can
+ * actually honour — in raw degrees, longitude is compressed by latitude and an
+ * east-west turn would measure shallower than it is.
+ */
+function localPlane(origin: GeoPoint) {
+  const lngScale = EARTH_METRES_PER_DEGREE * Math.cos((origin.latitude * Math.PI) / 180);
+  return {
+    toPlane: (point: GeoPoint): Vec => ({
+      x: (point.longitude - origin.longitude) * lngScale,
+      y: (point.latitude - origin.latitude) * EARTH_METRES_PER_DEGREE,
+    }),
+    toGeo: (vec: Vec): GeoPoint => ({
+      latitude: origin.latitude + vec.y / EARTH_METRES_PER_DEGREE,
+      longitude: origin.longitude + vec.x / lngScale,
+    }),
+  };
+}
 
 const metresBetween = (a: GeoPoint, b: GeoPoint) => haversineDistanceKm(a, b) * 1000;
 
 /**
- * A point `metres` along the way from `from` toward `to`.
+ * The circular arc replacing the corner at `vertex`, or null to keep the vertex.
  *
- * Linear in lat/lng rather than a true geodesic step: over the ≤12 m this is
- * ever asked for, the difference is millimetres.
+ * Returned points run from the tangent point on the incoming segment to the one
+ * on the outgoing segment, both inclusive.
  */
-function stepToward(from: GeoPoint, to: GeoPoint, metres: number): GeoPoint {
-  const length = metresBetween(from, to);
-  if (length === 0) return { latitude: from.latitude, longitude: from.longitude };
+function filletAt(
+  before: GeoPoint,
+  vertex: GeoPoint,
+  after: GeoPoint,
+  maxOffsetMeters: number
+): GeoPoint[] | null {
+  const plane = localPlane(vertex);
+  const a = plane.toPlane(before);
+  const b = plane.toPlane(after);
 
-  const t = Math.min(1, metres / length);
-  return {
-    latitude: from.latitude + (to.latitude - from.latitude) * t,
-    longitude: from.longitude + (to.longitude - from.longitude) * t,
-  };
-}
+  const incoming = Math.hypot(a.x, a.y);
+  const outgoing = Math.hypot(b.x, b.y);
+  if (incoming === 0 || outgoing === 0) return null;
 
-/** Interior angle at `vertex`, in degrees. 180 is dead straight. */
-function turnAngleDegrees(before: GeoPoint, vertex: GeoPoint, after: GeoPoint): number {
-  // Longitude is compressed by latitude; without correcting for it an
-  // east-west turn measures shallower than it is. Tacurong sits near the
-  // equator where the factor is close to 1, but the code should not depend on
-  // where it happens to be deployed.
-  const scale = Math.cos((vertex.latitude * Math.PI) / 180);
+  // Direction of travel into and out of the vertex.
+  const inDir = { x: -a.x / incoming, y: -a.y / incoming };
+  const outDir = { x: b.x / outgoing, y: b.y / outgoing };
 
-  const ax = (before.longitude - vertex.longitude) * scale;
-  const ay = before.latitude - vertex.latitude;
-  const bx = (after.longitude - vertex.longitude) * scale;
-  const by = after.latitude - vertex.latitude;
+  const cross = inDir.x * outDir.y - inDir.y * outDir.x;
+  const dot = Math.min(1, Math.max(-1, inDir.x * outDir.x + inDir.y * outDir.y));
+  const deflection = Math.acos(dot);
+  const deflectionDegrees = (deflection * 180) / Math.PI;
 
-  const magA = Math.hypot(ax, ay);
-  const magB = Math.hypot(bx, by);
-  if (magA === 0 || magB === 0) return 180;
-
-  const cosine = Math.min(1, Math.max(-1, (ax * bx + ay * by) / (magA * magB)));
-  return (Math.acos(cosine) * 180) / Math.PI;
-}
-
-/** Quadratic Bézier from `start` to `end`, bending toward `control`. */
-function arc(start: GeoPoint, control: GeoPoint, end: GeoPoint): GeoPoint[] {
-  const points: GeoPoint[] = [];
-
-  for (let step = 0; step <= ARC_STEPS; step++) {
-    const t = step / ARC_STEPS;
-    const inverse = 1 - t;
-    const a = inverse * inverse;
-    const b = 2 * inverse * t;
-    const c = t * t;
-
-    points.push({
-      latitude: a * start.latitude + b * control.latitude + c * end.latitude,
-      longitude: a * start.longitude + b * control.longitude + c * end.longitude,
-    });
+  if (deflectionDegrees < MIN_DEFLECTION_DEGREES || deflectionDegrees > MAX_DEFLECTION_DEGREES) {
+    return null;
   }
 
+  // For a fillet with tangent length T through deflection δ, the arc's midpoint
+  // sits T·tan(δ/4) from the corner, so bounding that by the offset budget
+  // bounds T. The other two caps keep it inside its own segments.
+  const tangent = Math.min(
+    maxOffsetMeters / Math.tan(deflection / 4),
+    MAX_TANGENT_METERS,
+    incoming * MAX_SEGMENT_SHARE,
+    outgoing * MAX_SEGMENT_SHARE
+  );
+  if (!(tangent > 0)) return null;
+
+  const radius = tangent / Math.tan(deflection / 2);
+  const turn = cross >= 0 ? 1 : -1; // +1 left, -1 right
+
+  const start = { x: -inDir.x * tangent, y: -inDir.y * tangent };
+  // The centre lies off the incoming segment on the inside of the turn.
+  const centre = {
+    x: start.x + turn * -inDir.y * radius,
+    y: start.y + turn * inDir.x * radius,
+  };
+  const startAngle = Math.atan2(start.y - centre.y, start.x - centre.x);
+
+  const steps = Math.max(2, Math.ceil(deflectionDegrees / DEGREES_PER_ARC_STEP));
+  const points: GeoPoint[] = [];
+  for (let step = 0; step <= steps; step++) {
+    const angle = startAngle + turn * deflection * (step / steps);
+    points.push(
+      plane.toGeo({
+        x: centre.x + radius * Math.cos(angle),
+        y: centre.y + radius * Math.sin(angle),
+      })
+    );
+  }
   return points;
 }
 
@@ -120,43 +179,37 @@ function arc(start: GeoPoint, control: GeoPoint, end: GeoPoint): GeoPoint[] {
  * Returns the same path with its corners rounded.
  *
  * Endpoints are preserved exactly — a route must still start where the rider is
- * and end at the customer's door. Straight runs come back untouched.
+ * and end at the customer's door. Straight runs come back untouched, and a
+ * `maxOffsetMeters` of zero returns the path unchanged.
  */
-export function smoothPath(path: GeoPoint[], radiusMeters = TURN_RADIUS_METERS): GeoPoint[] {
-  if (!Array.isArray(path) || path.length < 3 || radiusMeters <= 0) {
+export function smoothPath(path: GeoPoint[], maxOffsetMeters = MAX_OFFSET_METERS): GeoPoint[] {
+  if (!Array.isArray(path) || path.length < 3 || !(maxOffsetMeters > 0)) {
     return Array.isArray(path) ? [...path] : [];
   }
 
-  const smoothed: GeoPoint[] = [path[0]];
-
-  for (let i = 1; i < path.length - 1; i++) {
-    const before = path[i - 1];
-    const vertex = path[i];
-    const after = path[i + 1];
-
-    const incoming = metresBetween(before, vertex);
-    const outgoing = metresBetween(vertex, after);
-
-    // A duplicated point has no direction to turn through; drop it rather than
-    // emitting a degenerate arc.
-    if (incoming === 0 || outgoing === 0) continue;
-
-    if (turnAngleDegrees(before, vertex, after) > 180 - MIN_TURN_DEGREES) {
-      smoothed.push(vertex);
-      continue;
-    }
-
-    const cut = Math.min(
-      radiusMeters,
-      incoming * MAX_SEGMENT_SHARE,
-      outgoing * MAX_SEGMENT_SHARE
-    );
-
-    smoothed.push(
-      ...arc(stepToward(vertex, before, cut), vertex, stepToward(vertex, after, cut))
-    );
+  // A duplicated point has no direction to turn through. Dropped up front so
+  // every vertex the loop sees has a real segment on each side.
+  const cleaned: GeoPoint[] = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    if (metresBetween(cleaned[cleaned.length - 1], path[i]) > 0) cleaned.push(path[i]);
   }
+  if (cleaned.length < 3) return cleaned;
 
-  smoothed.push(path[path.length - 1]);
+  const smoothed: GeoPoint[] = [cleaned[0]];
+  // Two fillets that each take half of the segment between them meet at the
+  // same point; emitting it twice would draw a zero-length segment.
+  const append = (point: GeoPoint) => {
+    const last = smoothed[smoothed.length - 1];
+    if (metresBetween(last, point) > 0.01) smoothed.push(point);
+  };
+
+  for (let i = 1; i < cleaned.length - 1; i++) {
+    const arc = filletAt(cleaned[i - 1], cleaned[i], cleaned[i + 1], maxOffsetMeters);
+    (arc ?? [cleaned[i]]).forEach(append);
+  }
+  // Pushed directly so the endpoint is the original coordinate object, exact.
+  const end = cleaned[cleaned.length - 1];
+  if (smoothed.length > 1 && metresBetween(smoothed[smoothed.length - 1], end) <= 0.01) smoothed.pop();
+  smoothed.push(end);
   return smoothed;
 }

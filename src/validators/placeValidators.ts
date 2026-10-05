@@ -12,3 +12,9 @@ export const placeCreateSchema = z.object({
 });
 
 export const placeUpdateSchema = placeCreateSchema.partial();
+
+/** A spot a dispatcher is about to pin a store at. */
+export const storeLocationCheckSchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+});

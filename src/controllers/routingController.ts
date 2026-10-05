@@ -9,7 +9,29 @@ import { directionsSchema } from "../validators/routingValidators.js";
 // selection, caching, fallback, and polyline decoding live in
 // services/routingService.ts + lib/routing/ — this only parses and responds.
 export const getDirections = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const { origin, destination, waypoints } = parseOrThrow(directionsSchema, req.body);
-  const result = await routingService.getDirections(origin, destination, waypoints ?? []);
+  const {
+    origin,
+    destination,
+    waypoints,
+    provider,
+    choose,
+    keep,
+    errandId,
+    originHeading,
+    originSpeedMps,
+    originAccuracyMeters,
+  } = parseOrThrow(directionsSchema, req.body);
+  const result = await routingService.getDirections(origin, destination, waypoints ?? [], {
+    prefer: provider,
+    choose,
+    keep,
+    errandId,
+    origin: routingService.originHintFor({
+      heading: originHeading,
+      speedMps: originSpeedMps,
+      accuracyMeters: originAccuracyMeters,
+    }),
+    caller: req.user ? { id: req.user.id, role: req.user.role } : undefined,
+  });
   res.status(200).json(result);
 });

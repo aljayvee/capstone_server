@@ -1,0 +1,49 @@
+{
+  "_about": "Which built-in vocabulary each live merchant category carries. Read by sugo_category/catalogue.py (training) and by the Node store suggester (src/services/categoryRoles.ts), so a renamed category keeps its lexicon, its OpenStreetMap names and its mapped Tacurong shops. A role binds to the category with one of its `names` exactly; failing that, to the category whose name (counted twice) and description mention the most `keywords`. A role with a `parent` falls back to the parent's category when nothing binds it.",
+  "roles": [
+    {
+      "key": "food",
+      "names": ["Fast Food & Restaurant"],
+      "keywords": ["fast food", "restaurant", "restaurants", "resto", "eatery", "eateries", "carinderia", "carinderias", "karinderya", "diner", "diners", "kainan", "food"]
+    },
+    {
+      "key": "pharmacy",
+      "names": ["Pharmacy & Health"],
+      "keywords": ["pharmacy", "pharmacies", "drugstore", "drugstores", "drug store", "drug", "drugs", "botika", "botica", "medicine", "medicines", "medical", "health"]
+    },
+    {
+      "key": "grocery",
+      "names": ["Supermarket & Grocery"],
+      "keywords": ["grocery", "groceries", "supermarket", "supermarkets", "grocer"]
+    },
+    {
+      "key": "retail",
+      "names": ["Retail & General Merchandise"],
+      "keywords": ["retail", "general merchandise", "merchandise", "department store", "department stores", "dry goods"]
+    },
+    {
+      "key": "bakery",
+      "parent": "food",
+      "names": ["Bakery", "Bakeshop", "Bakery & Pastry"],
+      "keywords": ["bakery", "bakeries", "bakeshop", "bakeshops", "bake shop", "panaderia", "panaderya", "bread", "breads", "pastry", "pastries", "cake", "cakes", "pandesal"]
+    },
+    {
+      "key": "convenience",
+      "parent": "grocery",
+      "names": ["Convenience Store", "Convenience Stores", "Convenience"],
+      "keywords": ["convenience", "sari sari", "7 eleven", "seven eleven", "minimart", "mini mart", "mini marts", "minimarts"]
+    },
+    {
+      "key": "beverages",
+      "parent": "food",
+      "names": ["Beverages"],
+      "keywords": ["beverage", "beverages", "drinks", "milk tea", "milktea", "coffee shop", "juice bar"]
+    },
+    {
+      "key": "produce",
+      "parent": "grocery",
+      "names": ["Fruits & Vegetables", "Fresh Produce", "Palengke"],
+      "keywords": ["fruit", "fruits", "vegetable", "vegetables", "produce", "gulay", "prutas", "palengke", "wet market"]
+    }
+  ]
+}

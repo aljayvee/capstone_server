@@ -18,13 +18,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY sugo_category ./sugo_category
 COPY app.py .
+# The OpenStreetMap shop names the store model learns from, and, when a deploy
+# has exported one, production's catalogue and labelled rows (production.json).
+COPY data ./data
 
-# Train from the seed lexicon at build time so the image is always able to
-# answer something. A real deploy overrides this with the database-backed model:
+# Train at build time so the image is always able to answer something. The
+# default is the lexicon plus the OpenStreetMap names in the lexicon's four
+# categories. A real deploy trains from production's export instead:
 #
-#   docker build --build-arg TRAIN_ARGS="--database-url mysql+pymysql://..." .
+#   python -m sugo_category.train --database-url ... --export data/production.json
+#   docker build --build-arg TRAIN_ARGS="--from-export data/production.json" .
 #
-# Baked in either way, so the running container needs no database at all.
+# An export rather than --database-url, so the database password never becomes
+# a build argument (build arguments are kept in the image's history). Baked in
+# either way, so the running container needs no database at all.
 ARG TRAIN_ARGS="--offline"
 # Busts the build cache for the training step, and ONLY that step.
 #
@@ -45,7 +52,9 @@ RUN echo "training run ${TRAINED_AT}" && python -m sugo_category.train ${TRAIN_A
 # Not root. This process parses strings that arrive from a dispatcher's search
 # box, by way of two other services; there is no reason for it to be able to
 # write to its own image.
-RUN useradd --system --uid 10001 sugo && chown -R sugo:sugo /srv
+# /srv/cache is where compose mounts Gemma's answer cache; made here so a new
+# volume starts owned by this user rather than by root.
+RUN useradd --system --uid 10001 sugo && mkdir -p /srv/cache && chown -R sugo:sugo /srv
 USER sugo
 
 EXPOSE 8100

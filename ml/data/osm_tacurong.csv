@@ -1,0 +1,123 @@
+osm_type,osm_id,name,brand,lat,lon,shop,amenity,healthcare,cuisine,city
+node,5243668525,4 Corner Store,,6.680139,124.674380,convenience,,,,
+node,12082352269,7- Eleven,,6.691726,124.686198,convenience,,,,
+node,12761831301,7-Eleven,,6.688329,124.679268,convenience,,,,Tacurong City
+node,12765830102,7-Eleven,,6.685587,124.672346,convenience,,,,
+node,12773518034,7-Eleven,,6.699076,124.731946,convenience,,,,President Quirino
+node,10820789508,Alsan,,6.695750,124.704984,hardware,,,,
+node,12765733801,Alyöussef,,6.682418,124.663992,,restaurant,,lebanese,
+node,11074960105,Aries Pizza,,6.630616,124.602203,,fast_food,,pizza;burger;tea,
+node,12773518033,Arizz Gadget Hub,,6.699021,124.731876,mobile_phone,,,,President Quirino
+node,6167540697,Aseana General Merchandise,,6.690710,124.674743,department_store,,,,Tacurong City
+node,6167540692,Bel's Motor Parts,,6.689977,124.675710,motorcycle_repair,,,,Tacurong City
+node,6167345287,Better Cool Service Center,,6.689888,124.682408,car_repair,,,,
+node,3772753728,Bidz Inasal,,6.686988,124.674293,,restaurant,,chicken,Tacurong City
+node,5243664541,Bornks pata,,6.675970,124.675755,,restaurant,,,
+node,6172155087,Cabaluna Surgical Center,,6.693482,124.671640,,clinic,,,Tacurong City
+node,5243664540,Cafe Venereja,,6.677460,124.675181,,cafe,,,
+node,6207141588,Callao Medical and Dental Clinic,,6.688703,124.677275,,dentist,dentist,,
+node,6167375385,Campus Arts III,,6.685750,124.680661,hardware,,,,Tacurong City
+node,12773518031,Chai's Corner Food House,,6.699010,124.731779,,fast_food,,,President Quirino
+node,6167541689,Chooks to Go,,6.688760,124.677543,,fast_food,,,
+way,770116234,Citi Hardware,CitiHardware,6.680839,124.682477,doityourself,,,,Tacurong
+node,6167541686,City Plaza,,6.690278,124.675776,department_store,,,,
+node,12765820101,"Coffe, Please",,6.690293,124.678258,,cafe,,,
+node,4810951225,Corners Cafe,,6.644937,124.607335,,cafe,,,
+node,6207141586,DMFI Hardware and General Store,,6.698128,124.674430,hardware,,,,Tacurong City
+node,13000154143,Dose Coffee Lab,,6.685847,124.672861,,cafe,,,
+node,5306093522,Dunkin Donuts,,6.686078,124.672562,,cafe,,,
+node,10241649409,Engr. Roger Juan,,6.684616,124.675822,hardware,,,,
+node,6167542886,ERS General Merchandise,,6.698915,124.679343,hardware,,,,Tacurong City
+node,10703277313,FJK,,6.683822,124.680577,car_parts,,,,
+node,6139971717,Flores bakery,,6.688647,124.676543,bakery,,,,
+node,6167540696,Geric Halal,,6.691003,124.674654,,restaurant,,,Tacurong City
+node,6167345388,Golden Touch Radiator and Tire Services,,6.690576,124.684491,car_repair,,,,
+node,6167340190,Goldyfood,,6.690384,124.678802,,restaurant,,,Tacurong City
+node,6167541688,Green Agri Farm Supply,,6.690853,124.677999,agrarian,,,,Tacurong City
+node,6177444887,Greenwich,,6.687265,124.675071,,fast_food,,pizza,Tacurong City
+node,5306316821,Grilled Hitoan,,6.691021,124.684589,,restaurant,,,
+node,6169536587,Healing Touch,,6.693639,124.672995,massage,,,,Tacurong City
+node,6207143185,Honesty Bakeshop,,6.687803,124.678492,bakery,,,,
+way,1453324928,Hungry Fish Seafood Grill,,6.667879,124.676033,,restaurant,,seafood;filipino;fish,Tacurong
+node,6167447085,Ice and Fries,,6.691318,124.675382,,cafe,,,
+node,10703277908,Immacon,,6.687622,124.677517,motorcycle,,,,
+way,1379453397,Immaculate Concepcion Hospital,,6.701037,124.738891,,hospital,,,President Quirino
+node,6167340193,Imperial Appliance Plaza,,6.689181,124.681431,department_store,,,,
+node,10703277316,J Shammah,,6.689386,124.678691,hardware,,,,
+node,12766841801,Janel,,6.683473,124.672708,,restaurant,,filipino,Tacurong City
+node,10820789511,Jao Tay,,6.689909,124.676909,car_parts,,,,Tacurong City
+node,10820789705,Jireh Marketing,,6.689090,124.676187,hardware,,,,Tacurong City
+node,1504768621,Jollibee,,6.687332,124.675192,,fast_food,,,
+node,3717419949,JTM Cartech and AirConditioning Services,,6.637212,124.600077,car_repair,,,,
+node,6167340192,Julie's Bakeshop,,6.689288,124.681605,bakery,,,,
+node,6207141288,Julson Bakeshop,,6.689264,124.676953,bakery,,,,
+node,9454319917,Junjun Kambingan,,6.685173,124.680329,,restaurant,,filipino;goat,Tacurong City
+node,3772753722,Kimsan Department Store,,6.688723,124.674550,department_store,,,,Tacurong City
+node,6207142885,KPS-Seed,,6.696624,124.677444,money_lender,,,,Tacurong City
+node,6167541694,La Cas Familia Food Shop,,6.689839,124.673593,,restaurant,,,
+node,6167540699,Lab's Old Time La Paz Batchoy,,6.691156,124.675496,,restaurant,,,
+node,7043020385,Laforteza,,6.687660,124.675152,,pharmacy,,,Tacurong City
+node,6963035393,Laforteza DRS,,6.688498,124.675084,,pharmacy,,,Tacurong City
+node,5867146585,Laundryworld,,6.686727,124.673665,laundry,,,,Tacurong City
+node,6167541687,Lee Kay Kee and Sons,,6.690547,124.677418,hardware,,,,Tacurong City
+node,8220280417,Little Miss Tea,,6.631320,124.605448,,cafe,,,Isulan
+node,6167540694,LJA Enterprises,,6.689353,124.673579,hardware,,,,
+node,6207141289,LND Bikeshop,,6.689219,124.676734,bicycle,,,,
+node,6167540688,Lo-oc Motor Parts,,6.690312,124.676623,motorcycle,,,,
+node,6207141299,Lu Clinic and Hospital,,6.689668,124.681181,,hospital,,,
+node,6167541693,Magic Star Digital Photography Services,,6.688341,124.674039,photo,,,,
+node,6207141301,Manolette Bakeshop,,6.689622,124.677697,bakery,,,,
+node,6167340194,Mars Barbecue Express,,6.690220,124.683272,,restaurant,,,
+way,1327112109,McDonald's,McDonald's,6.688374,124.677379,,fast_food,,burger,
+way,907605166,Medical Mission Group Hospital Services Cooperative of Tacurong,,6.694129,124.675805,,hospital,hospital,,
+node,1504776809,Mercury Drug,Mercury Drug,6.688621,124.676871,,pharmacy,pharmacy,,
+node,3772753717,Mercury Drug,,6.689382,124.678659,,pharmacy,,,
+node,6167541695,Mercury Drug,Mercury Drug,6.689158,124.674817,,pharmacy,pharmacy,,Tacurong City
+node,6167340196,Minute Burger,,6.689913,124.682518,,fast_food,,,
+node,6177444886,Minute Burger,,6.687063,124.674520,,fast_food,,,Tacurong City
+node,6167345285,Mones Dental Clinic,,6.689981,124.685773,,dentist,,,
+node,12773518032,Mr. Droy,,6.699016,124.731828,hairdresser,,,,President Quirino
+node,6169536386,Nanay Elen's BBQ,,6.692181,124.675082,,fast_food,,,
+node,1818449023,Nanding Barbecue,,6.686335,124.679883,,restaurant,,barbecue,Tacurong City
+node,10820789509,ND Agri Tacurong,,6.689129,124.680982,car_parts,,,,
+node,6167534987,Nice Shot Arms and Ammo,,6.685987,124.673396,hardware,,,,
+node,12773518030,One Click,,6.699005,124.731730,photo,,,,President Quirino
+node,6167541690,Orix Metro Leasing and Financing Corporation,,6.686856,124.673963,money_lender,,,,Tacurong City
+node,13197336770,Portside Unlimited Streetfoods,,6.631326,124.605530,,fast_food,,,Isulan
+way,1167465016,President Quirino Public Market,,6.699521,124.729552,,marketplace,,,President Quirino
+node,6167420485,Primark Town Center,,6.689484,124.675594,department_store,,,,
+node,6167350185,Protech Agri Solutiona,,6.690466,124.684153,hardware,,,,
+node,6167541697,Purok 4 Barangay Health Station,,6.694015,124.679613,,clinic,,,
+node,6167420486,QBC Best Quality Gen. Marketing Corp.,,6.689131,124.675727,department_store,,,,
+node,6207141587,Ramos Farm Supplies,,6.689466,124.680900,hardware,,,,
+node,6167540693,Rocral General Merchandise,,6.686024,124.673494,department_store,,,,
+node,9071735517,Rogelio's Bakery Café,,6.678539,124.674934,bakery,,,,
+node,5243668521,Romualdez Katiku Community Hospital,,6.756668,124.723312,,hospital,hospital,,
+node,6167542885,RPR Prime Marketing Services,,6.689474,124.673525,hardware,,,,
+node,13980279721,Rpublik Barber & Co.,,6.687805,124.673896,hairdresser,,,,Tacurong City
+node,6167540690,Rueland Agri Supply,,6.690009,124.675872,agrarian,,,,Tacurong City
+way,784831060,Saint Louis Hospital,,6.678453,124.666784,,hospital,hospital,,Tacurong
+node,6167420585,Save More Market,,6.689613,124.676001,supermarket,,,,Tacurong City
+node,10703277511,Soup # 5,,6.692781,124.681647,,restaurant,,,
+node,12761842101,St. Louis Molecular Diagnostics Lab,,6.665317,124.691503,,,laboratory,,
+node,6167340189,St. Peter,,6.690617,124.683015,funeral_directors,,,,
+node,6167541691,Sultan Kudarat Doctor's Hospital,,6.686422,124.674635,,hospital,,,
+node,6167541692,"Sultan Kudarat Electric Cooperative, Inc.",,6.686052,124.673605,hardware,,,,
+way,142749991,Sultan Kudarat Provincial Hospital,,6.643967,124.607914,,hospital,,,
+way,981894788,Sultan Kudarat Provincial Hospital,,6.643941,124.608228,,hospital,,,
+node,6177444885,Sunshine Fire Extinguisher Center,,6.698289,124.679318,hardware,,,,Tacurong City
+node,6207141390,Tacurong City Animal Bite Treatment Center,,6.693540,124.674888,,,yes,,
+node,6207141389,Tacurong City Birthing Clinic,,6.693613,124.675089,,clinic,birthing_centre,,
+node,1504769095,Tacurong Fitmart,,6.687806,124.678309,supermarket,,,,
+way,311356393,Tacurong Public Market,,6.688138,124.676187,,marketplace,,,Tacurong City
+node,6167376585,Triple Ace Machine Shop,,6.686451,124.679835,hardware,,,,Tacurong City
+node,12761834901,UF,,6.674263,124.684559,,cafe,,coffee_shop,
+node,10703277314,Victory,,6.688240,124.673788,motorcycle,,,,
+node,6167348185,Victory Marketing,,6.690292,124.683802,hardware,,,,
+node,6167540695,Water Science Purified Drinking Water,,6.690890,124.674414,water,,,,
+node,4737813421,Woodland Restobar,,6.683572,124.681140,,restaurant,,,
+node,10820789512,Xylie,,6.700519,124.737456,hardware,,,,
+node,6167375585,Yamaha,,6.685901,124.680126,motorcycle,,,,Tacurong City
+node,6167345386,Ybañez Furniture Shop,,6.690025,124.682353,furniture,,,,
+node,10820789510,Yes Bbq,,6.691536,124.687474,,fast_food,,,
+node,4810951224,YES BBQ,,6.638215,124.601320,,restaurant,,,

@@ -19,6 +19,8 @@ Category names must match `merchant_categories.name` exactly. They are the only
 stable identifier shared with the server; ids are per-environment.
 """
 
+import re
+
 FOOD = "Fast Food & Restaurant"
 PHARMACY = "Pharmacy & Health"
 GROCERY = "Supermarket & Grocery"
@@ -274,12 +276,43 @@ ITEM_PHRASES: dict[str, list[str]] = {
 # listed phrases are re-labelled to it instead of their default parent. Keyed by
 # the category name an owner would plausibly type.
 CONTESTED_CONCEPTS: dict[str, list[str]] = {
+    # A Filipino panaderia's shelf, not just its sign. The first version had
+    # twenty phrases, so "pan de coco", "kababayan" and "monay" were read
+    # letter by letter as food, and "Spanish bread" went to Jollibee.
     "Bakery": [
-        "bakery", "bakeshop", "panaderia", "pastry shop", "cake shop",
-        "julies bakeshop", "pan de manila", "goldilocks", "red ribbon",
-        "bread", "pandesal", "ensaymada", "spanish bread", "hopia",
-        "cake", "birthday cake", "slice cake", "cupcake", "donut",
-        "tasty bread", "loaf bread",
+        # the shop
+        "bakery", "bakeshop", "bakeshoppe", "bake shop", "bakehouse", "bake house",
+        "panaderia", "panaderya", "pastry shop", "pastries", "patisserie", "cake shop",
+        "cakes and pastries", "bread house", "julies bakeshop", "pan de manila",
+        "goldilocks", "red ribbon", "french baker", "breadtalk",
+        # breads
+        "bread", "pandesal", "pan de sal", "pan desal", "malunggay pandesal",
+        "ube pandesal", "cheese pandesal", "whole wheat pandesal", "spanish bread",
+        "ensaymada", "ensaimada", "cheese ensaymada", "hopia", "hopia mongo",
+        "hopia ube", "hopia baboy", "monay", "putok", "star bread", "pan de coco",
+        "kababayan", "pan de leche", "pan de regla", "kalihim", "pinagong",
+        "cheese bread", "tuna bread", "garlic bread", "raisin bread", "cheese roll",
+        "cinnamon roll", "bread roll", "dinner roll", "tasty", "tasty bread",
+        "loaf bread", "sliced bread", "whole wheat bread", "banana bread",
+        "croissant", "bagel", "baguette",
+        # cakes and sweets
+        "cake", "birthday cake", "slice cake", "cupcake", "chiffon cake", "mocha cake",
+        "ube cake", "chocolate cake", "roll cake", "custard cake", "banana cake",
+        "brazo de mercedes", "mamon", "mamon tostado", "pianono", "egg pie",
+        "buko pie", "crinkles", "cookies", "brownies", "muffin", "donut", "doughnut",
+        "biscocho", "otap", "broas", "silvanas", "sans rival",
+    ],
+    # Production added "Convenience Store" on 2026-09-24 and filed a 7-Eleven
+    # under it. Without this entry the chains below kept arguing for Supermarket
+    # & Grocery, and the category got only generate_dynamic_seeds' guesses
+    # ("convenience store shop"). OpenStreetMap agrees with the split: the
+    # Philippines extract tags 21,912 named shops `shop=convenience`, the chains
+    # (7-Eleven alone is 3,065 of them) and thousands of sari-sari stores.
+    "Convenience Store": [
+        "7 eleven", "seven eleven", "alfamart", "ministop", "lawson",
+        "uncle johns", "family mart", "sari sari store", "sari-sari",
+        "tindahan", "tindahan ni aling", "mini mart", "minimart",
+        "convenience store",
     ],
     "Beverages": [
         "milk tea shop", "bubble tea", "juice bar", "coffee shop",
@@ -304,7 +337,51 @@ CONTESTED_CONCEPTS: dict[str, list[str]] = {
 }
 
 
-def synthetic_rows(allowed: set[str] | None = None) -> list[tuple[str, str, str]]:
+def generate_dynamic_seeds(category_name: str) -> list[tuple[str, str, str]]:
+    """
+    Generate synthetic seed rows for an owner-created category so the model
+    can immediately classify matching stores and items before real orders accumulate.
+    """
+    clean = category_name.strip()
+    lower = clean.lower()
+    seeds: list[tuple[str, str, str]] = [
+        # Store patterns
+        (lower, clean, "store"),
+        (f"{lower} shop", clean, "store"),
+        (f"{lower} store", clean, "store"),
+        (f"{lower} center", clean, "store"),
+        (f"{lower} hub", clean, "store"),
+        (f"tindahan ng {lower}", clean, "store"),
+        # Item patterns
+        (lower, clean, "item"),
+        (f"{lower} supplies", clean, "item"),
+        (f"{lower} item", clean, "item"),
+    ]
+    # Split composite names (e.g., "Pet Supplies & Accessories") into word stems
+    sub_words = [w.strip() for w in re.split(r"[&,/\-\s]+", lower) if len(w.strip()) > 2]
+    for word in sub_words:
+        seeds.append((f"{word} shop", clean, "store"))
+        seeds.append((f"{word} store", clean, "store"))
+        seeds.append((word, clean, "item"))
+    return seeds
+
+
+# Words too broad to move lexicon phrases by containment: "Pet Food" must not
+# take "fast food" and "food court" with it. A description phrase that IS one of
+# these still seeds its category; it just moves nothing.
+_GENERIC_WORDS = {
+    "food", "foods", "supplies", "supply", "store", "stores", "shop", "shops", "goods", "products",
+    "items", "services", "service", "general", "center", "house", "things", "stuff", "accessories",
+}
+
+
+def _mentions_phrase(text: str, key: str) -> bool:
+    from .catalogue import singular
+
+    return f" {key} " in f" {singular(text)} "
+
+
+def synthetic_rows(allowed=None) -> list[tuple[str, str, str]]:
     """
     Every seed phrase as a `(text, category, kind)` training row.
 
@@ -313,22 +390,35 @@ def synthetic_rows(allowed: set[str] | None = None) -> list[tuple[str, str, str]
     "Biogesic" is something bought in one, and a model that saw both in one pile
     would learn neither cleanly.
 
-    `allowed` is the live catalogue. Where it defines a category named in
-    CONTESTED_CONCEPTS, those phrases are moved to it; where it does not, they
-    stay with their default parent and nothing changes.
+    `allowed` is the live catalogue: a catalogue.Catalogue (names and
+    descriptions), a set of names, or None for the lexicon's own four. Each
+    phrase goes to the live category carrying its role (catalogue.py), so a
+    renamed category keeps its vocabulary, and a phrase whose role no category
+    carries is left out rather than taught under a name the API cannot use.
+    Where a category carries a concept in CONTESTED_CONCEPTS (Bakery), those
+    phrases move to it from their default parent. The owner's own categories
+    get dynamic seeds from their name, and their description's phrases both
+    seed them and pull matching lexicon phrases over ("nails, cement" moves
+    the lexicon's nails and cement from Retail to "Hardware & Construction").
     """
+    from .catalogue import Catalogue, description_phrases, role_for_label, singular
+
+    catalogue = Catalogue.of(allowed)
     moved: dict[str, str] = {}
-    if allowed:
-        for concept, phrases in CONTESTED_CONCEPTS.items():
-            if concept in allowed:
-                for phrase in phrases:
-                    moved[phrase] = concept
+    for concept, phrases in CONTESTED_CONCEPTS.items():
+        role = role_for_label(concept)
+        target = catalogue.category_for_role(role.key, fall_back=False) if role else (concept if concept in catalogue else None)
+        if target:
+            for phrase in phrases:
+                moved[phrase] = target
 
     rows: list[tuple[str, str, str]] = []
     for category, phrases in STORE_PHRASES.items():
-        rows.extend((phrase, moved.get(phrase, category), "store") for phrase in phrases)
+        home = catalogue.resolve(category)
+        rows.extend((phrase, moved.get(phrase, home), "store") for phrase in phrases if moved.get(phrase, home))
     for category, phrases in ITEM_PHRASES.items():
-        rows.extend((phrase, moved.get(phrase, category), "item") for phrase in phrases)
+        home = catalogue.resolve(category)
+        rows.extend((phrase, moved.get(phrase, home), "item") for phrase in phrases if moved.get(phrase, home))
 
     # A promoted concept may list phrases that appear in neither STORE_PHRASES
     # nor ITEM_PHRASES. Add them so the new category gets real seed coverage
@@ -339,4 +429,21 @@ def synthetic_rows(allowed: set[str] | None = None) -> list[tuple[str, str, str]
             for kind in ("store", "item"):
                 if (phrase, kind) not in seen:
                     rows.append((phrase, concept, kind))
+
+    # The owner's own categories: seeds from the name, then the description.
+    for custom in catalogue.custom():
+        rows.extend(generate_dynamic_seeds(custom))
+        phrases = description_phrases(catalogue.descriptions.get(custom))
+        keys = [singular(p) for p in phrases]
+        movable = [k for k in keys if len(k) >= 4 and not set(k.split()) <= _GENERIC_WORDS]
+        if movable:
+            rows = [
+                (text, custom if any(_mentions_phrase(text, k) for k in movable) else cat, kind)
+                for text, cat, kind in rows
+            ]
+        for phrase in phrases:
+            rows.append((phrase, custom, "store"))
+            rows.append((phrase, custom, "item"))
+
     return rows
+

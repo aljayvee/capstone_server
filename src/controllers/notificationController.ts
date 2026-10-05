@@ -19,3 +19,10 @@ export const markNotificationRead = asyncHandler<AuthenticatedRequest>(async (re
   const notification = await notificationService.markAsRead(id, { id: req.user!.id, role: callerRole });
   res.json(notification);
 });
+
+export const markAllNotificationsRead = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const callerRole = String(req.user?.role || "").toUpperCase();
+  const result = await notificationService.markAllAsRead({ id: req.user!.id, role: callerRole });
+  res.json({ success: true, count: result.count });
+});
+

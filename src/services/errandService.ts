@@ -3,6 +3,9 @@ import { pinpointRepository, type PinpointInput } from "../repositories/pinpoint
 import { pabiliItemRepository } from "../repositories/pabiliItemRepository.js";
 import { pabiliDetailRepository, type PabiliDetailInput } from "../repositories/pabiliDetailRepository.js";
 import { forgetMemoryCache } from "./itemPlacementService.js";
+import { forgetStorePredictionMemory } from "./storePredictionService.js";
+import { warmItemCategories } from "../lib/category/categoryServiceClient.js";
+import { checkStoreLocation } from "./storeLocationGuard.js";
 import { pricingStoreCount, distinctStopCount } from "./patterns/pricingStoreCount.js";
 import { smoothPath } from "../lib/routing/smoothPath.js";
 import { fareAfterAgreement } from "./patterns/agreedFare.js";
@@ -18,6 +21,8 @@ import { paymentSelectionRepository } from "../repositories/paymentSelectionRepo
 import { ServiceError } from "./ServiceError.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
 import * as notificationService from "./notificationService.js";
+import { notificationRepository } from "../repositories/notificationRepository.js";
+import { notificationFactory } from "./patterns/notificationFactory.js";
 import { normalizeStatus, assertValidTransition, type ErrandStatusValue } from "./patterns/errandStateMachine.js";
 import { defaultPricingStrategy } from "./patterns/pricingStrategy.js";
 import { totalRouteDistanceKm, haversineDistanceKm } from "../lib/geo.js";
@@ -26,8 +31,9 @@ import * as etaService from "./etaService.js";
 import * as riderPresenceStore from "../lib/riderPresenceStore.js";
 import * as riderPositionStore from "../lib/riderPositionStore.js";
 import * as riderBeaconService from "./riderBeaconService.js";
+import { describeReason, STATUS_LABEL } from "../lib/riderAvailability.js";
 import * as routingProvider from "../lib/routing/resilientRoutingService.js";
-import { isWithinServiceArea } from "../lib/serviceArea.js";
+import { isWithinServiceArea, isWithinServiceBuffer, isServiceAreaConfigured } from "../lib/serviceArea.js";
 import { POSITION_FRESHNESS_MS } from "./etaService.js";
 import * as commissionService from "./commissionService.js";
 // Namespace import, deliberately: errandPaymentService calls back into
@@ -37,6 +43,7 @@ import * as commissionService from "./commissionService.js";
 import * as errandPaymentService from "./errandPaymentService.js";
 import { buildFeeBreakdown, type CustomerFeeBreakdown, type PricedErrand } from "./patterns/feeBreakdown.js";
 import { modesForCategoryNames, resolveCategoryModes } from "./patterns/categoryFeeModes.js";
+import type { HandlingFeeMode } from "./patterns/pricingStrategy.js";
 import { resolveHandlingEvidence } from "./patterns/handlingEvidence.js";
 import { isCodSelection, hasPaymentLedger } from "./patterns/paymentModes.js";
 import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
@@ -44,6 +51,8 @@ import { buildRiderEarnings, type EarningErrand } from "./patterns/riderEarnings
 import { whereRiderBecomesFree, dispatchCostSeconds } from "./patterns/dispatchCost.js";
 import type { GeoPoint } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
+import { sendPushNotification } from "../lib/pushNotifications.js";
+import * as deliveryReminders from "./deliveryReminderService.js";
 import { prisma } from "../lib/prisma.js";
 import type { Prisma } from "@prisma/client";
 
@@ -338,6 +347,9 @@ export interface CreateErrandInput {
   deliveryAddress?: string;
   deliveryLatitude?: number | string;
   deliveryLongitude?: number | string;
+  deliveryStreetName?: string | null;
+  deliveryLandmark?: string | null;
+  deliveryNotes?: string | null;
   estimatedCost?: number | string;
   tip?: number | string;
   paymentMethod?: string;
@@ -363,6 +375,23 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
     tip = 0,
     pabiliItems = [],
   } = input;
+
+  if (
+    input.deliveryLatitude !== undefined &&
+    input.deliveryLongitude !== undefined &&
+    isServiceAreaConfigured()
+  ) {
+    const dLat = parseFloat(String(input.deliveryLatitude));
+    const dLng = parseFloat(String(input.deliveryLongitude));
+    if (!Number.isNaN(dLat) && !Number.isNaN(dLng)) {
+      if (!isWithinServiceBuffer({ latitude: dLat, longitude: dLng }, 0.1)) {
+        throw new ServiceError(
+          422,
+          "Delivery address is outside Tacurong City service area. SUGO Express currently operates exclusively within Tacurong City."
+        );
+      }
+    }
+  }
 
   const finalCustomerId = customerId ? parseInt(String(customerId), 10) : fallbackCustomerId;
   const parsedEstimatedCost = parseFloat(String(estimatedCost));
@@ -421,6 +450,10 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
     deliveryAddress,
     deliveryLatitude: input.deliveryLatitude !== undefined ? parseFloat(String(input.deliveryLatitude)) : null,
     deliveryLongitude: input.deliveryLongitude !== undefined ? parseFloat(String(input.deliveryLongitude)) : null,
+    // A snapshot of the saved location's door details, never a reference to it.
+    deliveryStreetName: input.deliveryStreetName?.trim() || null,
+    deliveryLandmark: input.deliveryLandmark?.trim() || null,
+    deliveryNotes: input.deliveryNotes?.trim() || null,
     estimatedCost: parsedEstimatedCost,
     deliveryFee,
     tip: parsedTip,
@@ -461,10 +494,13 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
     },
   });
 
-  await customerTransactionRepository.create(finalCustomerId, newErrand.id, totalCost, input.paymentMethod || "COD");
+  await customerTransactionRepository.create(finalCustomerId, newErrand.id, totalCost, input.paymentMethod || "PENDING");
 
   const errandWithNames = attachErrandNames(newErrand);
   eventPublisher.emit("order:new", errandWithNames);
+  // Gemma's answers for unfamiliar items take seconds; asked now, they are
+  // cached before a dispatcher opens the order. Never awaited.
+  warmItemCategories((pabiliItems || []).map((item) => item.itemName || item.name || ""));
   return errandWithNames;
 }
 
@@ -486,17 +522,24 @@ function clampOccurredAt(occurredAt?: Date): Date {
   return occurredAt.getTime() > now.getTime() ? now : occurredAt;
 }
 
-export async function recalculateFee(errandId: string) {
-  const errand = await errandRepository.findById(errandId);
-  if (!errand) {
-    throw new ServiceError(404, "Errand not found");
-  }
+type PricingErrand = NonNullable<Awaited<ReturnType<typeof errandRepository.findById>>>;
+type PricingRateConfig = NonNullable<Awaited<ReturnType<typeof rateConfigRepository.findFirst>>>;
+type PricingStop = { latitude: number; longitude: number; placeId?: string | null };
 
-  const rateConfig = await rateConfigRepository.findFirst();
-  if (!rateConfig) {
-    return attachErrandNames(errand);
-  }
-
+/**
+ * The price of this errand with these stops, computed and not saved.
+ *
+ * The one calculation behind both recalculateFee, which writes it and tells the
+ * customer when their total moved, and quotePinpoints, which only shows the
+ * dispatcher what the stops they are placing will cost. Kept as one function so
+ * the preview can never disagree with the fee the save then charges.
+ */
+async function priceForStops(
+  errand: PricingErrand,
+  rateConfig: PricingRateConfig,
+  pins: PricingStop[],
+  categoryModes: HandlingFeeMode[]
+) {
   // The larger of what the customer committed to and how many stops are
   // actually pinned — see pricingStoreCount for the trade-off this accepts.
   const storeCount = pricingStoreCount({
@@ -504,7 +547,7 @@ export async function recalculateFee(errandId: string) {
     // DISTINCT stops, not row count. The same shop pinned twice is one stop of
     // rider time, and billing it as two added a multi-store fee to a fare the
     // customer had already agreed to.
-    pinnedStops: distinctStopCount(errand.pinpoints),
+    pinnedStops: distinctStopCount(pins),
   });
   const destination =
     errand.deliveryLatitude != null && errand.deliveryLongitude != null
@@ -520,21 +563,17 @@ export async function recalculateFee(errandId: string) {
   // detour-scaled estimate if every routing engine is unreachable (and flags it
   // as degraded when it does). This is also what docs/errand_pricing_formula.md
   // section 4.1 required all along.
-  const stops = errand.pinpoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude }));
+  const stops = pins.map((p) => ({ latitude: p.latitude, longitude: p.longitude }));
   const routed = await routingService.routeDistanceKm(stops, destination);
   const distanceKm = routed?.distanceKm ?? totalRouteDistanceKm(stops, destination);
 
-  const selection = await paymentSelectionRepository.findByErrandId(errandId);
+  const selection = await paymentSelectionRepository.findByErrandId(errand.id);
   const isCod = isCodSelection(selection);
-
-  // Prefers the pinned stops' categories over the customer's original picks —
-  // once a dispatcher has chosen actual stores, those are what the rider visits.
-  const categoryModes = await resolveCategoryModes(errandId);
 
   // How good the basket figure is, and what the customer already agreed to pay
   // for handling it. The ceiling is null until they confirm the breakdown (see
   // confirmOrder), which is the same as the behaviour that came before.
-  const handlingEvidence = await resolveHandlingEvidence(errandId);
+  const handlingEvidence = await resolveHandlingEvidence(errand.id);
 
   const breakdown = defaultPricingStrategy.calculate(
     {
@@ -595,6 +634,26 @@ export async function recalculateFee(errandId: string) {
         handlingFeeDecision: breakdown.handlingDecision as unknown as Prisma.InputJsonValue,
       };
 
+  return { routed, distanceKm, fareIsAgreed, effectiveDeliveryFee, effectiveTotalCost, components };
+}
+
+export async function recalculateFee(errandId: string) {
+  const errand = await errandRepository.findById(errandId);
+  if (!errand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+
+  const rateConfig = await rateConfigRepository.findFirst();
+  if (!rateConfig) {
+    return attachErrandNames(errand);
+  }
+
+  // Prefers the pinned stops' categories over the customer's original picks —
+  // once a dispatcher has chosen actual stores, those are what the rider visits.
+  const categoryModes = await resolveCategoryModes(errandId);
+  const { routed, distanceKm, effectiveDeliveryFee, effectiveTotalCost, components } =
+    await priceForStops(errand, rateConfig, errand.pinpoints, categoryModes);
+
   // Short-circuit only when there is genuinely nothing new to write. The fare
   // can legitimately be unchanged while the route data is being recorded for the
   // first time (or by a different engine), and that still needs persisting —
@@ -648,6 +707,56 @@ export async function recalculateFee(errandId: string) {
   eventPublisher.emit("order:updated", errandWithNames);
   void notificationService.notifyFeeUpdated(errand.customerId, errandId, effectiveTotalCost);
   return errandWithNames;
+}
+
+/**
+ * What these stops would cost, before they are saved.
+ *
+ * Step 3 of the dispatcher console calls this as pins are placed, so the fee is
+ * on screen the moment the stores are, instead of only after "send the stores
+ * to the customer". Nothing is written and nobody is notified: saving the
+ * stops (savePinpoints) still does both, once, with the same calculation.
+ *
+ * A stop the router cannot reach is refused exactly as savePinpoints refuses it,
+ * so the preview never prices a set of stops that could not then be saved.
+ */
+export async function quotePinpoints(errandId: string, pins: PinpointInput[]) {
+  const errand = await errandRepository.findById(errandId);
+  if (!errand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+  const rateConfig = await rateConfigRepository.findFirst();
+  if (!rateConfig) {
+    throw new ServiceError(503, "Pricing is not configured yet.");
+  }
+
+  for (const pin of pins) {
+    const verdict = await checkStoreLocation({ latitude: pin.latitude, longitude: pin.longitude });
+    if (verdict.status === "blocked") {
+      throw new ServiceError(422, `${pin.storeName ? `${pin.storeName}: ` : ""}${verdict.message}`);
+    }
+  }
+
+  const categoryModes = await resolveCategoryModes(
+    errandId,
+    pins.map((p) => p.categoryId ?? null)
+  );
+  const priced = await priceForStops(errand, rateConfig, pins, categoryModes);
+
+  return {
+    deliveryFee: priced.effectiveDeliveryFee,
+    totalCost: priced.effectiveTotalCost,
+    distanceFee: priced.components.distanceFee,
+    multiStoreFee: priced.components.multiStoreFee,
+    groceryFee: priced.components.groceryFee,
+    nonCodFee: priced.components.nonCodFee,
+    distanceKm: Math.round(priced.distanceKm * 100) / 100,
+    // No routing engine answered: the distance is a straight-line estimate.
+    estimated: !priced.routed,
+    // The customer has agreed a fare, so these stops do not change it.
+    fareAgreed: priced.fareIsAgreed,
+    stops: distinctStopCount(pins),
+  };
 }
 
 export async function claimErrand(errandId: string, dispatcherId: number) {
@@ -945,14 +1054,17 @@ export async function assignRider(
             }
             const state = availability.get(r.id);
             if (!state) return `${name}: no presence recorded`;
-            if (state.state === "NEEDS_PERMISSIONS") {
-              return `${name}: needs ${state.impediments.join(", ")}`;
+            // In the three statuses the dispatcher sees on the roster, with the
+            // reason in the same words, so the toast and the board agree.
+            const label = STATUS_LABEL[state.riderStatus];
+            if (state.riderStatus === "AVAILABLE_SIGNAL_LOST") {
+              const age =
+                state.beaconAgeMs === null
+                  ? "never checked in"
+                  : `last seen ${Math.max(1, Math.round(state.beaconAgeMs / 60000))} min ago`;
+              return `${name}: ${label} (${age})`;
             }
-            const age =
-              state.beaconAgeMs === null
-                ? "never checked in"
-                : `last seen ${Math.round(state.beaconAgeMs / 1000)}s ago`;
-            return `${name}: ${state.state.toLowerCase().replace(/_/g, " ")} (${age})`;
+            return `${name}: ${label} (${describeReason(state.riderStatusReason).toLowerCase()})`;
           });
 
         throw new ServiceError(
@@ -1233,7 +1345,18 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
     throw new ServiceError(404, "Errand not found");
   }
 
+  // Any store outside the Tacurong City service area (> 100m buffer) or off
+  // the loaded road graph is strictly rejected with HTTP 422.
+  for (const pin of pins) {
+    const verdict = await checkStoreLocation({ latitude: pin.latitude, longitude: pin.longitude });
+    if (verdict.status === "blocked") {
+      throw new ServiceError(422, `${pin.storeName ? `${pin.storeName}: ` : ""}${verdict.message}`);
+    }
+  }
+
   await pinpointRepository.replaceForErrand(errandId, pins);
+  // New stops join the store directory the pin predictor learns from.
+  forgetStorePredictionMemory();
 
   // Now that stops exist, file each requested item under the one it will be
   // bought at. This is the moment it becomes possible: the customer listed the
@@ -1279,6 +1402,17 @@ export async function updateItems(errandId: string, items: PabiliDetailInput[]) 
     throw new ServiceError(404, "Errand not found");
   }
 
+  const statusUpper = String(errand.status || "").toUpperCase();
+  if (
+    errand.itemsPurchasedAt != null ||
+    ["DELIVERED", "COMPLETED", "CANCELLED", "PASSING BY"].includes(statusUpper)
+  ) {
+    throw new ServiceError(
+      409,
+      "Cannot modify items order when the rider is already on the way to the customer."
+    );
+  }
+
   await pabiliDetailRepository.replaceForErrand(errandId, items);
 
   // replaceForErrand deletes and recreates every row, so the new ones carry no
@@ -1294,6 +1428,7 @@ export async function updateItems(errandId: string, items: PabiliDetailInput[]) 
   // item now gets that answer back on the very next errand rather than after
   // the cache happens to expire.
   forgetMemoryCache();
+  forgetStorePredictionMemory();
 
   const filed = await pabiliItemRepository.attachToPinpoints(errandId);
   if (filed > 0) {
@@ -1415,6 +1550,242 @@ export async function markItemsPurchased(
   }
 
   // Recalculate fees with the verified receipt subtotal to accurately apply groceryFee from rate_configs
+  const errandWithNames = await recalculateFee(errandId);
+  eventPublisher.emit("order:updated", errandWithNames);
+
+  // Everything is bought and the rider is heading to the customer: the push
+  // that reaches them with the app closed. Only the first time, so a retried
+  // request (a flushed offline queue) cannot send it twice.
+  if (!existing.itemsPurchasedAt) {
+    deliveryReminders.inBackground(deliveryReminders.notifyOnTheWay(errandId), "on-the-way push");
+  }
+  return errandWithNames;
+}
+
+const VALID_ITEM_FULFILLMENT_STATUSES = new Set<string>(["PENDING", "PURCHASED", "OUT_OF_STOCK"]);
+
+export async function updateItemFulfillmentStatus(
+  errandId: string,
+  itemId: number,
+  callerId: number,
+  callerRole: string,
+  fulfillmentStatus: string
+) {
+  const normalizedStatus = String(fulfillmentStatus || "").trim().toUpperCase();
+  if (!VALID_ITEM_FULFILLMENT_STATUSES.has(normalizedStatus)) {
+    throw new ServiceError(
+      400,
+      "Invalid fulfillmentStatus. Must be PENDING, PURCHASED, or OUT_OF_STOCK."
+    );
+  }
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    throw new ServiceError(400, "Invalid itemId.");
+  }
+
+  const existing = await errandRepository.findByIdBasic(errandId);
+  if (!existing) {
+    throw new ServiceError(404, "Errand not found");
+  }
+
+  const statusUpper = String(existing.status || "").toUpperCase();
+  if (
+    existing.itemsPurchasedAt != null ||
+    ["DELIVERED", "COMPLETED", "CANCELLED", "PASSING BY"].includes(statusUpper)
+  ) {
+    throw new ServiceError(
+      409,
+      "Cannot modify items order when the rider is already on the way to the customer."
+    );
+  }
+
+  const roleUpper = String(callerRole || "").toUpperCase();
+  const isStaff = roleUpper === "OWNER" || roleUpper === "DISPATCHER" || roleUpper === "ADMIN";
+  if (!isStaff && existing.riderId !== callerId) {
+    throw new ServiceError(
+      403,
+      "Access denied: You can only update items for errands assigned to you."
+    );
+  }
+
+  const itemRow = await prisma.pabiliDetail.findFirst({
+    where: { id: itemId, errandId },
+  });
+  if (!itemRow) {
+    throw new ServiceError(404, "Errand item not found");
+  }
+
+  // Once the rider checks an item (PURCHASED or OUT_OF_STOCK), it cannot be
+  // unchecked or rechecked by the rider until the item is modified by the dispatcher.
+  if (!isStaff && itemRow.fulfillmentStatus && itemRow.fulfillmentStatus !== "PENDING") {
+    throw new ServiceError(
+      409,
+      "This item is already checked and locked. It can only be checked again if modified by the dispatcher."
+    );
+  }
+
+  const updatedItem = await prisma.pabiliDetail.update({
+    where: { id: itemRow.id },
+    data: { fulfillmentStatus: normalizedStatus },
+  });
+
+  const errandWithNames = await getErrandById(errandId);
+  if (errandWithNames) {
+    eventPublisher.emit("order:updated", errandWithNames);
+
+    if (normalizedStatus === "OUT_OF_STOCK") {
+      const pinpoint = (errandWithNames.pinpoints ?? []).find(
+        (p: any) => p.id === itemRow.pinpointId
+      );
+      const storeName = pinpoint?.storeName ?? itemRow.storeCategory?.split("|")[0]?.trim() ?? undefined;
+
+      const oosNotification = notificationFactory.itemOutOfStock(itemRow.itemName, storeName);
+      const latestLog = errandWithNames.dispatchLogs?.[0];
+      if (latestLog?.dispatcherId) {
+        void notificationRepository.create({
+          userId: latestLog.dispatcherId,
+          ...oosNotification,
+        });
+      }
+      eventPublisher.emitToRole("DISPATCHER", "errand:item_out_of_stock", {
+        errandId,
+        itemId: itemRow.id,
+        itemName: itemRow.itemName,
+        storeName,
+      });
+      eventPublisher.emitToRole("OWNER", "errand:item_out_of_stock", {
+        errandId,
+        itemId: itemRow.id,
+        itemName: itemRow.itemName,
+        storeName,
+      });
+
+      eventPublisher.emitToErrandParties(
+        errandId,
+        { riderId: errandWithNames?.riderId ?? existing.riderId, customerId: errandWithNames?.customerId ?? existing.customerId },
+        "errand:substitute_pending",
+        {
+          errandId,
+          itemId: itemRow.id,
+          itemName: itemRow.itemName,
+          storeName,
+        }
+      );
+    }
+  }
+
+  return { item: updatedItem, errand: errandWithNames };
+}
+
+export async function declineItemSubstitute(
+  errandId: string,
+  itemId: number,
+  callerId: number,
+  callerRole: string
+) {
+  const existing = await errandRepository.findByIdBasic(errandId);
+  if (!existing) {
+    throw new ServiceError(404, "Errand not found");
+  }
+
+  const roleUpper = String(callerRole || "").toUpperCase();
+  const isStaff = roleUpper === "OWNER" || roleUpper === "DISPATCHER" || roleUpper === "ADMIN";
+  if (!isStaff) {
+    throw new ServiceError(403, "Access denied: Only dispatchers or owners can decline item substitutes.");
+  }
+
+  const itemRow = await prisma.pabiliDetail.findFirst({
+    where: { id: itemId, errandId },
+  });
+  if (!itemRow) {
+    throw new ServiceError(404, "Errand item not found");
+  }
+
+  eventPublisher.emitToErrandParties(
+    errandId,
+    { riderId: existing.riderId, customerId: existing.customerId },
+    "errand:substitute_declined",
+    {
+      errandId,
+      itemId: itemRow.id,
+      itemName: itemRow.itemName,
+    }
+  );
+
+  const errandWithNames = await getErrandById(errandId);
+  return { success: true, item: itemRow, errand: errandWithNames };
+}
+
+export async function suggestSubstitutesForItem(errandId: string, itemId: number) {
+  const errand = await getErrandById(errandId);
+  if (!errand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+  const itemRow = (errand.pabiliDetails ?? []).find((i: any) => Number(i.id) === Number(itemId));
+  if (!itemRow) {
+    throw new ServiceError(404, "Errand item not found");
+  }
+
+  const rawCat = String(itemRow.storeCategory || "");
+  const parts = rawCat.split("|").map((s) => s.trim());
+  const storeName = parts.length > 1 ? parts[0] : (errand.pinpoints?.[0]?.storeName ?? "store");
+  const storeCategory = parts.length > 1 ? parts[1] : (parts[0] || "General");
+  const customerName =
+    errand.customer?.firstName ||
+    errand.customer?.name?.split(" ")[0] ||
+    "Ma'am/Sir";
+
+  const { suggestItemSubstitutes } = await import("../lib/category/categoryServiceClient.js");
+  const aiResult = await suggestItemSubstitutes({
+    itemName: itemRow.itemName,
+    storeName,
+    storeCategory,
+    customerName,
+  });
+
+  if (aiResult && aiResult.substitutes.length > 0) {
+    return aiResult;
+  }
+
+  const fallbackSubs = [
+    `Alternative brand for ${itemRow.itemName}`,
+    `Different pack size of ${itemRow.itemName}`,
+  ];
+  return {
+    substitutes: fallbackSubs,
+    chatMessage: `Hello ${customerName}, out of stock po ang ${itemRow.itemName} sa ${storeName}. Okay lang po ba na palitan ng ${fallbackSubs[0]} o ${fallbackSubs[1]}?`,
+    source: "catalog" as const,
+  };
+}
+
+/**
+ * Reprices the errand from the receipts filed so far, without saying the
+ * shopping is finished.
+ *
+ * Every confirmed receipt used to go through markItemsPurchased, which also
+ * stamps itemsPurchasedAt. On a two-store errand that declared everything
+ * bought at the FIRST store: the customer was pushed "Your order is on the way"
+ * and shown the delivery map while the rider was still at store one, and a
+ * rider app restarted there restored itself onto the delivery leg. Only the
+ * rider's own step onto the delivery leg (PATCH /items-purchased) says that now.
+ */
+export async function applyReceiptTotal(errandId: string, riderId: number, receiptTotal: number) {
+  const existing = await errandRepository.findByIdBasic(errandId);
+  if (!existing) {
+    throw new ServiceError(404, "Errand not found");
+  }
+
+  if (existing.riderId !== riderId) {
+    throw new ServiceError(403, "Access denied: You can only update errands assigned to you.");
+  }
+
+  // Same overage check as markItemsPurchased, and at a better moment: the
+  // store that pushes the basket over what the customer agreed to is caught
+  // there, before the rider buys at the next one.
+  if (receiptTotal > 0) {
+    await errandRepository.update(errandId, { estimatedCost: receiptTotal });
+    await errandPaymentService.checkReceiptOverage(errandId, receiptTotal);
+  }
+
   const errandWithNames = await recalculateFee(errandId);
   eventPublisher.emit("order:updated", errandWithNames);
   return errandWithNames;
@@ -1586,3 +1957,100 @@ export async function declineErrandReview(
 export function getDeclineReasons(errandId: string) {
   return errandDeclineRepository.findByErrandId(errandId);
 }
+
+// Per-errand cooldown to avoid buzzing customer phones on rapid dispatcher messages
+const lastChatNotifyTime = new Map<string, number>();
+
+export async function notifyCustomerChatMessage(
+  errandId: string,
+  dispatcherId: number,
+  text: string,
+  senderName?: string
+) {
+  const errand = await errandRepository.findById(errandId);
+  if (!errand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+
+  // 3-second cooldown per errand to avoid notification spam
+  const now = Date.now();
+  const lastTime = lastChatNotifyTime.get(errandId) || 0;
+  if (now - lastTime < 3000) {
+    return { skipped: true, reason: "cooldown" };
+  }
+  lastChatNotifyTime.set(errandId, now);
+
+  const customer = await customerRepository.findById(errand.customerId);
+  if (!customer) {
+    return { skipped: true, reason: "no_customer" };
+  }
+
+  const name = (senderName || "").trim() || "Dispatcher";
+  // Truncate to ~120 characters with ellipsis
+  const truncated = text.length > 120 ? `${text.slice(0, 117)}...` : text;
+
+  // 1. Instant Socket.io delivery to active customer session (zero-latency in-app heads-up alert)
+  eventPublisher.emitToCustomer(customer.id, "notification:new", {
+    type: "CHAT_MESSAGE",
+    title: `Message from ${name}`,
+    body: truncated,
+    errandId,
+    createdAt: new Date().toISOString(),
+  });
+
+  // 2. Deliver remote Expo FCM push notification for background / locked device
+  if (customer.expoPushToken) {
+    void sendPushNotification(customer.expoPushToken, {
+      title: `Message from ${name}`,
+      body: truncated,
+      channelId: "chats",
+      data: { errandId, type: "CHAT_MESSAGE" },
+      urgent: true,
+    });
+  }
+
+  return { success: true };
+}
+
+export async function notifyDispatcherChatMessage(
+  errandId: string,
+  customerId: number,
+  text: string,
+  senderName?: string
+) {
+  const errand = await errandRepository.findById(errandId);
+  if (!errand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+
+  // 3-second cooldown per errand to avoid spamming dispatchers on rapid messages
+  const now = Date.now();
+  const lastTime = lastChatNotifyTime.get(`customer_${errandId}`) || 0;
+  if (now - lastTime < 3000) {
+    return { skipped: true, reason: "cooldown" };
+  }
+  lastChatNotifyTime.set(`customer_${errandId}`, now);
+
+  const customer = await customerRepository.findById(customerId);
+  const name = (
+    senderName ||
+    (customer?.information
+      ? `${customer.information.firstName} ${customer.information.lastName}`.trim()
+      : "") ||
+    "Customer"
+  ).trim();
+  const truncated = text.length > 120 ? `${text.slice(0, 117)}...` : text;
+
+  const existingLog = await dispatchLogRepository.findLatestByErrandId(errandId);
+  const dispatcherId = existingLog?.dispatcherId ?? null;
+
+  const record = await notificationService.notifyDispatcherCustomerChat(
+    errandId,
+    dispatcherId,
+    name,
+    truncated
+  );
+
+  return { success: true, notificationId: record?.id };
+}
+

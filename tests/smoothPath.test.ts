@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { smoothPath, TURN_RADIUS_METERS } from "../src/lib/routing/smoothPath.js";
+import { smoothPath, MAX_OFFSET_METERS } from "../src/lib/routing/smoothPath.js";
 import { haversineDistanceKm, type GeoPoint } from "../src/lib/geo.js";
 
 /**
@@ -50,10 +50,10 @@ describe("rounding the corners of a real route", () => {
   const smoothed = smoothPath(route.coordinates);
 
   it("keeps the drawn line on the road", () => {
-    // The point of capping the corner cut. Anything much beyond a lane width
-    // would visibly leave the carriageway.
+    // The alignment guarantee: never more than half a lane off the centreline.
+    // The 0.05 m is the local-plane approximation, not slack in the rule.
     const worst = Math.max(...smoothed.map((p) => deviationFrom(p, route.coordinates)));
-    expect(worst).toBeLessThanOrEqual(TURN_RADIUS_METERS);
+    expect(worst).toBeLessThanOrEqual(MAX_OFFSET_METERS + 0.05);
   });
 
   it("barely changes the length of the route", () => {
@@ -70,8 +70,8 @@ describe("rounding the corners of a real route", () => {
   });
 
   it("adds points only where there are corners to round", () => {
-    // 133 in; more out, but not an explosion — most vertices are near-straight
-    // and are passed through untouched.
+    // 133 in; more out, but not an explosion. Gentle bends get a few points
+    // each, right angles about a dozen.
     expect(smoothed.length).toBeGreaterThan(route.coordinates.length);
     expect(smoothed.length).toBeLessThan(route.coordinates.length * 6);
   });
@@ -166,6 +166,77 @@ describe("corner cases in the geometry itself", () => {
     // Applied to an already-smoothed path it must not keep eating the corners.
     const once = smoothPath(route.coordinates);
     const twice = smoothPath(once);
-    expect(Math.max(...twice.map((p) => deviationFrom(p, once)))).toBeLessThan(TURN_RADIUS_METERS);
+    expect(Math.max(...twice.map((p) => deviationFrom(p, once)))).toBeLessThan(MAX_OFFSET_METERS);
+  });
+});
+
+describe("the shape of a corner", () => {
+  // 200 m north, then 200 m east: a plain right-angle street corner.
+  const corner: GeoPoint[] = [
+    { latitude: 6.69, longitude: 124.675 },
+    { latitude: 6.6918, longitude: 124.675 },
+    { latitude: 6.6918, longitude: 124.6768 },
+  ];
+
+  it("draws a right angle as a circular arc, not a mitre", () => {
+    const result = smoothPath(corner);
+    const arc = result.slice(1, -1);
+    expect(arc.length).toBeGreaterThanOrEqual(10);
+
+    // Every arc point is the same distance from one centre: a true circle.
+    const first = arc[0];
+    const last = arc[arc.length - 1];
+    const centre = { latitude: first.latitude, longitude: last.longitude };
+    const radii = arc.map((p) => metres(p, centre));
+    const spread = Math.max(...radii) - Math.min(...radii);
+    expect(spread).toBeLessThan(0.05);
+    // Roughly an 8.5 m radius: visibly a curve, well inside the junction.
+    expect(radii[0]).toBeGreaterThan(7);
+    expect(radii[0]).toBeLessThan(10);
+  });
+
+  it("pulls a right angle no further inside than the offset budget", () => {
+    const result = smoothPath(corner);
+    const nearest = Math.min(...result.map((p) => metres(p, corner[1])));
+    expect(nearest).toBeLessThanOrEqual(MAX_OFFSET_METERS + 0.05);
+    expect(nearest).toBeGreaterThan(MAX_OFFSET_METERS - 0.5);
+  });
+
+  it("turns a faceted highway bend into one continuous curve", () => {
+    // Nine 40 m segments each kinking 6 degrees: how OSM draws a highway curve.
+    const bend: GeoPoint[] = [];
+    let lat = 6.6;
+    let lng = 124.7;
+    let bearing = 0;
+    for (let i = 0; i < 10; i++) {
+      bend.push({ latitude: lat, longitude: lng });
+      lat += (40 * Math.cos((bearing * Math.PI) / 180)) / 111_195;
+      lng += (40 * Math.sin((bearing * Math.PI) / 180)) / (111_195 * Math.cos((lat * Math.PI) / 180));
+      bearing += 6;
+    }
+
+    const result = smoothPath(bend);
+    // The old smoother skipped every bend under 15 degrees, so this came back
+    // unchanged. Now no vertex along it kinks by more than one arc step.
+    expect(result.length).toBeGreaterThan(bend.length);
+    for (let i = 1; i < result.length - 1; i++) {
+      const a = result[i - 1];
+      const v = result[i];
+      const b = result[i + 1];
+      const h1 = Math.atan2(v.longitude - a.longitude, v.latitude - a.latitude);
+      const h2 = Math.atan2(b.longitude - v.longitude, b.latitude - v.latitude);
+      const kink = Math.abs(((h2 - h1) * 180) / Math.PI);
+      expect(kink).toBeLessThan(6);
+    }
+    expect(Math.max(...result.map((p) => deviationFrom(p, bend)))).toBeLessThan(1);
+  });
+
+  it("keeps a turnaround exactly, rather than rounding it across the median", () => {
+    const uTurn: GeoPoint[] = [
+      { latitude: 6.69, longitude: 124.675 },
+      { latitude: 6.691, longitude: 124.675 },
+      { latitude: 6.69, longitude: 124.67501 },
+    ];
+    expect(smoothPath(uTurn)).toEqual(uTurn);
   });
 });

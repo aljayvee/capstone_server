@@ -45,6 +45,17 @@ export function getFresh(riderId: number, maxAgeMs: number): RiderPosition | und
   return Date.now() - position.recordedAt <= maxAgeMs ? position : undefined;
 }
 
+// Every rider's last position no older than `maxAgeMs`, for a map that has just
+// (re)connected and would otherwise sit empty until each rider's next fix.
+export function snapshot(maxAgeMs: number): Array<{ riderId: number } & RiderPosition> {
+  const cutoff = Date.now() - maxAgeMs;
+  const result: Array<{ riderId: number } & RiderPosition> = [];
+  for (const [riderId, position] of positions) {
+    if (position.recordedAt >= cutoff) result.push({ riderId, ...position });
+  }
+  return result;
+}
+
 export function clear(riderId: number): void {
   positions.delete(riderId);
 }

@@ -81,6 +81,29 @@ export interface MatchResult {
   provider: RoutingProviderName;
 }
 
+/**
+ * Which way a live GPS fix is travelling, and how far from it to look for the
+ * road. Lets an engine start a route on the road the rider is riding instead
+ * of the nearest one, which near a junction, or between two parallel streets,
+ * is often a different road: the rider's "rerouted onto the other road".
+ * Built only from a fix fast enough for its heading to mean something
+ * (routingService.originHintFor). Only OSRM reads it; Google snaps for itself.
+ */
+export interface OriginHint {
+  /** Compass direction of travel, 0-360. */
+  bearingDeg: number;
+  /** How far the road may point from bearingDeg and still be taken, in degrees. */
+  bearingRange: number;
+  /** How far from the fix to look for that road, in metres. */
+  radiusMeters: number;
+}
+
+export interface RouteOptions {
+  passThrough?: boolean;
+  /** Applies to the first point only. */
+  origin?: OriginHint;
+}
+
 // One adapter per routing engine (Adapter pattern, per AGENTS.md 3.2/4.3 —
 // third-party services are always wrapped, never called inline).
 //
@@ -94,7 +117,10 @@ export interface RoutingProvider {
   // present, base URL configured). An unconfigured provider is skipped silently
   // instead of burning a failed request on every call.
   isConfigured(): boolean;
-  route(points: GeoPoint[]): Promise<RouteResult | null>;
+  // `passThrough`: the points between the first and the last are roads to go
+  // along, not stops. One leg comes back instead of one per point. How one
+  // provider redraws another's chosen path on its own roads (bestRoute.ts).
+  route(points: GeoPoint[], options?: RouteOptions): Promise<RouteResult | null>;
   matrix(sources: GeoPoint[], destinations: GeoPoint[]): Promise<MatrixResult | null>;
   match(trace: TracePoint[]): Promise<MatchResult | null>;
   // Moves a single fix onto the nearest road. Distinct from match(): that needs
@@ -102,5 +128,6 @@ export interface RoutingProvider {
   // is what a route origin has. Returns null when the provider cannot snap or
   // when the nearest road is far enough away that moving the point would be a
   // guess rather than a correction — callers then route from the raw fix.
-  snap(point: GeoPoint): Promise<GeoPoint | null>;
+  // `hint`: the fix's direction of travel, to snap onto the road being ridden.
+  snap(point: GeoPoint, hint?: OriginHint): Promise<GeoPoint | null>;
 }

@@ -98,3 +98,17 @@ export const registerPushToken = asyncHandler<AuthenticatedRequest>(async (req, 
   await userService.registerPushToken(req.user!.id, input);
   res.json({ success: true });
 });
+
+// POST /api/riders/:riderId/notify-chat - Dispatcher sends push notification to rider
+export const notifyRiderChat = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const riderId = parseRiderId(req.params.riderId);
+  const text = String(req.body?.text || "").trim();
+  const hasImage = Boolean(req.body?.hasImage);
+  if (!text && !hasImage) {
+    throw new ServiceError(400, "Message text or image is required.");
+  }
+  const senderName = typeof req.body?.senderName === "string" ? req.body.senderName : undefined;
+  const result = await userService.notifyRiderChatMessage(riderId, req.user!.id, text, senderName, hasImage);
+  res.json(result);
+});
+

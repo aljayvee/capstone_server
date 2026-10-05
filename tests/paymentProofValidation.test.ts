@@ -45,6 +45,7 @@ import { paymentSelectionRepository } from "../src/repositories/paymentSelection
 import { errandPaymentRepository } from "../src/repositories/errandPaymentRepository.js";
 import { confirmUpfrontPayment, publishPaymentUpdate } from "../src/services/errandPaymentService.js";
 import { uploadPaymentProof } from "../src/services/paymentProofService.js";
+import { paymentProofUploadSchema } from "../src/validators/paymentProofValidators.js";
 
 const CUSTOMER = 42;
 const ERRAND = "ERR-1";
@@ -219,5 +220,32 @@ describe("the half-payment asked for mid-way", () => {
 
     expect(result).toMatchObject({ autoConfirmed: false, reviewReason: "not_half_payment" });
     expect(confirmUpfrontPayment).not.toHaveBeenCalled();
+  });
+});
+
+describe("receipt file size validation", () => {
+  const sample = {
+    imageData: "data:image/jpeg;base64,AAAA",
+    mimeType: "image/jpeg" as const,
+    fileSize: 1000,
+  };
+
+  it("accepts a receipt up to 15MB", () => {
+    const result = paymentProofUploadSchema.safeParse({
+      ...sample,
+      fileSize: 15 * 1024 * 1024,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("refuses a receipt over 15MB with clear copy", () => {
+    const result = paymentProofUploadSchema.safeParse({
+      ...sample,
+      fileSize: 15 * 1024 * 1024 + 1,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe("That image is too large. Please use one under 15MB.");
+    }
   });
 });

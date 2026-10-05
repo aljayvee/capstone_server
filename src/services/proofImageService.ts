@@ -11,7 +11,8 @@ import { summarisePaymentPlan, isOveragePending } from "./patterns/paymentLedger
 import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import * as errandService from "./errandService.js";
-import type { ProofImageUploadInput } from "../validators/proofImageValidators.js";
+import { holdScan, findScan, type ReceiptScan } from "../lib/pendingReceiptScans.js";
+import type { ProofImageUploadInput, ProofImageScanInput } from "../validators/proofImageValidators.js";
 
 /**
  * Below this many recognised characters, the photo is unusable rather than the
@@ -46,6 +47,51 @@ async function assertRidersOwnErrand(errandId: string, riderId: number) {
 }
 
 /**
+ * Ensures all requested items assigned to a store (or across the errand)
+ * have been verified (PURCHASED or OUT_OF_STOCK) before a receipt photo is accepted.
+ */
+async function assertAllStoreItemsChecked(errandId: string, pinpointId?: number | null) {
+  if (!prisma.pabiliDetail) return;
+
+  const items = await prisma.pabiliDetail.findMany({
+    where: {
+      errandId,
+      ...(pinpointId != null ? { pinpointId } : {}),
+    },
+    select: {
+      id: true,
+      itemName: true,
+      fulfillmentStatus: true,
+      pinpointId: true,
+    },
+  });
+
+  const targetItems = items.length > 0
+    ? items
+    : await prisma.pabiliDetail.findMany({
+        where: { errandId },
+        select: { id: true, itemName: true, fulfillmentStatus: true, pinpointId: true },
+      });
+
+  if (targetItems.length === 0) {
+    return; // No pabili items (e.g. document courier / non-shopping errand)
+  }
+
+  const pendingItems = targetItems.filter(
+    (item) => !item.fulfillmentStatus || item.fulfillmentStatus.toUpperCase() === "PENDING"
+  );
+
+  if (pendingItems.length > 0) {
+    const itemNames = pendingItems.slice(0, 3).map((i) => `"${i.itemName}"`).join(", ");
+    const remainingCount = pendingItems.length > 3 ? ` and ${pendingItems.length - 3} more` : "";
+    throw new ServiceError(
+      422,
+      `Please check all items (Purchased or Out of Stock) for this store before taking or uploading a receipt. Unchecked items: ${itemNames}${remainingCount}.`
+    );
+  }
+}
+
+/**
  * Stores a photograph and reads it.
  *
  * RECEIPT images go to Cloud Vision here on the server — crumpled thermal paper
@@ -64,6 +110,10 @@ export async function uploadProofImage(
   input: ProofImageUploadInput
 ) {
   const errand = await assertRidersOwnErrand(errandId, riderId);
+
+  if (input.kind === "RECEIPT" || input.kind === "NO_RECEIPT") {
+    await assertAllStoreItemsChecked(errandId, input.pinpointId);
+  }
 
   const base64 = stripDataUri(input.imageData);
 
@@ -94,6 +144,7 @@ export async function uploadProofImage(
         byteSize: input.fileSize,
         verified: false,
         declaredTotal: input.declaredTotal,
+        riderNote: input.riderNote?.trim() || null,
       },
     });
 
@@ -111,7 +162,7 @@ export async function uploadProofImage(
     });
 
     // A declared purchase counts toward the basket the same as a read one.
-    await errandService.markItemsPurchased(errandId, riderId, await confirmedReceiptTotal(errandId));
+    await errandService.applyReceiptTotal(errandId, riderId, await confirmedReceiptTotal(errandId));
 
     // `extraction: null` rather than absent, so every caller sees one shape
     // whatever kind was uploaded.
@@ -122,7 +173,7 @@ export async function uploadProofImage(
   // GCash/Maya customer paying cash instead of showing a receipt. Same
   // declared-figure shape as NO_RECEIPT, but this is money collected at
   // delivery, not goods bought at a shop, so it never feeds
-  // markItemsPurchased — that total is about the basket, not the payment.
+  // applyReceiptTotal — that total is about the basket, not the payment.
   if (input.kind === "CASH_COLLECTED") {
     if (!input.declaredTotal || input.declaredTotal <= 0) {
       throw new ServiceError(400, "Enter what the customer handed you.");
@@ -139,6 +190,7 @@ export async function uploadProofImage(
         byteSize: input.fileSize,
         verified: false,
         declaredTotal: input.declaredTotal,
+        riderNote: input.riderNote?.trim() || null,
       },
     });
 
@@ -248,39 +300,7 @@ export async function uploadProofImage(
 
   // Read first, store second. A photo that cannot be read is not evidence, and
   // keeping it would leave rows nothing can ever act on.
-  const isTransfer = input.kind === "TRANSFER";
-  const ocr = isTransfer
-    ? input.deviceText
-      ? { text: input.deviceText, engine: "MLKIT" as const, confidence: null }
-      : null
-    : await readText(base64);
-
-  if (!ocr) {
-    // Two very different failures wearing the same shape. A rider who can retake
-    // the photo needs to hear something different from one whose service is down.
-    const engineAvailable = isTransfer || configuredEngines().length > 0;
-    throw new ServiceError(
-      engineAvailable ? 422 : 503,
-      engineAvailable
-        ? "We couldn't read that photo. Move to better light, hold the phone steady and make sure the whole receipt is in frame, then try again."
-        : "Receipt scanning is unavailable right now. Please try again in a moment — your errand is not lost."
-    );
-  }
-
-  const parsed = parseReceipt(ocr.text);
-
-  if (parsed.characterCount < MIN_LEGIBLE_CHARACTERS) {
-    throw new ServiceError(
-      422,
-      "That photo came out too blurry to read. Hold steady, get closer, and make sure the receipt is flat."
-    );
-  }
-
-  // A sharp photo of a folded receipt reads plenty of text and still yields no
-  // total. Stored rather than rejected: the rider can enter the figure and the
-  // image is still evidence, but the extraction is flagged for review.
-  const status = parsed.total === null ? "NEEDS_REVIEW" : "OK";
-  const clarityVerdict = parsed.characterCount > 300 ? "SHARP" : "ACCEPTABLE";
+  const { ocr, parsed, status, clarityVerdict } = await readReceiptPhoto(input, base64);
 
   const image = await prisma.errandProofImage.create({
     data: {
@@ -316,6 +336,217 @@ export async function uploadProofImage(
 }
 
 /**
+ * Reads a receipt or transfer photo and judges it, storing nothing.
+ *
+ * Shared by the one-step upload above, which older rider apps still call, and
+ * by scanProofImage, which holds the photo until the rider confirms it. Both
+ * must refuse the same photos with the same words.
+ */
+async function readReceiptPhoto(
+  input: { kind: string; deviceText?: string | null },
+  base64: string
+) {
+  const isTransfer = input.kind === "TRANSFER";
+  const ocr = isTransfer
+    ? input.deviceText
+      ? { text: input.deviceText, engine: "MLKIT" as const, confidence: null }
+      : null
+    : await readText(base64);
+
+  if (!ocr) {
+    // Two very different failures wearing the same shape. A rider who can retake
+    // the photo needs to hear something different from one whose service is down.
+    const engineAvailable = isTransfer || configuredEngines().length > 0;
+    throw new ServiceError(
+      engineAvailable ? 422 : 503,
+      engineAvailable
+        ? "We couldn't read that photo. Move to better light, hold the phone steady and make sure the whole receipt is in frame, then try again."
+        : "Receipt scanning is unavailable right now. Please try again in a moment. Your errand is not lost."
+    );
+  }
+
+  const parsed = parseReceipt(ocr.text);
+
+  if (parsed.characterCount < MIN_LEGIBLE_CHARACTERS) {
+    throw new ServiceError(
+      422,
+      "That photo came out too blurry to read. Hold steady, get closer, and make sure the receipt is flat."
+    );
+  }
+
+  // A sharp photo of a folded receipt reads plenty of text and still yields no
+  // total. Stored rather than rejected: the rider can enter the figure and the
+  // image is still evidence, but the extraction is flagged for review.
+  const status: "OK" | "NEEDS_REVIEW" = parsed.total === null ? "NEEDS_REVIEW" : "OK";
+  const clarityVerdict: "SHARP" | "ACCEPTABLE" = parsed.characterCount > 300 ? "SHARP" : "ACCEPTABLE";
+
+  return { ocr, parsed, status, clarityVerdict };
+}
+
+/**
+ * Reads a receipt photo and holds it, unsaved, for the rider to confirm.
+ *
+ * The rider looks at the total and either confirms it or retakes the photo.
+ * Saving at this point is what filled errand_proof_images with every retake of
+ * the same receipt, so nothing is written here: the photo waits in memory
+ * (lib/pendingReceiptScans) and confirmScannedProof writes it once. A retake of
+ * the same stop replaces the waiting photo.
+ */
+export async function scanProofImage(
+  errandId: string,
+  riderId: number,
+  input: ProofImageScanInput
+) {
+  await assertRidersOwnErrand(errandId, riderId);
+
+  if (input.kind === "RECEIPT") {
+    await assertAllStoreItemsChecked(errandId, input.pinpointId);
+  }
+
+  const base64 = stripDataUri(input.imageData);
+  const { ocr, parsed, status, clarityVerdict } = await readReceiptPhoto(input, base64);
+
+  const scanId = holdScan({
+    errandId,
+    riderId,
+    pinpointId: input.pinpointId ?? null,
+    kind: input.kind,
+    imageData: base64,
+    mimeType: input.mimeType,
+    byteSize: input.fileSize,
+    clarityScore: parsed.characterCount,
+    clarityVerdict,
+    engine: ocr.engine,
+    rawText: ocr.text,
+    confidence: ocr.confidence,
+    extractedTotal: parsed.total,
+    extractedDate: parsed.transactionDate,
+    status,
+  });
+
+  logger.info(
+    `Errand ${errandId}: ${input.kind} read by ${ocr.engine}, waiting for the rider to confirm — ` +
+      `${parsed.characterCount} chars, total ${parsed.total ?? "not found"}.`
+  );
+
+  return {
+    scanId,
+    kind: input.kind,
+    clarityVerdict,
+    extraction: {
+      engine: ocr.engine,
+      extractedTotal: parsed.total,
+      extractedDate: parsed.transactionDate,
+      status,
+    },
+  };
+}
+
+/** Writes a confirmed scan: the photo and its reading, with the rider's total. */
+async function saveScan(scan: ReceiptScan, confirmedTotal: number, riderNote?: string | null): Promise<number> {
+  const image = await prisma.errandProofImage.create({
+    data: {
+      errandId: scan.errandId,
+      riderId: scan.riderId,
+      pinpointId: scan.pinpointId,
+      kind: scan.kind,
+      imageData: scan.imageData,
+      mimeType: scan.mimeType,
+      byteSize: scan.byteSize,
+      clarityScore: scan.clarityScore,
+      clarityVerdict: scan.clarityVerdict,
+      riderNote: riderNote?.trim() || null,
+      extraction: {
+        create: {
+          engine: scan.engine,
+          rawText: scan.rawText,
+          extractedTotal: scan.extractedTotal,
+          extractedDate: scan.extractedDate,
+          confidence: scan.confidence,
+          confirmedTotal,
+          confirmedAt: new Date(),
+          status: "OK",
+        },
+      },
+    },
+  });
+  return image.id;
+}
+
+/**
+ * The rider confirms (or corrects) the total of a scanned receipt, and only now
+ * is the photo saved.
+ *
+ * Safe to send twice. On a weak signal the reply to the first confirm can be
+ * lost after the row was written, and the rider presses Confirm again: that
+ * second call applies the total to the row already written instead of writing
+ * the receipt a second time.
+ */
+export async function confirmScannedProof(
+  errandId: string,
+  scanId: string,
+  riderId: number,
+  confirmedTotal: number,
+  riderNote?: string | null
+) {
+  await assertRidersOwnErrand(errandId, riderId);
+
+  const entry = findScan(scanId);
+  if (!entry || entry.scan.errandId !== errandId || entry.scan.riderId !== riderId) {
+    throw new ServiceError(410, "That photo was not saved in time. Please take it again.");
+  }
+
+  if (entry.scan.kind === "RECEIPT") {
+    await assertAllStoreItemsChecked(errandId, entry.scan.pinpointId);
+  }
+
+  const firstConfirm = !entry.saving;
+  if (firstConfirm) {
+    const saving = saveScan(entry.scan, confirmedTotal, riderNote);
+    entry.saving = saving;
+    // A failed write leaves the scan confirmable again rather than stuck.
+    saving.catch(() => {
+      if (entry.saving === saving) entry.saving = undefined;
+    });
+  }
+  const imageId = await entry.saving!;
+
+  if (!firstConfirm) {
+    const extraction = await confirmProofImage(errandId, imageId, riderId, confirmedTotal);
+    return {
+      id: imageId,
+      kind: entry.scan.kind,
+      extraction: {
+        engine: extraction.engine,
+        extractedTotal: extraction.extractedTotal,
+        extractedDate: extraction.extractedDate,
+        confirmedTotal: extraction.confirmedTotal,
+        status: extraction.status,
+      },
+    };
+  }
+
+  // Written; the photo no longer needs holding in memory for anything but a
+  // repeated confirm, which only needs the id.
+  entry.scan.imageData = "";
+
+  logger.info(`Errand ${errandId}: rider ${riderId} confirmed ${entry.scan.kind} ${imageId} at ${confirmedTotal}.`);
+  await applyConfirmedTotal(errandId, imageId, riderId, entry.scan.kind, entry.scan.extractedTotal, confirmedTotal);
+
+  return {
+    id: imageId,
+    kind: entry.scan.kind,
+    extraction: {
+      engine: entry.scan.engine,
+      extractedTotal: entry.scan.extractedTotal,
+      extractedDate: entry.scan.extractedDate,
+      confirmedTotal,
+      status: "OK" as const,
+    },
+  };
+}
+
+/**
  * The rider accepts the extracted figure, or corrects it.
  *
  * OCR proposes and the rider disposes. Both numbers are kept: a misread digit
@@ -346,7 +577,23 @@ export async function confirmProofImage(
     data: { confirmedTotal, confirmedAt: new Date(), status: "OK" },
   });
 
-  const extracted = extraction.extractedTotal;
+  await applyConfirmedTotal(errandId, imageId, riderId, image.kind, extraction.extractedTotal, confirmedTotal);
+
+  return extraction;
+}
+
+/**
+ * What a confirmed total sets in motion, whichever way it was confirmed: dispatch
+ * hears about a large gap from the reading, and a receipt reprices the basket.
+ */
+async function applyConfirmedTotal(
+  errandId: string,
+  imageId: number,
+  riderId: number,
+  kind: string,
+  extracted: number | null,
+  confirmedTotal: number
+) {
   if (extracted !== null) {
     const gap = Math.abs(confirmedTotal - extracted);
     const threshold = Math.max(DIVERGENCE_ABSOLUTE, extracted * DIVERGENCE_FRACTION);
@@ -370,7 +617,7 @@ export async function confirmProofImage(
   // errand through the existing path rather than a parallel one.
   //
   // The figure sent is the sum of EVERY confirmed receipt on this errand, not
-  // just the one being confirmed now. markItemsPurchased assigns
+  // just the one being confirmed now. applyReceiptTotal assigns
   // `estimatedCost = receiptTotal` outright, so on a two-store run the second
   // receipt would otherwise overwrite the first — a rider who spent 176 at
   // Jollibee and 994 at SaveMore would bill the customer for 994 of goods and
@@ -378,11 +625,9 @@ export async function confirmProofImage(
   //
   // Summing rather than adding also makes re-confirmation safe: correcting a
   // total recomputes the whole basket instead of double-counting it.
-  if (image.kind === "RECEIPT") {
-    await errandService.markItemsPurchased(errandId, riderId, await confirmedReceiptTotal(errandId));
+  if (kind === "RECEIPT") {
+    await errandService.applyReceiptTotal(errandId, riderId, await confirmedReceiptTotal(errandId));
   }
-
-  return extraction;
 }
 
 /**

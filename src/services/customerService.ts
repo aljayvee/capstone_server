@@ -92,26 +92,41 @@ export function listModificationLogs(customerId: number) {
 export async function listTransactions(customerId: number) {
   const transactions = await customerTransactionRepository.findByCustomerId(customerId);
 
-  const orders = transactions.map((tx) => ({
-    id: tx.errandId,
-    orderId: tx.errandId,
-    status: tx.errand.status,
-    categories: tx.errand.pabiliDetails.map((d) => d.itemName).join(", ") || tx.errand.category,
-    grandTotal: Number(tx.errand.totalCost) || Number(tx.amount) || 0,
-    deliveryFee: Number(tx.errand.deliveryFee) || 0,
-    totalCost: Number(tx.errand.totalCost) || 0,
-    estimatedCost: Number(tx.errand.estimatedCost) || 0,
-    tip: Number(tx.errand.tip) || 0,
-    paymentMethod: tx.paymentMethod,
-    deliveryAddress: tx.errand.deliveryAddress,
-    createdAt: tx.errand.createdAt,
-    latitude: tx.errand.deliveryLatitude,
-    longitude: tx.errand.deliveryLongitude,
-    riderId: tx.errand.riderId,
-    riderName: tx.errand.rider ? `${tx.errand.rider.firstName} ${tx.errand.rider.lastName}`.trim() : null,
-    pinpoints: tx.errand.pinpoints,
-    itemsPurchasedAt: tx.errand.itemsPurchasedAt,
-  }));
+  const orders = transactions.map((tx) => {
+    const confirmedMode =
+      tx.errand.paymentSelection?.paymentMode?.name ??
+      tx.errand.paymentMode?.name ??
+      null;
+
+    let effectivePaymentMethod = confirmedMode ?? tx.paymentMethod;
+    if (!confirmedMode && (effectivePaymentMethod === "COD" || effectivePaymentMethod === "PENDING" || !effectivePaymentMethod)) {
+      const isPastDelivered = tx.errand.status === "DELIVERED" || tx.errand.status === "COMPLETED";
+      if (!isPastDelivered) {
+        effectivePaymentMethod = "PENDING";
+      }
+    }
+
+    return {
+      id: tx.errandId,
+      orderId: tx.errandId,
+      status: tx.errand.status,
+      categories: tx.errand.pabiliDetails.map((d) => d.itemName).join(", ") || tx.errand.category,
+      grandTotal: Number(tx.errand.totalCost) || Number(tx.amount) || 0,
+      deliveryFee: Number(tx.errand.deliveryFee) || 0,
+      totalCost: Number(tx.errand.totalCost) || 0,
+      estimatedCost: Number(tx.errand.estimatedCost) || 0,
+      tip: Number(tx.errand.tip) || 0,
+      paymentMethod: effectivePaymentMethod,
+      deliveryAddress: tx.errand.deliveryAddress,
+      createdAt: tx.errand.createdAt,
+      latitude: tx.errand.deliveryLatitude,
+      longitude: tx.errand.deliveryLongitude,
+      riderId: tx.errand.riderId,
+      riderName: tx.errand.rider ? `${tx.errand.rider.firstName} ${tx.errand.rider.lastName}`.trim() : null,
+      pinpoints: tx.errand.pinpoints,
+      itemsPurchasedAt: tx.errand.itemsPurchasedAt,
+    };
+  });
 
   return { orders };
 }

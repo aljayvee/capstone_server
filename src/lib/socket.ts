@@ -44,6 +44,12 @@ export const io = new Server({
     },
     credentials: true,
   },
+  // 20s by default. On a congested mobile link a heartbeat can queue behind
+  // other traffic for longer than that, and each false timeout costs a full
+  // reconnect (handshake, auth, room joins, snapshot) — exactly the traffic a
+  // slow connection can least afford. Dead sockets are still reaped within
+  // pingInterval + pingTimeout, about 55 s.
+  pingTimeout: 30_000,
 });
 
 interface AuthenticatedSocketData {
@@ -69,7 +75,7 @@ export const rooms = {
 // Whether this identity may listen to one errand's private channel. Mirrors the
 // object-level checks GET /errands/:id already enforces over HTTP — a socket
 // subscription must not be a way around them.
-async function canSubscribeToErrand(
+export async function canSubscribeToErrand(
   errandId: string,
   userId: number | undefined,
   role: string | undefined

@@ -9,7 +9,11 @@ import { createErrandSchema, assignRiderSchema, declineErrandSchema, errandQuote
 import { pinpointsBodySchema } from "../validators/pinpointValidators.js";
 import { pabiliItemsBodySchema } from "../validators/pabiliItemValidators.js";
 import { occurredAtSchema } from "../validators/trackingValidators.js";
-import { proofImageUploadSchema, proofImageConfirmSchema } from "../validators/proofImageValidators.js";
+import {
+  proofImageUploadSchema,
+  proofImageConfirmSchema,
+  proofImageScanSchema,
+} from "../validators/proofImageValidators.js";
 import * as proofImageService from "../services/proofImageService.js";
 
 export const listErrands = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
@@ -169,6 +173,17 @@ export const setPinpoints = asyncHandler<AuthenticatedRequest>(async (req, res: 
   res.json({ success: true, errand });
 });
 
+// POST /api/errands/:id/pinpoints/quote - what these stops would cost, unsaved.
+export const quotePinpoints = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const callerRole = String(req.user?.role || "").toUpperCase();
+  if (req.user?.id) {
+    await errandService.verifyDispatcherAccess(req.params.id, req.user.id, callerRole);
+  }
+  const input = parseOrThrow(pinpointsBodySchema, req.body);
+  const quote = await errandService.quotePinpoints(req.params.id, input.pinpoints);
+  res.json({ quote });
+});
+
 export const updateItems = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const callerRole = String(req.user?.role || "").toUpperCase();
   if (req.user?.id) {
@@ -178,6 +193,46 @@ export const updateItems = asyncHandler<AuthenticatedRequest>(async (req, res: R
   const errand = await errandService.updateItems(req.params.id, input.items);
   res.json({ success: true, errand });
 });
+
+export const updateItemFulfillmentStatus = asyncHandler<AuthenticatedRequest>(
+  async (req, res: Response) => {
+    const itemId = Number(req.params.itemId);
+    const fulfillmentStatus = String(req.body?.fulfillmentStatus || "");
+    const result = await errandService.updateItemFulfillmentStatus(
+      req.params.id,
+      itemId,
+      req.user!.id,
+      String(req.user?.role || ""),
+      fulfillmentStatus
+    );
+    res.json({ success: true, ...result });
+  }
+);
+
+export const suggestItemSubstitutes = asyncHandler<AuthenticatedRequest>(
+  async (req, res: Response) => {
+    const itemId = Number(req.params.itemId);
+    const result = await errandService.suggestSubstitutesForItem(req.params.id, itemId);
+    res.json(result);
+  }
+);
+
+export const declineItemSubstitute = asyncHandler<AuthenticatedRequest>(
+  async (req, res: Response) => {
+    const itemId = Number(req.params.itemId);
+    const callerRole = String(req.user?.role || "").toUpperCase();
+    if (req.user?.id) {
+      await errandService.verifyDispatcherAccess(req.params.id, req.user.id, callerRole);
+    }
+    const result = await errandService.declineItemSubstitute(
+      req.params.id,
+      itemId,
+      req.user!.id,
+      callerRole
+    );
+    res.json(result);
+  }
+);
 
 export const enablePayment = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const callerRole = String(req.user?.role || "").toUpperCase();
@@ -246,6 +301,26 @@ export const uploadProofImage = asyncHandler<AuthenticatedRequest>(async (req, r
   });
 });
 
+// A receipt read and held, not saved: nothing reaches the database until the
+// rider confirms the total, so a retake leaves no copy behind.
+export const scanProofImage = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(proofImageScanSchema, req.body);
+  res.json(await proofImageService.scanProofImage(req.params.id, req.user!.id, input));
+});
+
+// The rider confirms a held scan's total, and the photo is saved with it.
+export const confirmScannedProof = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(proofImageConfirmSchema, req.body);
+  const saved = await proofImageService.confirmScannedProof(
+    req.params.id,
+    String(req.params.scanId),
+    req.user!.id,
+    input.confirmedTotal,
+    input.riderNote
+  );
+  res.status(201).json(saved);
+});
+
 // The rider accepts the extracted figure or corrects it. Both are kept.
 export const confirmProofImage = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(proofImageConfirmSchema, req.body);
@@ -285,3 +360,36 @@ export const getProofImage = asyncHandler<AuthenticatedRequest>(async (req, res:
     imageData: image.imageData,
   });
 });
+
+export const notifyChatMessage = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const errandId = req.params.id;
+  const text = String(req.body?.text || "").trim();
+  if (!text) {
+    throw new ServiceError(400, "Message text is required.");
+  }
+  const senderName = typeof req.body?.senderName === "string" ? req.body.senderName : undefined;
+  const result = await errandService.notifyCustomerChatMessage(
+    errandId,
+    req.user!.id,
+    text,
+    senderName
+  );
+  res.json(result);
+});
+
+export const notifyCustomerChat = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const errandId = req.params.id;
+  const text = String(req.body?.text || "").trim();
+  if (!text) {
+    throw new ServiceError(400, "Message text is required.");
+  }
+  const senderName = typeof req.body?.senderName === "string" ? req.body.senderName : undefined;
+  const result = await errandService.notifyDispatcherChatMessage(
+    errandId,
+    req.user!.id,
+    text,
+    senderName
+  );
+  res.json(result);
+});
+

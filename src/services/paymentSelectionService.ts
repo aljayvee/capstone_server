@@ -1,6 +1,7 @@
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
 import { paymentModeRepository } from "../repositories/paymentModeRepository.js";
 import { errandRepository } from "../repositories/errandRepository.js";
+import { customerTransactionRepository } from "../repositories/customerTransactionRepository.js";
 import { ServiceError } from "./ServiceError.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
 import { recalculateFee } from "./errandService.js";
@@ -47,6 +48,9 @@ export async function confirmPaymentSelection(
   }
 
   const selection = await paymentSelectionRepository.create(errandId, input.paymentModeId);
+  await customerTransactionRepository.updatePaymentMethodByErrandId(errandId, paymentMode.name);
+  await errandRepository.update(errandId, { paymentModeId: input.paymentModeId });
+
   eventPublisher.emit("payment:selected", {
     errandId,
     paymentMode: selection.paymentMode,

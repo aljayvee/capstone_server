@@ -1,0 +1,78 @@
+{
+ "osm": {
+  "source": "OpenStreetMap names",
+  "rows_in": 85464,
+  "rows_out": 83560,
+  "repaired": 317,
+  "dropped_junk": 160,
+  "relabelled_by_rule": 153,
+  "dropped_mixed": 207,
+  "resolved_conflicts": 460,
+  "dropped_conflicts": 468,
+  "relabelled_contested": 0,
+  "quantities_stripped": 0,
+  "examples": {
+   "repaired": [
+    "'001ISR 152638 EVELYN' -> 'EVELYN'",
+    "'0148877 YOLLY ORTIZ' -> 'YOLLY ORTIZ'",
+    "'0148881 ANNIE SARI-SARI STORE' -> 'ANNIE SARI-SARI STORE'",
+    "'0148882 MILDRED' -> 'MILDRED'",
+    "'0148886 MORAL SARI-SARI STORE AND RESTAURANT' -> 'MORAL SARI-SARI STORE AND RESTAURANT'",
+    "'0148909 BAUTISTA' -> 'BAUTISTA'",
+    "'0148913 EFRIL STORE' -> 'EFRIL STORE'",
+    "'0148918 ALOHA STORE & GEN. MERCHANDISE' -> 'ALOHA STORE & GEN. MERCHANDISE'"
+   ],
+   "relabelled_by_rule": [
+    "5MJ BAKERY: convenience -> bakery",
+    "M.A. SARAP BAKERY: convenience -> bakery",
+    "CANDELARIA BAKERY: convenience -> bakery",
+    "ST. PETER BAKERY: convenience -> bakery",
+    "CULTIHAN BAKERY: convenience -> bakery",
+    "MEO AND SHE BAKERY: convenience -> bakery",
+    "PHENNs BAKESHOP: convenience -> bakery",
+    "3J-S Bakery: convenience -> bakery"
+   ],
+   "dropped_junk": [
+    "0148956 R.J",
+    "1% er",
+    "10-Q",
+    "199X",
+    "19A",
+    "꽃분식2호점",
+    "24k",
+    "26 HG"
+   ],
+   "dropped_mixed": [
+    "2M's Store - Bakery breads and pies (bakery)",
+    "3M's Bakery and Eatery (Fast Food & Restaurant)",
+    "5 Diamonds Pharmacy & Convenience Store (convenience)",
+    "A La Creme Cafe and Cakes (Fast Food & Restaurant)",
+    "A La Creme Cakeshop & Cafe (Fast Food & Restaurant)",
+    "A4M Pharmacy and Convenience Store (Pharmacy & Health)",
+    "Ad' laine Cafe and Bakeshop (Fast Food & Restaurant)",
+    "Adarna Drugstore & Grocery (convenience)"
+   ],
+   "resolved_conflicts": [
+    "BAUTISTA: {'convenience': 5, 'Retail & General Merchandise': 1} -> convenience",
+    "PERLA STORE: {'convenience': 4, 'Retail & General Merchandise': 1} -> convenience",
+    "MARING: {'convenience': 3, 'Fast Food & Restaurant': 1} -> convenience",
+    "SORIANO: {'convenience': 1, 'Retail & General Merchandise': 2} -> Retail & General Merchandise",
+    "MYRNA STORE: {'convenience': 14, 'Retail & General Merchandise': 1} -> convenience",
+    "BELEN STORE: {'convenience': 17, 'Supermarket & Grocery': 1} -> convenience",
+    "RJ STORE: {'convenience': 9, 'Retail & General Merchandise': 1} -> convenience",
+    "JJ STORE: {'convenience': 2, 'Retail & General Merchandise': 1} -> convenience"
+   ],
+   "dropped_conflicts": [
+    "RIVERA: {'convenience': 1, 'Pharmacy & Health': 1}",
+    "MANALO: {'convenience': 1, 'Pharmacy & Health': 1}",
+    "ALVAREZ: {'convenience': 1, 'Supermarket & Grocery': 1}",
+    "JOSIE STORE: {'convenience': 1, 'Retail & General Merchandise': 1}",
+    "3 Kids Store and Eatery: {'Fast Food & Restaurant': 1, 'convenience': 1}",
+    "3MC Litson Manok & Liempo: {'Fast Food & Restaurant': 1, 'Supermarket & Grocery': 1}",
+    "3R Store: {'Retail & General Merchandise': 1, 'convenience': 1}",
+    "3star: {'Retail & General Merchandise': 1, 'convenience': 1}"
+   ]
+  }
+ },
+ "label_issues": 1129
+}

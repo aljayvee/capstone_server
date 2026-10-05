@@ -142,6 +142,27 @@ describe("evidence that does not agree with itself", () => {
     // conduct, not the amount.
     expect(found[0].amountAtRisk).toBe(40);
   });
+
+  it("does not read the cash collected at the door as a second purchase", () => {
+    // Errand 812843d3 in production: one receiptless stop, then the customer's
+    // cash photographed at delivery. Both rows are stored unverified.
+    const paidInCash = errand({
+      proofImages: [
+        {
+          id: 1, kind: "NO_RECEIPT", pinpointId: 1, verified: false, declaredTotal: 57,
+          capturedAt: T("2026-09-24T09:42:44Z"), extraction: null,
+        },
+        {
+          id: 2, kind: "CASH_COLLECTED", pinpointId: null, verified: false, declaredTotal: 132,
+          capturedAt: T("2026-09-24T09:46:55Z"), extraction: null,
+        },
+      ],
+    });
+
+    const found = exceptionsFor(paidInCash);
+    expect(kinds(found)).toEqual(["UNVERIFIED_PURCHASE"]);
+    expect(found[0].amountAtRisk).toBe(57);
+  });
 });
 
 describe("where the rider actually went", () => {

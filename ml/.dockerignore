@@ -1,0 +1,16 @@
+# Only sugo_category/, app.py, requirements.txt and data/ go into the image.
+# Without this every build uploads the local .venv (thousands of files) as context.
+.venv/
+# The Gemma API key. Passed to the container at run time by compose; it must
+# never be in a build context, where a stray COPY would put it in the image.
+.env
+**/__pycache__/
+.pytest_cache/
+.crawl-cache/
+models/
+tests/
+crawler/
+category/
+exception-reasons/
+data/osm_tacurong.csv
+data/tacurong_places_review.csv

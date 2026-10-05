@@ -1,0 +1,2218 @@
+{
+ "gemini-3.8-flash": {
+  "scenario-validation-0": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-1": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-2": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-3": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-4": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-5": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-6": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-7": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-8": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-9": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-10": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-11": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-12": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-13": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-14": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.96,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-15": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-16": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-17": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-18": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.55,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-19": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-20": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-21": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-22": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-23": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-24": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.55,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-25": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-26": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-27": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.55,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-28": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-29": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-30": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.72,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-31": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-32": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-33": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-34": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-35": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-36": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-37": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-38": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-39": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-40": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-41": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-42": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-43": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-44": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-45": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-46": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-47": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-48": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-49": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-50": {
+   "code": "BRANCH_PINNED_UNAVAILABLE",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-51": {
+   "code": "BRANCH_PINNED_UNAVAILABLE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-52": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.82,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-53": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-54": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-55": {
+   "code": null,
+   "confidence": 0.8,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-56": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-57": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-58": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-59": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-60": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-61": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-62": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-63": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.7,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-64": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-65": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-66": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-67": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.8,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-68": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-69": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-70": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-71": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.68,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-72": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-73": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-74": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.45,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-75": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-76": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-77": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-78": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-79": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-80": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-81": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-82": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-83": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-84": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-85": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-86": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-87": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-88": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-89": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-90": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-91": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-92": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-93": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-94": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-validation-95": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-96": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-97": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-98": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-99": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-100": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-101": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-102": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-103": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-104": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-105": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-106": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-107": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-108": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-109": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-110": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-111": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-112": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-113": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-114": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.8,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-115": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-116": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-117": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-118": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.82,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-119": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-120": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.7,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-121": {
+   "code": "RECEIPT_PARTLY_READ",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-122": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-123": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-124": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-125": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-126": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.8,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-127": {
+   "code": "RECEIPT_DISCOUNT_APPLIED",
+   "confidence": 0.55,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-128": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-129": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-130": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-131": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-132": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-133": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-134": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-135": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-136": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-137": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-138": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-139": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-140": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-141": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-142": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-143": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-144": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-145": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-146": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-147": {
+   "code": "BRANCH_PINNED_UNAVAILABLE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-148": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.82,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-149": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-150": {
+   "code": null,
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-151": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-152": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-153": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-154": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-155": {
+   "code": "MISSING_ON_OTHER_RECEIPT",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-156": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.55,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-157": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.7,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-158": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-159": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-160": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-161": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-162": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-163": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.65,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-164": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-165": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.75,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-166": {
+   "code": "STALL_COOKED_TO_ORDER",
+   "confidence": 0.55,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-167": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-168": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.8,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-169": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-170": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.35,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-171": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-172": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-173": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-174": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-175": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.9,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-176": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.45,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-177": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-178": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-179": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-180": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-181": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-182": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-183": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-184": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-185": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-186": {
+   "code": "BALANCE_CASH_AT_DOOR",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-187": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-188": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.92,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-189": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-190": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "scenario-test-191": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-192": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-193": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-194": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-195": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-196": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-197": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-198": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-199": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-200": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-201": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-202": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-203": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-204": {
+   "code": null,
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-205": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-206": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-207": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-208": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-209": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-210": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.98,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-211": {
+   "code": null,
+   "confidence": 0.88,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-212": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-213": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-214": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-test-215": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "hard-validation-216": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemini-3.8-flash"
+  },
+  "real-real-217": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "real-real-218": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  },
+  "real-real-219": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemini-3.8-flash"
+  }
+ },
+ "_latency": {
+  "gemini-3.8-flash": {
+   "samples": 220,
+   "median_ms": 1998,
+   "p90_ms": 3508
+  },
+  "gemma-4-26b-a4b-it": {
+   "samples": 220,
+   "median_ms": 1622,
+   "p90_ms": 1799
+  }
+ },
+ "gemma-4-26b-a4b-it": {
+  "scenario-validation-0": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-1": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-2": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-3": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-4": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-5": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-6": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-7": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-8": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-9": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-10": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-11": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-12": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-13": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-14": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-15": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-16": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-17": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-18": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-19": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-20": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-21": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-22": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-23": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-24": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-25": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-26": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-27": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-28": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-29": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-30": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-31": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-32": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-33": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-34": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-35": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-36": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-37": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-38": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-39": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-40": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-41": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-42": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-43": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-44": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-45": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-46": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-47": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-48": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-49": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-50": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-51": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-52": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-53": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-54": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-55": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-56": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-57": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-58": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-59": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-60": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.3,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-61": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.4,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-62": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.4,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-63": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.4,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-64": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.4,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-65": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-66": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-67": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-68": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-69": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-70": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-71": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-72": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-73": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-74": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-75": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-76": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-77": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-78": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-79": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-80": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-81": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-82": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-83": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-84": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-85": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-86": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-87": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-88": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-89": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-90": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-91": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-92": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-93": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-94": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-validation-95": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-96": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-97": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-98": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-99": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-100": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-101": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-102": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-103": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-104": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-105": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-106": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-107": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-108": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-109": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-110": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-111": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-112": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-113": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-114": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.1,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-115": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-116": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-117": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-118": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-119": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-120": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-121": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-122": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-123": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-124": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-125": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-126": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-127": {
+   "code": "RECEIPT_SCAN_MISREAD",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-128": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-129": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-130": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-131": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-132": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-133": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-134": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-135": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-136": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-137": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-138": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-139": {
+   "code": "UNVERIFIED_PAID_IN_FULL",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-140": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-141": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-142": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-143": {
+   "code": "BRANCH_SAME_CHAIN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-144": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-145": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-146": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-147": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-148": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-149": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-150": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-151": {
+   "code": null,
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-152": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-153": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-154": {
+   "code": "MISSING_ITEMS_UNAVAILABLE",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-155": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-156": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-157": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-158": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-159": {
+   "code": "STALL_LONG_QUEUE",
+   "confidence": 0.3,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-160": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-161": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-162": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.7,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-163": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.4,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-164": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-165": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-166": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.1,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-167": {
+   "code": "STALL_LARGE_ORDER",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-168": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-169": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.1,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-170": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-171": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.1,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-172": {
+   "code": null,
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-173": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-174": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-175": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-176": {
+   "code": "OVERAGE_TOPUP_PAID",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-177": {
+   "code": "OVERAGE_CUSTOMER_AGREED",
+   "confidence": 0.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-178": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-179": {
+   "code": null,
+   "confidence": 1.0,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-180": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-181": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-182": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-183": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-184": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-185": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-186": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-187": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-188": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-189": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-190": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "scenario-test-191": {
+   "code": "BALANCE_TRANSFER_UNRECORDED",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-192": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-193": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-194": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-195": {
+   "code": "CASH_NO_EXACT_CHANGE",
+   "confidence": 0.85,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-196": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-197": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-198": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-199": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-200": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-201": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-202": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-203": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-204": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-205": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-206": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-207": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-208": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-209": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-210": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.95,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-211": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-212": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-213": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-214": {
+   "code": "CASH_OVER_TIP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-test-215": {
+   "code": "CASH_RIDER_TO_REMIT",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "hard-validation-216": {
+   "code": "CASH_PAID_BY_TRANSFER",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "real-real-217": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "real-real-218": {
+   "code": "CASH_OVER_TO_RETURN",
+   "confidence": 0.9,
+   "model": "gemma-4-26b-a4b-it"
+  },
+  "real-real-219": {
+   "code": "UNVERIFIED_SMALL_SHOP",
+   "confidence": 0.8,
+   "model": "gemma-4-26b-a4b-it"
+  }
+ }
+}

@@ -1,0 +1,1039 @@
+Enum "users_role_enum" {
+  "OWNER"
+  "DISPATCHER"
+  "RIDER"
+}
+
+Enum "merchant_categories_handlingFeeMode_enum" {
+  "THRESHOLD"
+  "FLAT"
+  "PERCENT"
+  "NONE"
+}
+
+Enum "errands_status_enum" {
+  "AVAILABLE"
+  "PENDING"
+  "ASSIGNED"
+  "IN_TRANSIT"
+  "DELIVERED"
+  "COMPLETED"
+  "CANCELLED"
+}
+
+Enum "tbl_blocked_ips_banType_enum" {
+  "AUTOMATIC"
+  "MANUAL"
+}
+
+Enum "tbl_blocked_ips_severity_enum" {
+  "LOW"
+  "MEDIUM"
+  "HIGH"
+  "CRITICAL"
+}
+
+Enum "tbl_blocked_ips_status_enum" {
+  "ACTIVE"
+  "EXPIRED"
+  "REVOKED"
+}
+
+Enum "errand_payments_kind_enum" {
+  "UPFRONT"
+  "TOP_UP"
+  "FINAL"
+  "REFUND"
+}
+
+Enum "errand_proof_images_kind_enum" {
+  "RECEIPT"
+  "TRANSFER"
+  "PROOF_OF_DELIVERY"
+  "NO_RECEIPT"
+  "PAYMENT_PROOF"
+  "RIDER_BALANCE_PROOF"
+  "CASH_COLLECTED"
+}
+
+Enum "errand_proof_images_clarityVerdict_enum" {
+  "SHARP"
+  "ACCEPTABLE"
+  "TOO_BLURRY"
+  "TOO_DARK"
+}
+
+Enum "receipt_extractions_engine_enum" {
+  "MLKIT"
+  "CLOUD_VISION"
+}
+
+Enum "receipt_extractions_status_enum" {
+  "OK"
+  "NEEDS_REVIEW"
+  "FAILED"
+}
+
+Enum "rider_status_logs_status_enum" {
+  "ONLINE"
+  "OFFLINE"
+}
+
+Table "users" {
+  "id" INTEGER [pk, not null, increment]
+  "username" VARCHAR(191) [not null]
+  "passwordHash" VARCHAR(191) [not null]
+  "role" users_role_enum [not null]
+  "firstName" VARCHAR(191) [not null]
+  "middleName" VARCHAR(191)
+  "lastName" VARCHAR(191) [not null]
+  "email" VARCHAR(191) [not null]
+  "phone" VARCHAR(191) [not null]
+  "avatar" VARCHAR(191)
+  "status" VARCHAR(191) [not null, default: 'Active']
+  "version" INTEGER [not null, default: 1]
+  "updatedBy" INTEGER
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+  "emailVerified" BOOLEAN [not null, default: false]
+  "emailVerifiedAt" DATETIME(3)
+  "profileCompleted" BOOLEAN [not null, default: true]
+  "expoPushToken" VARCHAR(191)
+
+  Indexes {
+    username [unique, name: "users_username_key"]
+    email [unique, name: "users_email_key"]
+  }
+}
+
+Table "rider_profile_photos" {
+  "id" INTEGER [pk, not null, increment]
+  "userId" INTEGER [not null]
+  "photoData" LONGTEXT [not null]
+  "mimeType" VARCHAR(50) [not null]
+  "fileSize" INTEGER [not null]
+  "fileName" VARCHAR(255)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    userId [unique, name: "rider_profile_photos_userId_key"]
+  }
+}
+
+Table "rider_presence" {
+  "id" INTEGER [pk, not null, increment]
+  "riderId" INTEGER [not null]
+  "latitude" DOUBLE
+  "longitude" DOUBLE
+  "accuracyMeters" DOUBLE
+  "headingDeg" DOUBLE
+  "onDuty" BOOLEAN [not null, default: false]
+  "backgroundLocation" BOOLEAN [not null, default: false]
+  "notifications" BOOLEAN [not null, default: false]
+  "exactAlarms" BOOLEAN [not null, default: false]
+  "connectivity" VARCHAR(16)
+  "beaconIntervalMs" INTEGER
+  "recordedAt" DATETIME(3)
+  "lastBeaconAt" DATETIME(3)
+  "shutdownAt" DATETIME(3)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    riderId [unique, name: "rider_presence_riderId_key"]
+  }
+}
+
+Table "customer_accounts" {
+  "id" INTEGER [pk, not null, increment]
+  "username" VARCHAR(191) [not null]
+  "passwordHash" VARCHAR(191) [not null]
+  "email" VARCHAR(191) [not null]
+  "status" VARCHAR(191) [not null, default: 'Active']
+  "emailVerified" BOOLEAN [not null, default: false]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+  "expoPushToken" VARCHAR(191)
+
+  Indexes {
+    username [unique, name: "customer_accounts_username_key"]
+    email [unique, name: "customer_accounts_email_key"]
+  }
+}
+
+Table "customer_information" {
+  "id" INTEGER [pk, not null, increment]
+  "customerId" INTEGER [not null]
+  "firstName" VARCHAR(191) [not null]
+  "middleName" VARCHAR(191)
+  "lastName" VARCHAR(191) [not null]
+  "birthdate" DATE
+  "phone" VARCHAR(191) [not null]
+  "avatar" LONGTEXT
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    customerId [unique, name: "customer_information_customerId_key"]
+  }
+}
+
+Table "customer_profile_photos" {
+  "id" INTEGER [pk, not null, increment]
+  "customerId" INTEGER [not null]
+  "photoData" LONGTEXT [not null]
+  "mimeType" VARCHAR(50) [not null]
+  "fileSize" INTEGER [not null]
+  "fileName" VARCHAR(255)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    customerId [unique, name: "customer_profile_photos_customerId_key"]
+  }
+}
+
+Table "customer_transactions" {
+  "id" INTEGER [pk, not null, increment]
+  "customerId" INTEGER [not null]
+  "errandId" VARCHAR(191) [not null]
+  "amount" DOUBLE [not null]
+  "paymentMethod" VARCHAR(191) [not null, default: 'COD']
+  "status" VARCHAR(191) [not null, default: 'PENDING']
+  "paidAt" DATETIME(3)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    errandId [unique, name: "customer_transactions_errandId_key"]
+  }
+}
+
+Table "merchant_categories" {
+  "id" INTEGER [pk, not null, increment]
+  "name" VARCHAR(191) [not null]
+  "description" VARCHAR(191)
+  "status" VARCHAR(191) [not null, default: 'Active']
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+  "handlingFeeMode" merchant_categories_handlingFeeMode_enum [not null, default: 'THRESHOLD']
+  "dwellP50Seconds" INTEGER [not null, default: 600]
+  "dwellP80Seconds" INTEGER [not null, default: 1200]
+  "dwellSampleCount" INTEGER [not null, default: 0]
+  "dwellUpdatedAt" DATETIME(3)
+  "geofenceRadiusMeters" INTEGER [not null, default: 75]
+
+  Indexes {
+    name [unique, name: "merchant_categories_name_key"]
+  }
+}
+
+Table "store_cat_image" {
+  "id" INTEGER [pk, not null, increment]
+  "categoryId" INTEGER [not null]
+  "imageData" LONGTEXT [not null]
+  "mimeType" VARCHAR(50) [not null]
+  "fileSize" INTEGER [not null]
+  "fileName" VARCHAR(255)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    categoryId [unique, name: "store_cat_image_categoryId_key"]
+  }
+}
+
+Table "payment_modes" {
+  "id" INTEGER [pk, not null, increment]
+  "name" VARCHAR(191) [not null]
+  "description" VARCHAR(191)
+  "status" VARCHAR(191) [not null, default: 'Active']
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    name [unique, name: "payment_modes_name_key"]
+  }
+}
+
+Table "errands" {
+  "id" VARCHAR(191) [pk, not null]
+  "category" VARCHAR(191) [not null]
+  "description" VARCHAR(191) [not null]
+  "pickupAddress" VARCHAR(191) [not null]
+  "deliveryAddress" VARCHAR(191) [not null]
+  "deliveryLatitude" DOUBLE
+  "deliveryLongitude" DOUBLE
+  "estimatedCost" DOUBLE [not null, default: 0]
+  "deliveryFee" DOUBLE [not null, default: 50]
+  "tip" DOUBLE [not null, default: 0]
+  "totalCost" DOUBLE [not null, default: 50]
+  "status" errands_status_enum [not null, default: 'PENDING']
+  "storeCount" INTEGER [not null, default: 1]
+  "customerId" INTEGER [not null]
+  "riderId" INTEGER
+  "paymentModeId" INTEGER
+  "paymentEnabledAt" DATETIME(3)
+  "paymentEnabledByDispatcherId" INTEGER
+  "itemsPurchasedAt" DATETIME(3)
+  "halfPaymentRequestedAt" DATETIME(3)
+  "overageEscalatedAt" DATETIME(3)
+  "overageResolvedAt" DATETIME(3)
+  "assignedAt" DATETIME(3)
+  "acceptedAt" DATETIME(3)
+  "deliveredAt" DATETIME(3)
+  "completedAt" DATETIME(3)
+  "distanceKm" DOUBLE
+  "routeDistanceMeters" INTEGER
+  "routeDurationSeconds" INTEGER
+  "routeGeometry" TEXT
+  "routeProvider" VARCHAR(20)
+  "routedAt" DATETIME(3)
+  "multiStoreFee" DOUBLE
+  "groceryFee" DOUBLE
+  "nonCodFee" DOUBLE
+  "distanceFee" DOUBLE
+  "feeCalculatedAt" DATETIME(3)
+  "quotedHandlingBasket" DOUBLE
+  "quotedHandlingFee" DOUBLE
+  "quotedDeliveryFee" DOUBLE
+  "handlingFeeDecision" JSON
+  "etaLowAt" DATETIME(3)
+  "etaHighAt" DATETIME(3)
+  "etaComputedAt" DATETIME(3)
+  "etaIsDegraded" BOOLEAN [not null, default: false]
+  "proximity_alert_sent_at" DATETIME(3)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+}
+
+Table "pabili_details_tbl" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "itemName" VARCHAR(191) [not null]
+  "storeCategory" VARCHAR(191)
+  "quantity" INTEGER [not null, default: 1]
+  "unitPrice" DOUBLE [not null, default: 0]
+  "estimatedSubtotal" DOUBLE [not null, default: 0]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "pinpointId" INTEGER
+
+  Indexes {
+    pinpointId [name: "pabili_details_tbl_pinpointId_idx"]
+  }
+}
+
+Table "pabili_item_requests_tbl" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "itemName" VARCHAR(191) [not null]
+  "storeCategory" VARCHAR(191)
+  "quantity" INTEGER [not null, default: 1]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "pinpointId" INTEGER
+
+  Indexes {
+    pinpointId [name: "pabili_item_requests_tbl_pinpointId_idx"]
+  }
+}
+
+Table "errand_pinpoints_tbl" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "sequence" INTEGER [not null, default: 0]
+  "storeName" VARCHAR(191) [not null]
+  "latitude" DOUBLE [not null]
+  "longitude" DOUBLE [not null]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "categoryId" INTEGER
+  "placeId" VARCHAR(36)
+  "observedPlaceId" VARCHAR(36)
+  "mismatchDetectedAt" DATETIME(3)
+  "arrivedAt" DATETIME(3)
+  "departedAt" DATETIME(3)
+  "legDistanceMeters" INTEGER
+  "legDurationSeconds" INTEGER
+  "sequenceLocked" BOOLEAN [not null, default: false]
+
+  Indexes {
+    errandId [name: "errand_pinpoints_tbl_errandId_idx"]
+  }
+}
+
+Table "exception_reviews" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "kind" VARCHAR(40) [not null]
+  "reviewerId" INTEGER [not null]
+  "reason" VARCHAR(500) [not null]
+  "amountAtRisk" DOUBLE [not null, default: 0]
+  "resolvedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    errandId [name: "exception_reviews_errandId_idx"]
+    (reviewerId, resolvedAt) [name: "exception_reviews_reviewerId_resolvedAt_idx"]
+  }
+}
+
+Table "dispatch_logs" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "dispatcherId" INTEGER [not null]
+  "notes" VARCHAR(191)
+  "dispatchedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "verifiedAt" DATETIME(3)
+}
+
+Table "errand_decline_reasons" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "dispatcherId" INTEGER [not null]
+  "reason" VARCHAR(255) [not null]
+  "isCustom" BOOLEAN [not null, default: false]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    errandId [name: "errand_decline_reasons_errandId_idx"]
+    dispatcherId [name: "errand_decline_reasons_dispatcherId_idx"]
+  }
+}
+
+Table "rate_configs" {
+  "id" INTEGER [pk, not null, default: 1]
+  "baseFee" DOUBLE [not null]
+  "perKmRate" DOUBLE [not null, default: 10]
+  "multiStoreFeePerStore" DOUBLE [not null, default: 30]
+  "maxAdditionalStores" INTEGER [not null, default: 2]
+  "groceryFeeThreshold" DOUBLE [not null, default: 1001]
+  "groceryFeePercent" DOUBLE [not null, default: 10]
+  "groceryFeeFlat" DOUBLE [not null, default: 50]
+  "nonCodThreshold" DOUBLE [not null, default: 3000]
+  "nonCodFeeHigh" DOUBLE [not null, default: 15]
+  "nonCodFeeLow" DOUBLE [not null, default: 0]
+  "updatedAt" DATETIME(3) [not null]
+}
+
+Table "saved_delivery_locations" {
+  "id" INTEGER [pk, not null, increment]
+  "customerId" INTEGER [not null]
+  "label" VARCHAR(191) [not null]
+  "address" VARCHAR(191) [not null]
+  "latitude" DOUBLE [not null]
+  "longitude" DOUBLE [not null]
+  "isDefault" BOOLEAN [not null, default: false]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+}
+
+Table "user_sessions" {
+  "id" VARCHAR(36) [pk, not null]
+  "subjectId" INTEGER [not null]
+  "subjectType" VARCHAR(16) [not null]
+  "role" VARCHAR(20) [not null]
+  "tokenHash" CHAR(64) [not null]
+  "previousHash" CHAR(64)
+  "rotatedAt" DATETIME(3)
+  "deviceId" VARCHAR(80)
+  "userAgent" VARCHAR(300)
+  "ipAddress" VARCHAR(64)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "lastUsedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "expiresAt" DATETIME(3) [not null]
+  "revokedAt" DATETIME(3)
+  "revokedReason" VARCHAR(64)
+
+  Indexes {
+    (subjectType, subjectId) [name: "user_sessions_subjectType_subjectId_idx"]
+    expiresAt [name: "user_sessions_expiresAt_idx"]
+    tokenHash [name: "user_sessions_tokenHash_idx"]
+  }
+}
+
+Table "account_login_logs" {
+  "id" INTEGER [pk, not null, increment]
+  "userId" INTEGER [not null]
+  "role" VARCHAR(20) [not null]
+  "ipAddress" VARCHAR(64) [not null]
+  "userAgent" VARCHAR(300) [not null]
+  "deviceInfo" VARCHAR(120)
+  "status" VARCHAR(32) [not null]
+  "sessionId" VARCHAR(36)
+  "isOnline" BOOLEAN [not null, default: false]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "revokedAt" DATETIME(3)
+  "revokedReason" VARCHAR(64)
+
+  Indexes {
+    (userId, role) [name: "account_login_logs_userId_role_idx"]
+    createdAt [name: "account_login_logs_createdAt_idx"]
+  }
+}
+
+Table "token_blocklist" {
+  "id" INTEGER [pk, not null, increment]
+  "token" VARCHAR(500) [not null]
+  "expiresAt" DATETIME(3) [not null]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    token [unique, name: "token_blocklist_token_key"]
+    expiresAt [name: "token_blocklist_expiresAt_idx"]
+  }
+}
+
+Table "tbl_sys_admin" {
+  "id" INTEGER [pk, not null, increment]
+  "username" VARCHAR(50) [not null]
+  "passwordHash" VARCHAR(255) [not null]
+  "firstName" VARCHAR(100)
+  "middleName" VARCHAR(100)
+  "lastName" VARCHAR(100)
+  "nickname" VARCHAR(50)
+  "email" VARCHAR(191)
+  "phone" VARCHAR(30)
+  "status" VARCHAR(20) [not null, default: 'Active']
+  "role" VARCHAR(20) [not null, default: 'SYSADMIN']
+  "profileCompleted" BOOLEAN [not null, default: false]
+  "emailVerified" BOOLEAN [not null, default: false]
+  "emailVerifiedAt" DATETIME(3)
+  "verificationTokenHash" VARCHAR(255)
+  "verificationTokenExpiresAt" DATETIME(3)
+  "profileOtpHash" VARCHAR(255)
+  "profileOtpExpiresAt" DATETIME(3)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+  "lastLoginAt" DATETIME(3)
+  "failedLoginAttempts" INTEGER [not null, default: 0]
+  "lockedUntil" DATETIME(3)
+  "unlockTokenHash" VARCHAR(255)
+  "unlockTokenExpiresAt" DATETIME(3)
+  "enforceTwoFactor" BOOLEAN [not null, default: false]
+  "twoFactorCodeHash" VARCHAR(255)
+  "twoFactorExpiresAt" DATETIME(3)
+
+  Indexes {
+    username [unique, name: "tbl_sys_admin_username_key"]
+    email [unique, name: "tbl_sys_admin_email_key"]
+  }
+}
+
+Table "tbl_sys_admin_trusted_devices" {
+  "id" VARCHAR(191) [pk, not null]
+  "adminId" INTEGER [not null]
+  "deviceFingerprint" VARCHAR(128) [not null]
+  "deviceTokenHash" VARCHAR(255) [not null]
+  "ipAddress" VARCHAR(45) [not null]
+  "userAgent" TEXT [not null]
+  "lastUsedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "expiresAt" DATETIME(3) [not null]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    adminId [name: "tbl_sys_admin_trusted_devices_adminId_idx"]
+    deviceTokenHash [name: "tbl_sys_admin_trusted_devices_deviceTokenHash_idx"]
+  }
+}
+
+Table "tbl_sys_admin_password_history" {
+  "id" INTEGER [pk, not null, increment]
+  "adminId" INTEGER [not null]
+  "passwordHash" VARCHAR(255) [not null]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    adminId [name: "tbl_sys_admin_password_history_adminId_idx"]
+  }
+}
+
+Table "tbl_blocked_ips" {
+  "id" INTEGER [pk, not null, increment]
+  "ipAddress" VARCHAR(45) [not null]
+  "reason" VARCHAR(255) [not null]
+  "banType" tbl_blocked_ips_banType_enum [not null, default: 'AUTOMATIC']
+  "severity" tbl_blocked_ips_severity_enum [not null, default: 'HIGH']
+  "status" tbl_blocked_ips_status_enum [not null, default: 'ACTIVE']
+  "blockedUntil" DATETIME(3)
+  "attackCount" INTEGER [not null, default: 1]
+  "lastSeenAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "bannedById" INTEGER
+  "metadata" JSON
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    (ipAddress, status) [name: "tbl_blocked_ips_ipAddress_status_idx"]
+    blockedUntil [name: "tbl_blocked_ips_blockedUntil_idx"]
+    createdAt [name: "tbl_blocked_ips_createdAt_idx"]
+  }
+}
+
+Table "tbl_whitelisted_ips" {
+  "id" INTEGER [pk, not null, increment]
+  "ipAddress" VARCHAR(45) [not null]
+  "cidrBlock" VARCHAR(50)
+  "description" VARCHAR(255) [not null]
+  "isImmune" BOOLEAN [not null, default: false]
+  "createdById" INTEGER
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    ipAddress [unique, name: "tbl_whitelisted_ips_ipAddress_key"]
+  }
+}
+
+Table "tbl_database_backups" {
+  "id" INTEGER [pk, not null, increment]
+  "fileName" VARCHAR(255) [not null]
+  "fileSizeBytes" BIGINT [not null, default: 0]
+  "filePath" VARCHAR(500) [not null]
+  "backupType" VARCHAR(50) [not null, default: 'AUTOMATED']
+  "status" VARCHAR(50) [not null, default: 'COMPLETED']
+  "createdById" INTEGER
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    fileName [unique, name: "tbl_database_backups_fileName_key"]
+    createdAt [name: "tbl_database_backups_createdAt_idx"]
+  }
+}
+
+Table "tbl_sysadmin_alerts" {
+  "id" INTEGER [pk, not null, increment]
+  "alertType" VARCHAR(50) [not null]
+  "severity" VARCHAR(20) [not null, default: 'HIGH']
+  "title" VARCHAR(255) [not null]
+  "message" TEXT [not null]
+  "channel" VARCHAR(50) [not null, default: 'TELEGRAM']
+  "status" VARCHAR(50) [not null, default: 'SENT']
+  "metadata" JSON
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    createdAt [name: "tbl_sysadmin_alerts_createdAt_idx"]
+  }
+}
+
+Table "payment_selections" {
+  "id" VARCHAR(191) [pk, not null]
+  "errandId" VARCHAR(191) [not null]
+  "paymentModeId" INTEGER [not null]
+  "confirmedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    errandId [unique, name: "payment_selections_errandId_key"]
+  }
+}
+
+Table "errand_payments" {
+  "id" VARCHAR(191) [pk, not null]
+  "errandId" VARCHAR(191) [not null]
+  "kind" errand_payments_kind_enum [not null]
+  "amount" DOUBLE [not null]
+  "confirmedByUserId" INTEGER
+  "confirmedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "note" VARCHAR(255)
+  "proofImageId" INTEGER
+
+  Indexes {
+    proofImageId [unique, name: "errand_payments_proofImageId_key"]
+    errandId [name: "errand_payments_errandId_idx"]
+  }
+}
+
+Table "ratings" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "riderId" INTEGER [not null]
+  "stars" INTEGER [not null]
+  "comment" VARCHAR(191)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    errandId [unique, name: "ratings_errandId_key"]
+  }
+}
+
+Table "email_verification_codes" {
+  "id" INTEGER [pk, not null, increment]
+  "customerId" INTEGER
+  "userId" INTEGER
+  "email" VARCHAR(191)
+  "phone" VARCHAR(191)
+  "codeHash" VARCHAR(191) [not null]
+  "expiresAt" DATETIME(3) [not null]
+  "consumedAt" DATETIME(3)
+  "attempts" INTEGER [not null, default: 0]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    customerId [name: "email_verification_codes_customerId_idx"]
+    userId [name: "email_verification_codes_userId_idx"]
+    email [name: "email_verification_codes_email_idx"]
+    phone [name: "email_verification_codes_phone_idx"]
+  }
+}
+
+Table "connectivity_incidents" {
+  "id" INTEGER [pk, not null, increment]
+  "riderId" INTEGER [not null]
+  "errandId" VARCHAR(191)
+  "disconnectedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "reconnectedAt" DATETIME(3)
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    riderId [name: "connectivity_incidents_riderId_idx"]
+  }
+}
+
+Table "settlement_records" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "riderId" INTEGER [not null]
+  "expectedAmount" DOUBLE [not null]
+  "collectedAmount" DOUBLE [not null]
+  "variance" DOUBLE [not null]
+  "status" VARCHAR(191) [not null]
+  "shortReason" VARCHAR(300)
+  "proofImageId" INTEGER
+  "settledAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    errandId [unique, name: "settlement_records_errandId_key"]
+    proofImageId [unique, name: "settlement_records_proofImageId_key"]
+    riderId [name: "settlement_records_riderId_idx"]
+  }
+}
+
+Table "errand_proof_images" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "pinpointId" INTEGER
+  "riderId" INTEGER
+  "customerId" INTEGER
+  "kind" errand_proof_images_kind_enum [not null]
+  "imageData" LONGTEXT [not null]
+  "mimeType" VARCHAR(30) [not null]
+  "byteSize" INTEGER [not null]
+  "clarityScore" DOUBLE
+  "clarityVerdict" errand_proof_images_clarityVerdict_enum
+  "capturedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "verified" BOOLEAN [not null, default: true]
+  "declaredTotal" DOUBLE
+  "supersededAt" DATETIME(3)
+
+  Indexes {
+    errandId [name: "errand_proof_images_errandId_idx"]
+    riderId [name: "errand_proof_images_riderId_idx"]
+  }
+}
+
+Table "receipt_extractions" {
+  "id" INTEGER [pk, not null, increment]
+  "proofImageId" INTEGER [not null]
+  "engine" receipt_extractions_engine_enum [not null]
+  "rawText" LONGTEXT
+  "extractedTotal" DOUBLE
+  "extractedDate" DATETIME(3)
+  "confidence" DOUBLE
+  "status" receipt_extractions_status_enum [not null, default: 'NEEDS_REVIEW']
+  "referenceNo" VARCHAR(40)
+  "transactionId" VARCHAR(40)
+  "confirmedTotal" DOUBLE
+  "confirmedAt" DATETIME(3)
+  "extractedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    proofImageId [unique, name: "receipt_extractions_proofImageId_key"]
+  }
+}
+
+Table "rider_commissions" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "riderId" INTEGER [not null]
+  "deliveryFee" DOUBLE [not null]
+  "tip" DOUBLE [not null]
+  "commissionRate" DOUBLE [not null]
+  "riderShare" DOUBLE [not null]
+  "businessShare" DOUBLE [not null]
+  "itemCostExcluded" DOUBLE [not null]
+  "computedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    errandId [unique, name: "rider_commissions_errandId_key"]
+    riderId [name: "rider_commissions_riderId_idx"]
+  }
+}
+
+Table "rider_login_sessions" {
+  "id" INTEGER [pk, not null, increment]
+  "riderId" INTEGER [not null]
+  "loginAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "logoutAt" DATETIME(3)
+  "durationSeconds" INTEGER
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    riderId [name: "rider_login_sessions_riderId_idx"]
+    (riderId, logoutAt) [name: "rider_login_sessions_riderId_logoutAt_idx"]
+  }
+}
+
+Table "rider_status_logs" {
+  "id" INTEGER [pk, not null, increment]
+  "riderId" INTEGER [not null]
+  "status" rider_status_logs_status_enum [not null]
+  "recordedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    (riderId, recordedAt) [name: "rider_status_logs_riderId_recordedAt_idx"]
+  }
+}
+
+Table "notifications" {
+  "id" INTEGER [pk, not null, increment]
+  "userId" INTEGER
+  "customerId" INTEGER
+  "type" VARCHAR(191) [not null]
+  "title" VARCHAR(191) [not null]
+  "body" VARCHAR(191) [not null]
+  "isRead" BOOLEAN [not null, default: false]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    userId [name: "notifications_userId_idx"]
+    customerId [name: "notifications_customerId_idx"]
+  }
+}
+
+Table "account_modification_logs" {
+  "id" INTEGER [pk, not null, increment]
+  "role" VARCHAR(191) [not null]
+  "userId" INTEGER
+  "customerId" INTEGER
+  "fieldModified" VARCHAR(191) [not null]
+  "oldValue" TEXT
+  "newValue" TEXT
+  "ipAddress" VARCHAR(191)
+  "userAgent" VARCHAR(191)
+  "verifiedVia" VARCHAR(191) [not null, default: 'RECAPTCHA']
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    userId [name: "account_modification_logs_userId_idx"]
+    customerId [name: "account_modification_logs_customerId_idx"]
+    role [name: "account_modification_logs_role_idx"]
+    createdAt [name: "account_modification_logs_createdAt_idx"]
+  }
+}
+
+Table "password_reset_attempts" {
+  "id" INTEGER [pk, not null, increment]
+  "identifier" VARCHAR(255) [not null]
+  "customerId" INTEGER
+  "outcome" VARCHAR(32) [not null]
+  "ipAddress" VARCHAR(64)
+  "userAgent" TEXT
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    (ipAddress, createdAt) [name: "password_reset_attempts_ipAddress_createdAt_idx"]
+    identifier [name: "password_reset_attempts_identifier_idx"]
+    customerId [name: "password_reset_attempts_customerId_idx"]
+  }
+}
+
+Table "verified_places" {
+  "id" VARCHAR(36) [pk, not null]
+  "name" VARCHAR(150) [not null]
+  "categoryId" INTEGER [not null]
+  "address" VARCHAR(255) [not null]
+  "barangay" VARCHAR(80)
+  "latitude" DOUBLE [not null]
+  "longitude" DOUBLE [not null]
+  "keywords" TEXT
+  "isActive" BOOLEAN [not null, default: true]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "updatedAt" DATETIME(3) [not null]
+
+  Indexes {
+    name [name: "verified_places_name_idx"]
+    categoryId [name: "verified_places_categoryId_idx"]
+    barangay [name: "verified_places_barangay_idx"]
+  }
+}
+
+Table "errand_track_points" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "riderId" INTEGER [not null]
+  "latitude" DOUBLE [not null]
+  "longitude" DOUBLE [not null]
+  "accuracyMeters" DOUBLE
+  "speedMps" DOUBLE
+  "headingDeg" DOUBLE
+  "recordedAt" DATETIME(3) [not null]
+  "receivedAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+  "isMapMatched" BOOLEAN [not null, default: false]
+  "wasOffline" BOOLEAN [not null, default: false]
+  "clientPointId" VARCHAR(36) [not null]
+
+  Indexes {
+    (errandId, recordedAt) [name: "errand_track_points_errandId_recordedAt_idx"]
+    (riderId, recordedAt) [name: "errand_track_points_riderId_recordedAt_idx"]
+    (errandId, clientPointId) [unique, name: "errand_track_points_errandId_clientPointId_key"]
+  }
+}
+
+Table "dwell_observations" {
+  "id" INTEGER [pk, not null, increment]
+  "errandId" VARCHAR(191) [not null]
+  "pinpointId" INTEGER [not null]
+  "categoryId" INTEGER
+  "placeId" VARCHAR(36)
+  "dwellSeconds" INTEGER [not null]
+  "arrivedAt" DATETIME(3) [not null]
+  "departedAt" DATETIME(3) [not null]
+  "stalled" BOOLEAN [not null, default: false]
+  "createdAt" DATETIME(3) [not null, default: `CURRENT_TIMESTAMP(3)`]
+
+  Indexes {
+    (categoryId, createdAt) [name: "dwell_observations_categoryId_createdAt_idx"]
+    (placeId, createdAt) [name: "dwell_observations_placeId_createdAt_idx"]
+  }
+}
+
+Ref "users_updatedBy_fkey":"users"."id" ?<? "users"."updatedBy" [update: cascade, delete: set null]
+
+Ref "rider_profile_photos_userId_fkey":"users"."id" <? "rider_profile_photos"."userId" [update: cascade, delete: cascade]
+
+Ref "rider_presence_riderId_fkey":"users"."id" <? "rider_presence"."riderId" [update: cascade, delete: cascade]
+
+Ref "customer_information_customerId_fkey":"customer_accounts"."id" <? "customer_information"."customerId" [update: cascade, delete: cascade]
+
+Ref "customer_profile_photos_customerId_fkey":"customer_accounts"."id" <? "customer_profile_photos"."customerId" [update: cascade, delete: cascade]
+
+Ref "customer_transactions_customerId_fkey":"customer_accounts"."id" <? "customer_transactions"."customerId" [update: cascade, delete: restrict]
+
+Ref "customer_transactions_errandId_fkey":"errands"."id" <? "customer_transactions"."errandId" [update: cascade, delete: restrict]
+
+Ref "store_cat_image_categoryId_fkey":"merchant_categories"."id" <? "store_cat_image"."categoryId" [update: cascade, delete: cascade]
+
+Ref "errands_customerId_fkey":"customer_accounts"."id" <? "errands"."customerId" [update: cascade, delete: restrict]
+
+Ref "errands_riderId_fkey":"users"."id" ?<? "errands"."riderId" [update: cascade, delete: set null]
+
+Ref "errands_paymentModeId_fkey":"payment_modes"."id" ?<? "errands"."paymentModeId" [update: cascade, delete: set null]
+
+Ref "errands_paymentEnabledByDispatcherId_fkey":"users"."id" ?<? "errands"."paymentEnabledByDispatcherId" [update: cascade, delete: set null]
+
+Ref "pabili_details_tbl_errandId_fkey":"errands"."id" <? "pabili_details_tbl"."errandId" [update: cascade, delete: cascade]
+
+Ref "pabili_details_tbl_pinpointId_fkey":"errand_pinpoints_tbl"."id" ?<? "pabili_details_tbl"."pinpointId" [update: cascade, delete: set null]
+
+Ref "pabili_item_requests_tbl_errandId_fkey":"errands"."id" <? "pabili_item_requests_tbl"."errandId" [update: cascade, delete: cascade]
+
+Ref "pabili_item_requests_tbl_pinpointId_fkey":"errand_pinpoints_tbl"."id" ?<? "pabili_item_requests_tbl"."pinpointId" [update: cascade, delete: set null]
+
+Ref "errand_pinpoints_tbl_errandId_fkey":"errands"."id" <? "errand_pinpoints_tbl"."errandId" [update: cascade, delete: cascade]
+
+Ref "errand_pinpoints_tbl_categoryId_fkey":"merchant_categories"."id" ?<? "errand_pinpoints_tbl"."categoryId" [update: cascade, delete: set null]
+
+Ref "errand_pinpoints_tbl_placeId_fkey":"verified_places"."id" ?<? "errand_pinpoints_tbl"."placeId" [update: cascade, delete: set null]
+
+Ref "errand_pinpoints_tbl_observedPlaceId_fkey":"verified_places"."id" ?<? "errand_pinpoints_tbl"."observedPlaceId" [update: cascade, delete: set null]
+
+Ref "exception_reviews_errandId_fkey":"errands"."id" <? "exception_reviews"."errandId" [update: cascade, delete: cascade]
+
+Ref "exception_reviews_reviewerId_fkey":"users"."id" <? "exception_reviews"."reviewerId" [update: cascade, delete: restrict]
+
+Ref "dispatch_logs_errandId_fkey":"errands"."id" <? "dispatch_logs"."errandId" [update: cascade, delete: cascade]
+
+Ref "dispatch_logs_dispatcherId_fkey":"users"."id" <? "dispatch_logs"."dispatcherId" [update: cascade, delete: restrict]
+
+Ref "errand_decline_reasons_errandId_fkey":"errands"."id" <? "errand_decline_reasons"."errandId" [update: cascade, delete: cascade]
+
+Ref "errand_decline_reasons_dispatcherId_fkey":"users"."id" <? "errand_decline_reasons"."dispatcherId" [update: cascade, delete: restrict]
+
+Ref "saved_delivery_locations_customerId_fkey":"customer_accounts"."id" <? "saved_delivery_locations"."customerId" [update: cascade, delete: cascade]
+
+Ref "tbl_sys_admin_trusted_devices_adminId_fkey":"tbl_sys_admin"."id" <? "tbl_sys_admin_trusted_devices"."adminId" [update: cascade, delete: cascade]
+
+Ref "tbl_sys_admin_password_history_adminId_fkey":"tbl_sys_admin"."id" <? "tbl_sys_admin_password_history"."adminId" [update: cascade, delete: cascade]
+
+Ref "tbl_blocked_ips_bannedById_fkey":"tbl_sys_admin"."id" ?<? "tbl_blocked_ips"."bannedById" [update: cascade, delete: set null]
+
+Ref "tbl_whitelisted_ips_createdById_fkey":"tbl_sys_admin"."id" ?<? "tbl_whitelisted_ips"."createdById" [update: cascade, delete: set null]
+
+Ref "tbl_database_backups_createdById_fkey":"tbl_sys_admin"."id" ?<? "tbl_database_backups"."createdById" [update: cascade, delete: set null]
+
+Ref "payment_selections_errandId_fkey":"errands"."id" <? "payment_selections"."errandId" [update: cascade, delete: cascade]
+
+Ref "payment_selections_paymentModeId_fkey":"payment_modes"."id" <? "payment_selections"."paymentModeId" [update: cascade, delete: restrict]
+
+Ref "errand_payments_errandId_fkey":"errands"."id" <? "errand_payments"."errandId" [update: cascade, delete: cascade]
+
+Ref "errand_payments_confirmedByUserId_fkey":"users"."id" ?<? "errand_payments"."confirmedByUserId" [update: cascade, delete: set null]
+
+Ref "errand_payments_proofImageId_fkey":"errand_proof_images"."id" ?<? "errand_payments"."proofImageId" [update: cascade, delete: set null]
+
+Ref "ratings_errandId_fkey":"errands"."id" <? "ratings"."errandId" [update: cascade, delete: cascade]
+
+Ref "ratings_riderId_fkey":"users"."id" <? "ratings"."riderId" [update: cascade, delete: restrict]
+
+Ref "email_verification_codes_customerId_fkey":"customer_accounts"."id" ?<? "email_verification_codes"."customerId" [update: cascade, delete: cascade]
+
+Ref "email_verification_codes_userId_fkey":"users"."id" ?<? "email_verification_codes"."userId" [update: cascade, delete: cascade]
+
+Ref "connectivity_incidents_riderId_fkey":"users"."id" <? "connectivity_incidents"."riderId" [update: cascade, delete: cascade]
+
+Ref "connectivity_incidents_errandId_fkey":"errands"."id" ?<? "connectivity_incidents"."errandId" [update: cascade, delete: set null]
+
+Ref "settlement_records_errandId_fkey":"errands"."id" <? "settlement_records"."errandId" [update: cascade, delete: cascade]
+
+Ref "settlement_records_riderId_fkey":"users"."id" <? "settlement_records"."riderId" [update: cascade, delete: restrict]
+
+Ref "settlement_records_proofImageId_fkey":"errand_proof_images"."id" ?<? "settlement_records"."proofImageId" [update: cascade, delete: set null]
+
+Ref "errand_proof_images_errandId_fkey":"errands"."id" <? "errand_proof_images"."errandId" [update: cascade, delete: cascade]
+
+Ref "errand_proof_images_pinpointId_fkey":"errand_pinpoints_tbl"."id" ?<? "errand_proof_images"."pinpointId" [update: cascade, delete: set null]
+
+Ref "errand_proof_images_riderId_fkey":"users"."id" ?<? "errand_proof_images"."riderId" [update: cascade, delete: set null]
+
+Ref "errand_proof_images_customerId_fkey":"customer_accounts"."id" ?<? "errand_proof_images"."customerId" [update: cascade, delete: set null]
+
+Ref "receipt_extractions_proofImageId_fkey":"errand_proof_images"."id" <? "receipt_extractions"."proofImageId" [update: cascade, delete: cascade]
+
+Ref "rider_commissions_errandId_fkey":"errands"."id" <? "rider_commissions"."errandId" [update: cascade, delete: cascade]
+
+Ref "rider_commissions_riderId_fkey":"users"."id" <? "rider_commissions"."riderId" [update: cascade, delete: restrict]
+
+Ref "rider_login_sessions_riderId_fkey":"users"."id" <? "rider_login_sessions"."riderId" [update: cascade, delete: cascade]
+
+Ref "rider_status_logs_riderId_fkey":"users"."id" <? "rider_status_logs"."riderId" [update: cascade, delete: cascade]
+
+Ref "notifications_userId_fkey":"users"."id" ?<? "notifications"."userId" [update: cascade, delete: cascade]
+
+Ref "notifications_customerId_fkey":"customer_accounts"."id" ?<? "notifications"."customerId" [update: cascade, delete: cascade]
+
+Ref "account_modification_logs_userId_fkey":"users"."id" ?<? "account_modification_logs"."userId" [update: cascade, delete: cascade]
+
+Ref "account_modification_logs_customerId_fkey":"customer_accounts"."id" ?<? "account_modification_logs"."customerId" [update: cascade, delete: cascade]
+
+Ref "password_reset_attempts_customerId_fkey":"customer_accounts"."id" ?<? "password_reset_attempts"."customerId" [update: cascade, delete: set null]
+
+Ref "verified_places_categoryId_fkey":"merchant_categories"."id" <? "verified_places"."categoryId" [update: cascade, delete: restrict]
+
+Ref "errand_track_points_errandId_fkey":"errands"."id" <? "errand_track_points"."errandId" [update: cascade, delete: cascade]
+
+Ref "errand_track_points_riderId_fkey":"users"."id" <? "errand_track_points"."riderId" [update: cascade, delete: cascade]
+
+Ref "dwell_observations_errandId_fkey":"errands"."id" <? "dwell_observations"."errandId" [update: cascade, delete: cascade]
+
+Ref "dwell_observations_pinpointId_fkey":"errand_pinpoints_tbl"."id" <? "dwell_observations"."pinpointId" [update: cascade, delete: cascade]
+
+Ref "dwell_observations_categoryId_fkey":"merchant_categories"."id" ?<? "dwell_observations"."categoryId" [update: cascade, delete: set null]
+
+Ref "dwell_observations_placeId_fkey":"verified_places"."id" ?<? "dwell_observations"."placeId" [update: cascade, delete: set null]

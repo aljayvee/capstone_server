@@ -10,13 +10,13 @@ services:
     build:
       context: .
       args:
-        # Overridden at build time to train against the live catalogue:
-        #   docker compose -f ml/docker-compose.category.yml build \
-        #     --build-arg TRAIN_ARGS="--database-url mysql+pymysql://user:pass@host/db"
-        # The default trains from the seed lexicon alone, which answers the
-        # common Philippine chains and shop words but knows nothing specific to
-        # Tacurong until it has seen your catalogue.
-        TRAIN_ARGS: "--offline"
+        # A deploy trains on production's catalogue, from an export written
+        # first (see README "Deploying"), never from a database URL: build
+        # arguments are kept in the image history, password and all.
+        #   TRAIN_ARGS="--from-export data/production.json" docker compose ... build
+        # The default trains on the seed lexicon and the OpenStreetMap names in
+        # the lexicon's four categories, without the owner's newer ones.
+        TRAIN_ARGS: "${TRAIN_ARGS:---offline}"
         # Set to a fresh value to force a real retrain; unchanged, Docker
         # reuses the last trained layer and serves the old model. See the
         # Dockerfile. e.g. TRAINED_AT=$(date +%s) docker compose ... build
@@ -32,9 +32,30 @@ services:
       - "${CATEGORY_BIND:-127.0.0.1}:8100:8100"
     environment:
       SUGO_MODEL_DIR: /srv/models
-    # Small by design. TF-IDF plus a linear model is a few megabytes; capping it
-    # means a runaway here cannot take the API server's memory with it.
+      # Gemini 3.8 Flash, with Gemma 4 behind it, as a second opinion on unsure
+      # names and on the Conflict Management suggestions (sugo_category/gemma.py).
+      # The key comes from ml/.env beside this file (compose reads it for
+      # these ${...} values) at run time; it is never a build argument and
+      # never in the image. Blank, or GEMMA_ENABLED=0, and the local models
+      # answer alone, exactly as before. GEMMA_MODEL is the chain, first to
+      # last; this default must match gemma.py's, or it silently replaces it.
+      GEMMA_API_KEY: "${GEMMA_API_KEY:-}"
+      GEMMA_ENABLED: "${GEMMA_ENABLED:-1}"
+      GEMMA_MODEL: "${GEMMA_MODEL:-gemini-3.8-flash,gemma-4-26b-a4b-it}"
+      GEMMA_CACHE_PATH: /srv/cache/gemma-cache.jsonl
+    volumes:
+      # Gemma's answers, kept across rebuilds: each is a call not paid for
+      # twice, and a retrain teaches them to the local model. Only a cache;
+      # the service starts and answers without it.
+      - category-cache:/srv/cache
+    # Capped so a runaway here cannot take the API server's memory with it.
+    # 512M was enough to answer; POST /retrain now also trains inside the
+    # container (a second process beside the loaded models, over 85,000
+    # OpenStreetMap names), which needs more headroom.
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1536M
+
+volumes:
+  category-cache:

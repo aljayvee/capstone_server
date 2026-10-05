@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { isWithinServiceBuffer, isServiceAreaConfigured } from "../lib/serviceArea.js";
+import {
+  optionalDetail,
+  STREET_NAME_MAX,
+  LANDMARK_MAX,
+  DELIVERY_NOTES_MAX,
+} from "./locationValidators.js";
 
 // Mirrors the optional/default semantics errandService.createErrand already
 // implements inline via destructuring defaults (category, description,
@@ -22,43 +29,70 @@ const pabiliItemInputSchema = z.object({
 // userValidators removed "CUSTOMER" from the role enum.
 export const ERRAND_CATEGORIES = ["Pabili"] as const;
 
-export const createErrandSchema = z.object({
-  customerId: z.coerce.number().int().positive("customerId must be a positive integer.").optional(),
-  category: z
-    .enum(ERRAND_CATEGORIES, { message: `Category must be one of: ${ERRAND_CATEGORIES.join(", ")}.` })
-    .optional(),
-  description: z.string().trim().max(500, "Description must be at most 500 characters.").optional(),
-  pickupAddress: z
-    .string()
-    .trim()
-    .min(1, "Pickup address is required.")
-    .max(300, "Pickup address must be at most 300 characters.")
-    .optional(),
-  deliveryAddress: z
-    .string()
-    .trim()
-    .min(1, "Delivery address is required.")
-    .max(300, "Delivery address must be at most 300 characters.")
-    .optional(),
-  deliveryLatitude: z.coerce
-    .number()
-    .min(-90, "Latitude must be a number between -90 and 90.")
-    .max(90, "Latitude must be a number between -90 and 90.")
-    .optional(),
-  deliveryLongitude: z.coerce
-    .number()
-    .min(-180, "Longitude must be a number between -180 and 180.")
-    .max(180, "Longitude must be a number between -180 and 180.")
-    .optional(),
-  estimatedCost: z.coerce.number().nonnegative("estimatedCost must be zero or positive.").optional(),
-  tip: z.coerce.number().nonnegative("tip must be zero or positive.").optional(),
-  paymentMethod: z.string().trim().min(1).max(30, "Payment method must be at most 30 characters.").optional(),
-  // Number of store categories selected (1-3) — decoupled from pabiliItems.length,
-  // whose size reflects the real item list, not how many stores the rider visits.
-  // See errandService.createErrand.
-  storeCount: z.coerce.number().int().min(1, "storeCount must be at least 1.").max(3, "storeCount cannot exceed 3.").optional(),
-  pabiliItems: z.array(pabiliItemInputSchema).optional(),
-});
+export const createErrandSchema = z
+  .object({
+    customerId: z.coerce.number().int().positive("customerId must be a positive integer.").optional(),
+    category: z
+      .enum(ERRAND_CATEGORIES, { message: `Category must be one of: ${ERRAND_CATEGORIES.join(", ")}.` })
+      .optional(),
+    description: z.string().trim().max(500, "Description must be at most 500 characters.").optional(),
+    pickupAddress: z
+      .string()
+      .trim()
+      .min(1, "Pickup address is required.")
+      .max(300, "Pickup address must be at most 300 characters.")
+      .optional(),
+    deliveryAddress: z
+      .string()
+      .trim()
+      .min(1, "Delivery address is required.")
+      .max(300, "Delivery address must be at most 300 characters.")
+      .optional(),
+    deliveryLatitude: z.coerce
+      .number()
+      .min(-90, "Latitude must be a number between -90 and 90.")
+      .max(90, "Latitude must be a number between -90 and 90.")
+      .optional(),
+    deliveryLongitude: z.coerce
+      .number()
+      .min(-180, "Longitude must be a number between -180 and 180.")
+      .max(180, "Longitude must be a number between -180 and 180.")
+      .optional(),
+    // The door-side details of the saved location the errand is delivered to.
+    // Same limits as the saved location itself, so a place that saves can
+    // always be ordered to.
+    deliveryStreetName: optionalDetail(STREET_NAME_MAX, "Street name"),
+    deliveryLandmark: optionalDetail(LANDMARK_MAX, "Landmark"),
+    deliveryNotes: optionalDetail(DELIVERY_NOTES_MAX, "Delivery notes"),
+    estimatedCost: z.coerce.number().nonnegative("estimatedCost must be zero or positive.").optional(),
+    tip: z.coerce.number().nonnegative("tip must be zero or positive.").optional(),
+    paymentMethod: z.string().trim().min(1).max(30, "Payment method must be at most 30 characters.").optional(),
+    // Number of store categories selected (1-3) — decoupled from pabiliItems.length,
+    // whose size reflects the real item list, not how many stores the rider visits.
+    // See errandService.createErrand.
+    storeCount: z.coerce.number().int().min(1, "storeCount must be at least 1.").max(3, "storeCount cannot exceed 3.").optional(),
+    pabiliItems: z.array(pabiliItemInputSchema).optional(),
+  })
+  .refine(
+    (data) => {
+      if (
+        data.deliveryLatitude !== undefined &&
+        data.deliveryLongitude !== undefined &&
+        isServiceAreaConfigured()
+      ) {
+        return isWithinServiceBuffer(
+          { latitude: Number(data.deliveryLatitude), longitude: Number(data.deliveryLongitude) },
+          0.1
+        );
+      }
+      return true;
+    },
+    {
+      message:
+        "Delivery address is outside Tacurong City service area. SUGO Express currently operates exclusively within Tacurong City.",
+      path: ["deliveryAddress"],
+    }
+  );
 
 export type CreateErrandBody = z.infer<typeof createErrandSchema>;
 

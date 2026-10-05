@@ -2,12 +2,15 @@ import { OSRM_BASE_URL } from "../../config/env.js";
 import { logger } from "../logger.js";
 import { haversineDistanceKm } from "../geo.js";
 import { decodePolyline } from "./polyline.js";
+import { cappedDurationSeconds } from "./speedCap.js";
 import type {
   GeoPoint,
+  OriginHint,
   MatchedPoint,
   MatchResult,
   MatrixResult,
   RouteLeg,
+  RouteOptions,
   RouteResult,
   RouteStep,
   RoutingProvider,
@@ -64,6 +67,18 @@ const MATCH_CHUNK_OVERLAP = 2;
 // sampled directly off a real road geometry unless timestamps are supplied —
 // thresholding on it would silently disable map matching altogether.
 const MAX_SNAP_METERS = 50;
+
+// The OSRM query options that make the first coordinate snap only onto a road
+// running within `bearingRange` of the rider's heading, within `radiusMeters`.
+// One entry per coordinate; the empty entries leave the others unconstrained.
+export function originHintQuery(hint: OriginHint | undefined, count: number): string {
+  if (!hint || count < 1) return "";
+  const rest = ";".repeat(count - 1);
+  const bearing = Math.round(((hint.bearingDeg % 360) + 360) % 360) % 360;
+  const range = Math.round(Math.min(180, Math.max(1, hint.bearingRange)));
+  const radius = Math.round(Math.max(1, hint.radiusMeters));
+  return `&bearings=${bearing},${range}${rest}&radiuses=${radius}${rest}`;
+}
 
 // OSRM speaks lon,lat — the opposite of every other coordinate in this codebase.
 // Confining the flip to this one helper is deliberate: it is the single most
@@ -129,13 +144,22 @@ export class OsrmRoutingProvider implements RoutingProvider {
     return Boolean(OSRM_BASE_URL);
   }
 
-  async route(points: GeoPoint[]): Promise<RouteResult | null> {
+  async route(points: GeoPoint[], options: RouteOptions = {}): Promise<RouteResult | null> {
     if (!this.isConfigured() || points.length < 2) return null;
 
+    // Pass-through: only the first and last points are waypoints, so the
+    // points between shape the path without splitting it into legs.
+    const passThrough =
+      options.passThrough && points.length > 2 ? `&waypoints=0;${points.length - 1}` : "";
     const url =
       `${OSRM_BASE_URL}/route/v1/driving/${toOsrmCoordinates(points)}` +
-      `?overview=full&geometries=polyline&steps=true&alternatives=false`;
-    const data = await getJson(url);
+      `?overview=full&geometries=polyline&steps=true&alternatives=false${passThrough}`;
+    // Started on the road the rider is riding when their heading is known.
+    // No such road close enough (NoSegment: the heading was wrong, or the
+    // rider is in a car park) is not a failure: route as before.
+    const data =
+      (options.origin ? await getJson(url + originHintQuery(options.origin, points.length)) : null) ??
+      (await getJson(url));
     const route = data?.routes?.[0];
     if (!route) return null;
 
@@ -157,7 +181,9 @@ export class OsrmRoutingProvider implements RoutingProvider {
           maneuverType: type,
           modifier: modifier || undefined,
           distanceMeters: Math.round(step?.distance ?? 0),
-          durationSeconds: Math.round(step?.duration ?? 0),
+          // Capped per road stretch (lib/routing/speedCap.ts); the leg and route
+          // totals below are summed from these so every figure agrees.
+          durationSeconds: Math.round(cappedDurationSeconds(step?.distance ?? 0, step?.duration ?? 0)),
           location,
           bearingBefore: step?.maneuver?.bearing_before,
           bearingAfter: step?.maneuver?.bearing_after,
@@ -170,7 +196,10 @@ export class OsrmRoutingProvider implements RoutingProvider {
       const isLastLeg = legIndex === (route.legs?.length ?? 1) - 1;
       return {
         distanceMeters: Math.round(leg.distance ?? 0),
-        durationSeconds: Math.round(leg.duration ?? 0),
+        durationSeconds:
+          steps.length > 0
+            ? steps.reduce((sum, step) => sum + step.durationSeconds, 0)
+            : Math.round(cappedDurationSeconds(leg.distance ?? 0, leg.duration ?? 0)),
         coordinates: (leg.steps ?? []).flatMap((step: any) =>
           step?.geometry ? decodePolyline(step.geometry) : []
         ),
@@ -182,7 +211,10 @@ export class OsrmRoutingProvider implements RoutingProvider {
 
     return {
       distanceMeters: Math.round(route.distance ?? 0),
-      durationSeconds: Math.round(route.duration ?? 0),
+      durationSeconds:
+        legs.length > 0
+          ? legs.reduce((sum, leg) => sum + leg.durationSeconds, 0)
+          : Math.round(cappedDurationSeconds(route.distance ?? 0, route.duration ?? 0)),
       coordinates: route.geometry ? decodePolyline(route.geometry) : [],
       encodedGeometry: route.geometry ?? null,
       legs,
@@ -200,11 +232,12 @@ export class OsrmRoutingProvider implements RoutingProvider {
   //
   // Reuses MAX_SNAP_METERS for the same reason match() does: beyond it the
   // "correction" is a guess onto a road the rider may not be on at all.
-  async snap(point: GeoPoint): Promise<GeoPoint | null> {
+  async snap(point: GeoPoint, hint?: OriginHint): Promise<GeoPoint | null> {
     if (!this.isConfigured()) return null;
 
     const url = `${OSRM_BASE_URL}/nearest/v1/driving/${toOsrmCoordinates([point])}?number=1`;
-    const data = await getJson(url);
+    // The nearest road going the rider's way, else the nearest road.
+    const data = (hint ? await getJson(url + originHintQuery(hint, 1)) : null) ?? (await getJson(url));
 
     const waypoint = data?.waypoints?.[0];
     if (!waypoint?.location) return null;
@@ -219,6 +252,33 @@ export class OsrmRoutingProvider implements RoutingProvider {
         : haversineDistanceKm(point, snapped) * 1000;
 
     return snapMeters > MAX_SNAP_METERS ? null : snapped;
+  }
+
+  /**
+   * How far `point` is from the nearest road in the loaded graph, in metres.
+   *
+   * Unlike snap(), which refuses anything past MAX_SNAP_METERS, this reports
+   * the raw distance, because the question here is different: not "can this
+   * GPS fix be corrected onto a road" but "is this place inside the road map at
+   * all". OSRM always answers /nearest with the closest road it has, so a
+   * point outside the graph's extract comes back with the distance to the
+   * graph's edge. That is what lets the store-location guard follow whatever
+   * graph is loaded (see storeLocationGuard.ts).
+   *
+   * Null when OSRM is not configured or has no answer; throws on a transport
+   * failure, like every other call here.
+   */
+  async nearestRoadMeters(point: GeoPoint): Promise<number | null> {
+    if (!this.isConfigured()) return null;
+
+    const url = `${OSRM_BASE_URL}/nearest/v1/driving/${toOsrmCoordinates([point])}?number=1`;
+    const data = await getJson(url);
+    const waypoint = data?.waypoints?.[0];
+    if (!waypoint?.location) return null;
+
+    return typeof waypoint.distance === "number"
+      ? waypoint.distance
+      : haversineDistanceKm(point, fromOsrmLocation(waypoint.location)) * 1000;
   }
 
   async matrix(sources: GeoPoint[], destinations: GeoPoint[]): Promise<MatrixResult | null> {
@@ -236,8 +296,19 @@ export class OsrmRoutingProvider implements RoutingProvider {
     const data = await getJson(url);
     if (!data?.durations) return null;
 
+    // A table has no per-road breakdown, so the cap can only bound the average
+    // speed of the whole trip. Coarser than route(), but it keeps a rider ranked
+    // on a long highway run from looking faster than route() will then quote.
+    const durations: (number | null)[][] = data.distances
+      ? data.durations.map((row: (number | null)[], i: number) =>
+          row.map((seconds, j) =>
+            seconds == null ? null : cappedDurationSeconds(data.distances[i]?.[j] ?? 0, seconds)
+          )
+        )
+      : data.durations;
+
     return {
-      durationsSeconds: data.durations,
+      durationsSeconds: durations as number[][],
       // `distances` requires OSRM built with the distance annotation; fall back
       // to a zero matrix rather than failing the whole call, since ranking only
       // needs durations.

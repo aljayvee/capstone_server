@@ -1,0 +1,5349 @@
+{
+ "measuredAt": "2026-09-25T16:37:35.373Z",
+ "threshold": 0.75,
+ "answers": "C:\\Capstone_Server\\server\\ml\\exception-reasons\\second-opinion-answers.json",
+ "models": {
+  "gemini-3.8-flash": {
+   "perWeight": {
+    "0/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 79,
+      "wrong": 9,
+      "silent": 20,
+      "rightlySilent": 1,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 85,
+      "wrong": 7,
+      "silent": 15,
+      "rightlySilent": 1,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 75,
+      "wrong": 4,
+      "silent": 17,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 79,
+      "wrong": 4,
+      "silent": 23,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 80,
+      "wrong": 3,
+      "silent": 13,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 83,
+      "wrong": 3,
+      "silent": 20,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 75,
+      "wrong": 4,
+      "silent": 17,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 79,
+      "wrong": 4,
+      "silent": 23,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 80,
+      "wrong": 3,
+      "silent": 13,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 83,
+      "wrong": 3,
+      "silent": 20,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 75,
+      "wrong": 4,
+      "silent": 17,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 81,
+      "wrong": 4,
+      "silent": 21,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 80,
+      "wrong": 3,
+      "silent": 13,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 86,
+      "wrong": 3,
+      "silent": 17,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 75,
+      "wrong": 4,
+      "silent": 17,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 84,
+      "wrong": 4,
+      "silent": 18,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 80,
+      "wrong": 3,
+      "silent": 13,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 89,
+      "wrong": 3,
+      "silent": 14,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 75,
+      "wrong": 4,
+      "silent": 17,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 84,
+      "wrong": 4,
+      "silent": 18,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 80,
+      "wrong": 3,
+      "silent": 13,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 89,
+      "wrong": 3,
+      "silent": 14,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 4,
+      "silent": 34,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 9,
+      "silent": 38,
+      "rightlySilent": 1,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 62,
+      "wrong": 3,
+      "silent": 31,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 66,
+      "wrong": 7,
+      "silent": 34,
+      "rightlySilent": 1,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 4,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 4,
+      "silent": 41,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 3,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 64,
+      "wrong": 3,
+      "silent": 39,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 4,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 4,
+      "silent": 41,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 3,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 64,
+      "wrong": 3,
+      "silent": 39,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 4,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 63,
+      "wrong": 4,
+      "silent": 39,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 3,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 67,
+      "wrong": 3,
+      "silent": 36,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 4,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 66,
+      "wrong": 4,
+      "silent": 36,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 3,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 70,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 4,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 66,
+      "wrong": 4,
+      "silent": 36,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 3,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 70,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 59,
+      "wrong": 5,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 62,
+      "wrong": 10,
+      "silent": 36,
+      "rightlySilent": 1,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 3,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 65,
+      "wrong": 7,
+      "silent": 35,
+      "rightlySilent": 1,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 5,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 62,
+      "wrong": 5,
+      "silent": 39,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 60,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 63,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 5,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 62,
+      "wrong": 5,
+      "silent": 39,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 60,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 63,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 5,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 64,
+      "wrong": 5,
+      "silent": 37,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 60,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 66,
+      "wrong": 3,
+      "silent": 37,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 5,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 67,
+      "wrong": 5,
+      "silent": 34,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 60,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 69,
+      "wrong": 3,
+      "silent": 34,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 5,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 67,
+      "wrong": 5,
+      "silent": 34,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 60,
+      "wrong": 3,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 69,
+      "wrong": 3,
+      "silent": 34,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 7,
+      "silent": 31,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 12,
+      "silent": 35,
+      "rightlySilent": 1,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 62,
+      "wrong": 2,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 66,
+      "wrong": 6,
+      "silent": 35,
+      "rightlySilent": 1,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 7,
+      "silent": 38,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 2,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 64,
+      "wrong": 2,
+      "silent": 40,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 7,
+      "silent": 38,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 2,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 64,
+      "wrong": 2,
+      "silent": 40,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 63,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 2,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 67,
+      "wrong": 2,
+      "silent": 37,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 66,
+      "wrong": 7,
+      "silent": 33,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 2,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 70,
+      "wrong": 2,
+      "silent": 34,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 66,
+      "wrong": 7,
+      "silent": 33,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 61,
+      "wrong": 2,
+      "silent": 33,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 70,
+      "wrong": 2,
+      "silent": 34,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 7,
+      "silent": 31,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 12,
+      "silent": 35,
+      "rightlySilent": 1,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 59,
+      "wrong": 3,
+      "silent": 34,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 63,
+      "wrong": 7,
+      "silent": 37,
+      "rightlySilent": 1,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 7,
+      "silent": 38,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 3,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 61,
+      "wrong": 3,
+      "silent": 42,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 61,
+      "wrong": 7,
+      "silent": 38,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 3,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 61,
+      "wrong": 3,
+      "silent": 42,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 63,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 3,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 64,
+      "wrong": 3,
+      "silent": 39,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 66,
+      "wrong": 7,
+      "silent": 33,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 3,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 67,
+      "wrong": 3,
+      "silent": 36,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 57,
+      "wrong": 7,
+      "silent": 32,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 66,
+      "wrong": 7,
+      "silent": 33,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 58,
+      "wrong": 3,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 67,
+      "wrong": 3,
+      "silent": 36,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 54,
+      "wrong": 7,
+      "silent": 35,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 57,
+      "wrong": 12,
+      "silent": 39,
+      "rightlySilent": 1,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 54,
+      "wrong": 3,
+      "silent": 39,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 58,
+      "wrong": 7,
+      "silent": 42,
+      "rightlySilent": 1,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 57,
+      "wrong": 7,
+      "silent": 42,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 56,
+      "wrong": 3,
+      "silent": 47,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 57,
+      "wrong": 7,
+      "silent": 42,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 56,
+      "wrong": 3,
+      "silent": 47,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 0,
+      "silent": 6,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 3,
+      "wrong": 0,
+      "silent": 7,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 59,
+      "wrong": 7,
+      "silent": 40,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 59,
+      "wrong": 3,
+      "silent": 44,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 6,
+      "wrong": 0,
+      "silent": 4,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 62,
+      "wrong": 7,
+      "silent": 37,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 62,
+      "wrong": 3,
+      "silent": 41,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 7,
+      "silent": 36,
+      "rightlySilent": 0,
+      "modelAloneRight": 64
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 62,
+      "wrong": 7,
+      "silent": 37,
+      "rightlySilent": 3,
+      "modelAloneRight": 76
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 53,
+      "wrong": 3,
+      "silent": 40,
+      "rightlySilent": 0,
+      "modelAloneRight": 67
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 62,
+      "wrong": 3,
+      "silent": 41,
+      "rightlySilent": 2,
+      "modelAloneRight": 78
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 3,
+      "modelAloneRight": 12
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 0,
+      "silent": 1,
+      "rightlySilent": 2,
+      "modelAloneRight": 11
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 0,
+      "wrong": 1,
+      "silent": 2,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    }
+   },
+   "chosen": {
+    "read": 0,
+    "unread": 0.8
+   },
+   "detail": [
+    {
+     "id": "hard-validation-192",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "wala sinsilyo si customer",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.82",
+     "model": "CASH_NO_EXACT_CHANGE 0.95",
+     "shown": "CASH_NO_EXACT_CHANGE",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-193",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "wala sila baryang gamay, gin-round off ko na lang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.51",
+     "model": "CASH_NO_EXACT_CHANGE 0.95",
+     "shown": "CASH_NO_EXACT_CHANGE",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-194",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "puro 1000 ang kwarta ni ate, wala gamay",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.63",
+     "model": "CASH_NO_EXACT_CHANGE 0.95",
+     "shown": "CASH_NO_EXACT_CHANGE",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-195",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "no coins daw, kulang 20",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.76",
+     "model": "CASH_NO_EXACT_CHANGE 0.95",
+     "shown": "CASH_NO_EXACT_CHANGE",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-196",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "gin-send na lang niya sa e-wallet ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.64",
+     "model": "CASH_PAID_BY_TRANSFER 0.98",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-197",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "nagpadala siya sa GoTyme ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.81",
+     "model": "CASH_PAID_BY_TRANSFER 0.95",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-198",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "ipadala daw sa app, na-send na",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.79",
+     "model": "CASH_PAID_BY_TRANSFER 0.95",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-199",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "binayad thru QR ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.91",
+     "model": "CASH_PAID_BY_TRANSFER 0.95",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-200",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "ako na bahala, remit ko ugma ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.88",
+     "model": "CASH_RIDER_TO_REMIT 0.95",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-201",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "nahulog ko ang kwarta sa dalan, bayaran ko",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.76",
+     "model": "CASH_RIDER_TO_REMIT 0.95",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-202",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "akon sala, ibawas na lang sa sweldo ko",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.55",
+     "model": "CASH_RIDER_TO_REMIT 0.98",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-203",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "kulang akon dala, ihatag ko bukas sa office",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.91",
+     "model": "CASH_RIDER_TO_REMIT 0.98",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-204",
+     "label": "CASH_OVER_TIP",
+     "note": "para sa imo na lang daw ang sobra",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.82",
+     "model": "NONE 0.85",
+     "shown": null,
+     "outcome": "silent"
+    },
+    {
+     "id": "hard-test-205",
+     "label": "CASH_OVER_TIP",
+     "note": "sa akin na daw ang sobra, pang-merienda",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.66",
+     "model": "CASH_OVER_TIP 0.95",
+     "shown": "CASH_OVER_TIP",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-206",
+     "label": "CASH_OVER_TIP",
+     "note": "ginhatag sa akon ang sobra ni sir",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.51",
+     "model": "CASH_OVER_TIP 0.95",
+     "shown": "CASH_OVER_TIP",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-207",
+     "label": "CASH_OVER_TIP",
+     "note": "sobra, pero ayaw na daw kuhaon, salamat daw",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.68",
+     "model": "CASH_OVER_TIP 0.95",
+     "shown": "CASH_OVER_TIP",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-208",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "iuli ko ang sobra sa customer mamaya",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.98",
+     "model": "CASH_OVER_TO_RETURN 0.98",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-209",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "sobra ang bayad, isauli ko bukas",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.98",
+     "model": "CASH_OVER_TO_RETURN 0.98",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-210",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "nasobrahan ang bayad niya, ihatid ko ang sobra",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.99",
+     "model": "CASH_OVER_TO_RETURN 0.98",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-211",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "dapat 500 lang, 600 ang gin-hatag, balik ko ang 100",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.98",
+     "model": "NONE 0.88",
+     "shown": null,
+     "outcome": "silent"
+    },
+    {
+     "id": "hard-validation-212",
+     "label": "NONE",
+     "note": "may nabuong itlog, gin-bawasan ang bayad",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.77",
+     "model": "NONE 0.95",
+     "shown": null,
+     "outcome": "rightly-silent"
+    },
+    {
+     "id": "hard-test-213",
+     "label": "NONE",
+     "note": "gin-refund sang tindahan ang isa ka item direkta sa customer",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.74",
+     "model": "NONE 0.95",
+     "shown": null,
+     "outcome": "rightly-silent"
+    },
+    {
+     "id": "hard-validation-214",
+     "label": "NONE",
+     "note": "ginbayaran man niya ang utang sa previous order",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.96",
+     "model": "NONE 0.95",
+     "shown": null,
+     "outcome": "rightly-silent"
+    },
+    {
+     "id": "hard-test-215",
+     "label": "NONE",
+     "note": "ayaw magbayad sang delivery fee kay late daw kami",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.78",
+     "model": "NONE 0.95",
+     "shown": null,
+     "outcome": "rightly-silent"
+    },
+    {
+     "id": "hard-validation-216",
+     "label": "NONE",
+     "note": "nag-discount ang tindahan pero wala na-update ang total",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.44",
+     "model": "NONE 0.95",
+     "shown": null,
+     "outcome": "rightly-silent"
+    },
+    {
+     "id": "real-real-217",
+     "label": "UNVERIFIED_SMALL_SHOP",
+     "note": "",
+     "unread": false,
+     "network": "UNVERIFIED_SMALL_SHOP 0.85",
+     "model": "UNVERIFIED_PAID_IN_FULL 0.85",
+     "shown": "UNVERIFIED_SMALL_SHOP",
+     "outcome": "right"
+    },
+    {
+     "id": "real-real-218",
+     "label": "NONE",
+     "note": "",
+     "unread": false,
+     "network": "CASH_OVER_TO_RETURN 0.88",
+     "model": "CASH_OVER_TO_RETURN 0.85",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "wrong"
+    },
+    {
+     "id": "real-real-219",
+     "label": "UNVERIFIED_PAID_IN_FULL",
+     "note": "",
+     "unread": false,
+     "network": "UNVERIFIED_RECEIPT_LOST 0.57",
+     "model": "UNVERIFIED_PAID_IN_FULL 0.85",
+     "shown": null,
+     "outcome": "silent"
+    }
+   ],
+   "latency": {
+    "samples": 220,
+    "median_ms": 1998,
+    "p90_ms": 3508
+   }
+  },
+  "gemma-4-26b-a4b-it": {
+   "perWeight": {
+    "0/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 79,
+      "wrong": 9,
+      "silent": 20,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 85,
+      "wrong": 7,
+      "silent": 15,
+      "rightlySilent": 1,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 80,
+      "wrong": 6,
+      "silent": 21,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 85,
+      "wrong": 5,
+      "silent": 18,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 80,
+      "wrong": 6,
+      "silent": 21,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 85,
+      "wrong": 5,
+      "silent": 18,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 82,
+      "wrong": 6,
+      "silent": 19,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 88,
+      "wrong": 5,
+      "silent": 15,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 7,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 84,
+      "wrong": 7,
+      "silent": 17,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 90,
+      "wrong": 5,
+      "silent": 13,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 8,
+      "wrong": 3,
+      "silent": 1,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 2,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 76,
+      "wrong": 4,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 85,
+      "wrong": 8,
+      "silent": 16,
+      "rightlySilent": 0,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 81,
+      "wrong": 3,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 91,
+      "wrong": 5,
+      "silent": 12,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 4,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 10,
+      "wrong": 2,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 3,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 43,
+      "wrong": 8,
+      "silent": 57,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 42,
+      "wrong": 2,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 46,
+      "wrong": 6,
+      "silent": 55,
+      "rightlySilent": 1,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 3,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 44,
+      "wrong": 5,
+      "silent": 58,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 42,
+      "wrong": 2,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 46,
+      "wrong": 4,
+      "silent": 58,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 3,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 44,
+      "wrong": 5,
+      "silent": 58,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 42,
+      "wrong": 2,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 46,
+      "wrong": 4,
+      "silent": 58,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 3,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 46,
+      "wrong": 5,
+      "silent": 56,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 42,
+      "wrong": 2,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 49,
+      "wrong": 4,
+      "silent": 55,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 7,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 3,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 48,
+      "wrong": 6,
+      "silent": 54,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 42,
+      "wrong": 2,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 51,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 8,
+      "wrong": 3,
+      "silent": 1,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 2,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.3/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 3,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 49,
+      "wrong": 7,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 42,
+      "wrong": 2,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 52,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 4,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 10,
+      "wrong": 2,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 43,
+      "wrong": 9,
+      "silent": 56,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 3,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 43,
+      "wrong": 7,
+      "silent": 57,
+      "rightlySilent": 1,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 44,
+      "wrong": 6,
+      "silent": 57,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 3,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 43,
+      "wrong": 5,
+      "silent": 60,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 44,
+      "wrong": 6,
+      "silent": 57,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 3,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 43,
+      "wrong": 5,
+      "silent": 60,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 46,
+      "wrong": 6,
+      "silent": 55,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 3,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 46,
+      "wrong": 5,
+      "silent": 57,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 7,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 48,
+      "wrong": 7,
+      "silent": 53,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 3,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 48,
+      "wrong": 5,
+      "silent": 55,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 8,
+      "wrong": 3,
+      "silent": 1,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 2,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.4/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 49,
+      "wrong": 8,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 3,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 49,
+      "wrong": 5,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 4,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 10,
+      "wrong": 2,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 42,
+      "wrong": 9,
+      "silent": 57,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 43,
+      "wrong": 8,
+      "silent": 56,
+      "rightlySilent": 1,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 43,
+      "wrong": 6,
+      "silent": 58,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 43,
+      "wrong": 6,
+      "silent": 59,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 43,
+      "wrong": 6,
+      "silent": 58,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 43,
+      "wrong": 6,
+      "silent": 59,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 45,
+      "wrong": 6,
+      "silent": 56,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 46,
+      "wrong": 6,
+      "silent": 56,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 7,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 47,
+      "wrong": 7,
+      "silent": 54,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 48,
+      "wrong": 6,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 8,
+      "wrong": 3,
+      "silent": 1,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 2,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.5/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 48,
+      "wrong": 8,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 4,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 49,
+      "wrong": 6,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 4,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 10,
+      "wrong": 2,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 41,
+      "wrong": 9,
+      "silent": 58,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 42,
+      "wrong": 8,
+      "silent": 57,
+      "rightlySilent": 1,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 42,
+      "wrong": 6,
+      "silent": 59,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 42,
+      "wrong": 6,
+      "silent": 60,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 42,
+      "wrong": 6,
+      "silent": 59,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 42,
+      "wrong": 6,
+      "silent": 60,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 44,
+      "wrong": 6,
+      "silent": 57,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 45,
+      "wrong": 6,
+      "silent": 57,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 7,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 46,
+      "wrong": 7,
+      "silent": 55,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 47,
+      "wrong": 6,
+      "silent": 55,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 8,
+      "wrong": 3,
+      "silent": 1,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 2,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.6/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 47,
+      "wrong": 8,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 38,
+      "wrong": 4,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 48,
+      "wrong": 6,
+      "silent": 54,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 4,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 10,
+      "wrong": 2,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 5,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 42,
+      "wrong": 10,
+      "silent": 56,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 44,
+      "wrong": 8,
+      "silent": 55,
+      "rightlySilent": 1,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 3,
+      "wrong": 5,
+      "silent": 4,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 4,
+      "silent": 3,
+      "rightlySilent": 1,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.5": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 5,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 43,
+      "wrong": 7,
+      "silent": 57,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 44,
+      "wrong": 6,
+      "silent": 58,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.6": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 5,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 43,
+      "wrong": 7,
+      "silent": 57,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 44,
+      "wrong": 6,
+      "silent": 58,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 4,
+      "wrong": 2,
+      "silent": 5,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 4,
+      "wrong": 2,
+      "silent": 6,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.7": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 5,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 45,
+      "wrong": 7,
+      "silent": 55,
+      "rightlySilent": 2,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 47,
+      "wrong": 6,
+      "silent": 55,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 6,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 2,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 7,
+      "wrong": 2,
+      "silent": 3,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.8": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 5,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 47,
+      "wrong": 8,
+      "silent": 53,
+      "rightlySilent": 1,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 49,
+      "wrong": 6,
+      "silent": 53,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 8,
+      "wrong": 3,
+      "silent": 1,
+      "rightlySilent": 1,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 9,
+      "wrong": 2,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    },
+    "0.7/0.9": {
+     "scenario/validation": {
+      "rows": 96,
+      "right": 39,
+      "wrong": 5,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 39
+     },
+     "all/validation": {
+      "rows": 109,
+      "right": 48,
+      "wrong": 9,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 48
+     },
+     "scenario/test": {
+      "rows": 96,
+      "right": 40,
+      "wrong": 4,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 46
+     },
+     "all/test": {
+      "rows": 108,
+      "right": 50,
+      "wrong": 6,
+      "silent": 52,
+      "rightlySilent": 0,
+      "modelAloneRight": 56
+     },
+     "hard/validation": {
+      "rows": 13,
+      "right": 9,
+      "wrong": 4,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 9
+     },
+     "hard/test": {
+      "rows": 12,
+      "right": 10,
+      "wrong": 2,
+      "silent": 0,
+      "rightlySilent": 0,
+      "modelAloneRight": 10
+     },
+     "real/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     },
+     "all/real": {
+      "rows": 3,
+      "right": 1,
+      "wrong": 1,
+      "silent": 1,
+      "rightlySilent": 0,
+      "modelAloneRight": 1
+     }
+    }
+   },
+   "chosen": {
+    "read": 0,
+    "unread": 0.7
+   },
+   "detail": [
+    {
+     "id": "hard-validation-192",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "wala sinsilyo si customer",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.82",
+     "model": "CASH_NO_EXACT_CHANGE 0.95",
+     "shown": "CASH_NO_EXACT_CHANGE",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-193",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "wala sila baryang gamay, gin-round off ko na lang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.51",
+     "model": "CASH_NO_EXACT_CHANGE 0.95",
+     "shown": "CASH_NO_EXACT_CHANGE",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-194",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "puro 1000 ang kwarta ni ate, wala gamay",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.63",
+     "model": "CASH_RIDER_TO_REMIT 0.9",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "wrong"
+    },
+    {
+     "id": "hard-test-195",
+     "label": "CASH_NO_EXACT_CHANGE",
+     "note": "no coins daw, kulang 20",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.76",
+     "model": "CASH_NO_EXACT_CHANGE 0.85",
+     "shown": null,
+     "outcome": "silent"
+    },
+    {
+     "id": "hard-validation-196",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "gin-send na lang niya sa e-wallet ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.64",
+     "model": "CASH_PAID_BY_TRANSFER 0.95",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-197",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "nagpadala siya sa GoTyme ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.81",
+     "model": "CASH_PAID_BY_TRANSFER 0.95",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-198",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "ipadala daw sa app, na-send na",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.79",
+     "model": "CASH_PAID_BY_TRANSFER 0.9",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-199",
+     "label": "CASH_PAID_BY_TRANSFER",
+     "note": "binayad thru QR ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.91",
+     "model": "CASH_PAID_BY_TRANSFER 0.95",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-200",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "ako na bahala, remit ko ugma ang kulang",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.88",
+     "model": "CASH_RIDER_TO_REMIT 0.95",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-201",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "nahulog ko ang kwarta sa dalan, bayaran ko",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.76",
+     "model": "CASH_RIDER_TO_REMIT 0.95",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-202",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "akon sala, ibawas na lang sa sweldo ko",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.55",
+     "model": "CASH_RIDER_TO_REMIT 0.95",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-203",
+     "label": "CASH_RIDER_TO_REMIT",
+     "note": "kulang akon dala, ihatag ko bukas sa office",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.91",
+     "model": "CASH_RIDER_TO_REMIT 0.95",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-204",
+     "label": "CASH_OVER_TIP",
+     "note": "para sa imo na lang daw ang sobra",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.82",
+     "model": "CASH_OVER_TIP 0.9",
+     "shown": null,
+     "outcome": "silent"
+    },
+    {
+     "id": "hard-test-205",
+     "label": "CASH_OVER_TIP",
+     "note": "sa akin na daw ang sobra, pang-merienda",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.66",
+     "model": "CASH_OVER_TIP 0.95",
+     "shown": "CASH_OVER_TIP",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-206",
+     "label": "CASH_OVER_TIP",
+     "note": "ginhatag sa akon ang sobra ni sir",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.51",
+     "model": "CASH_OVER_TIP 0.9",
+     "shown": "CASH_OVER_TIP",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-207",
+     "label": "CASH_OVER_TIP",
+     "note": "sobra, pero ayaw na daw kuhaon, salamat daw",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.68",
+     "model": "CASH_OVER_TIP 0.95",
+     "shown": "CASH_OVER_TIP",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-208",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "iuli ko ang sobra sa customer mamaya",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.98",
+     "model": "CASH_OVER_TO_RETURN 0.95",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-209",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "sobra ang bayad, isauli ko bukas",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.98",
+     "model": "CASH_OVER_TO_RETURN 0.95",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-210",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "nasobrahan ang bayad niya, ihatid ko ang sobra",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.99",
+     "model": "CASH_OVER_TO_RETURN 0.95",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-test-211",
+     "label": "CASH_OVER_TO_RETURN",
+     "note": "dapat 500 lang, 600 ang gin-hatag, balik ko ang 100",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.98",
+     "model": "CASH_OVER_TO_RETURN 0.9",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "right"
+    },
+    {
+     "id": "hard-validation-212",
+     "label": "NONE",
+     "note": "may nabuong itlog, gin-bawasan ang bayad",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.77",
+     "model": "CASH_RIDER_TO_REMIT 0.9",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "wrong"
+    },
+    {
+     "id": "hard-test-213",
+     "label": "NONE",
+     "note": "gin-refund sang tindahan ang isa ka item direkta sa customer",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.74",
+     "model": "CASH_RIDER_TO_REMIT 0.9",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "wrong"
+    },
+    {
+     "id": "hard-validation-214",
+     "label": "NONE",
+     "note": "ginbayaran man niya ang utang sa previous order",
+     "unread": true,
+     "network": "CASH_OVER_TO_RETURN 0.96",
+     "model": "CASH_OVER_TIP 0.9",
+     "shown": null,
+     "outcome": "rightly-silent"
+    },
+    {
+     "id": "hard-test-215",
+     "label": "NONE",
+     "note": "ayaw magbayad sang delivery fee kay late daw kami",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.78",
+     "model": "CASH_RIDER_TO_REMIT 0.9",
+     "shown": "CASH_RIDER_TO_REMIT",
+     "outcome": "wrong"
+    },
+    {
+     "id": "hard-validation-216",
+     "label": "NONE",
+     "note": "nag-discount ang tindahan pero wala na-update ang total",
+     "unread": true,
+     "network": "CASH_RIDER_TO_REMIT 0.44",
+     "model": "CASH_PAID_BY_TRANSFER 0.9",
+     "shown": "CASH_PAID_BY_TRANSFER",
+     "outcome": "wrong"
+    },
+    {
+     "id": "real-real-217",
+     "label": "UNVERIFIED_SMALL_SHOP",
+     "note": "",
+     "unread": false,
+     "network": "UNVERIFIED_SMALL_SHOP 0.85",
+     "model": "UNVERIFIED_SMALL_SHOP 0.9",
+     "shown": "UNVERIFIED_SMALL_SHOP",
+     "outcome": "right"
+    },
+    {
+     "id": "real-real-218",
+     "label": "NONE",
+     "note": "",
+     "unread": false,
+     "network": "CASH_OVER_TO_RETURN 0.88",
+     "model": "CASH_OVER_TO_RETURN 0.9",
+     "shown": "CASH_OVER_TO_RETURN",
+     "outcome": "wrong"
+    },
+    {
+     "id": "real-real-219",
+     "label": "UNVERIFIED_PAID_IN_FULL",
+     "note": "",
+     "unread": false,
+     "network": "UNVERIFIED_RECEIPT_LOST 0.57",
+     "model": "UNVERIFIED_SMALL_SHOP 0.8",
+     "shown": null,
+     "outcome": "silent"
+    }
+   ],
+   "latency": {
+    "samples": 220,
+    "median_ms": 1622,
+    "p90_ms": 1799
+   }
+  }
+ }
+}
