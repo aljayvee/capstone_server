@@ -5,10 +5,10 @@
 ---
 
 ## 📡 Tunnel State
-* **Active Mission**: Server API Architecture & Database Invariants
-* **Current Driver**: Antigravity 2.0 (Gemini 3.7 Flash High)
+* **Active Mission**: Firebase Phone Auth & Production SMS Verification
+* **Current Driver**: Antigravity 2.0 (Gemini 3.8 Flash High)
 * **Target Workspace**: `Capstone_Server/server` (Port 5000 API Backend)
-* **Last Updated**: 2026-09-11
+* **Last Updated**: 2026-10-05
 
 ---
 
@@ -40,6 +40,68 @@
 ---
 
 ## 🛠️ Model B (Gemini / Antigravity) Execution & Verification
+* **Status**: [Phone Verification & Multi-Channel Password Reset Deployed to Production]
+* **Session (2026-10-05 — Phone Password Reset Verification Route & Repository Normalization)**:
+  - **Backend Server (`Capstone_Server/server`)**:
+    - `src/repositories/customerRepository.ts`: Added `findByPhone(phone: string)` with full normalization and matching against multiple format representations (`+63...`, `09...`, `63...`, 10-digit).
+    - `src/validators/authValidators.ts`: Added `verifyResetPhoneSchema = z.object({ firebaseIdToken: nonEmptyTrimmed(...) })` and `VerifyResetPhoneInput`.
+    - `src/services/passwordResetService.ts`: Added `verifyResetPhone(firebaseIdToken, ctx)`:
+      - Cryptographically verifies Firebase ID token via `verifyFirebaseIdToken`.
+      - Extracts and normalizes confirmed mobile phone.
+      - Finds matching active customer account in MariaDB.
+      - Issues HMAC-SHA256 signed `resetToken` with `PURPOSE = "PASSWORD_RESET"` and `credentialStamp`.
+    - `src/controllers/authController.ts`: Added `verifyResetPhone` handler under `resetContext(req)`.
+    - `src/routes/customerRoutes.ts`: Mounted `POST /api/customers/verify-reset-phone` under `passwordResetLimiter`.
+    - Verification: `npx tsc --noEmit` green (0 errors).
+    - Production VPS Deployment: Uploaded `src/`, compiled on VPS with 0 errors, PM2 `capstone-backend` restarted online (`https://api.sugo-express.org/api/customers/verify-reset-phone` verified live).
+
+* **Session (2026-10-05 — Native Google Sign-In with Firebase Auth & Phone Onboarding)**:
+  - **Schema & Database Sync**:
+    - Made `CustomerAccount.passwordHash String?` nullable in `prisma/schema.prisma` to support passwordless Google accounts.
+    - Added `CustomerAccount.googleId String? @unique` for fast 1:1 Google account lookup.
+    - Successfully pushed to production MariaDB via `npx prisma db push --schema=prisma/schema.prisma --accept-data-loss`.
+  - **Backend Server (`Capstone_Server/server`)**:
+    - `src/repositories/customerRepository.ts`: Added `googleId` field, `findByGoogleId()`, and `findByEmail()`.
+    - `src/lib/firebaseAdmin.ts`: Upgraded `verifyFirebaseIdToken()` to return full claims (`email`, `emailVerified`, `name`, `picture`, `signInProvider`) with defensive try/catch throwing `ServiceError(401)`.
+    - `src/validators/authValidators.ts`: Added `customerGoogleLoginSchema` and `customerGoogleRegisterSchema`.
+    - `src/services/authService.ts`:
+      - `loginCustomerWithGoogle(idToken)`: Authenticates existing Google or linked email accounts; if phone is missing, returns `{ status: "PHONE_SETUP_REQUIRED" }`.
+      - `registerCustomerWithGoogle(input)`: Validates Google token and verified phone SMS OTP token, creates or links account with verified phone and unique username.
+      - Added guard in `loginCustomer()` preventing traditional password login on Google-only accounts: `"This account uses Google Sign-In. Please sign in with Google."`
+    - `src/services/passwordResetService.ts`: Updated `credentialStamp()` to accept `passwordHash: string | null | undefined` with `"NO_PASSWORD"` fallback.
+    - `src/controllers/authController.ts` & `src/routes/customerRoutes.ts`: Mounted `POST /api/customers/google-login` and `POST /api/customers/google-register` under rate limiting.
+    - `tests/googleAuth.test.ts`: Added 5 unit tests covering Google sign-in, existing account linking, phone requirement, new user registration, and duplicate email handling (100% passing).
+    - Production Deployment: Synchronized to VPS (`109.123.239.182`), built with 0 errors, PM2 `capstone-backend` reloaded and confirmed healthy (HTTP 200 on `https://api.sugo-express.org/api/health`, HTTP 401 on `https://api.customers/google-login` with invalid token).
+* **Session (2026-10-05 — Firebase Phone Auth, SMS OTP Verification & Legal Pages)**:
+  - **Schema & Database Sync**:
+    - Added `phoneVerified Boolean @default(false)` and `phoneVerifiedAt DateTime?` to `model User`, `model CustomerAccount`, and `model CustomerInformation` in `prisma/schema.prisma`.
+    - Production MariaDB schema pushed cleanly via `prisma db push`.
+  - **Backend Server (`Capstone_Server/server`)**:
+    - `src/lib/firebaseAdmin.ts`: Implemented `verifyFirebaseIdToken(idToken)`.
+    - `src/services/authService.ts`: Implemented `normalizePhoneDigits()`, `verifyFirebasePhoneToken()`, and integrated cryptographic Firebase ID token verification into `registerCustomer()`.
+    - `src/controllers/customerController.ts` & `src/routes/customerRoutes.ts`: Mounted `POST /api/customers/verify-phone-firebase` guarded by rate limiter.
+    - `src/repositories/errandRepository.ts`: Added `phoneVerified` and `phoneVerifiedAt` to `ERRAND_INCLUDE.customer.select.information.select`.
+    - `src/services/errandService.ts`: Added phone verification fields in `CustomerRelation` type and `withCustomerName` mapper.
+    - `src/validators/customerValidators.ts`: Added `firebaseIdToken` to `customerProfileUpdateSchema`.
+    - `src/services/customerService.ts`: In `updateProfile`, enforced phone token verification when customer changes mobile number, writing `phoneVerified: true` and `phoneVerifiedAt: new Date()`.
+    - `tests/firebasePhoneAuth.test.ts`: Added unit tests verifying token checks, phone normalization, registration, and update profile phone verification (10/10 passing).
+    - Production VPS: Deployed to `109.123.239.182`, PM2 `capstone-backend` reloaded and online.
+  - **Option 2 - Marketing Landing Page (`Capstone_Landing_Page`)**:
+    - `src/components/Footer.tsx`: Added official links to Privacy Policy (`https://portal.sugo-express.org/privacy`) and Terms of Service (`https://portal.sugo-express.org/terms`).
+    - Built via Vite and deployed via `scripts/deploy-landing.sh` to VPS. Verified live: HTTP 200 on `sugoonthego.online`.
+  - **Option 3 - Web Dispatcher Console (`Capstone_Project_Web`)**:
+    - `src/types/errand.ts`: Added `customerPhoneVerified` and `customerPhoneVerifiedAt` to `Errand` interface.
+    - `src/portals/dispatcher/hooks/useDispatcherPortal.ts`: Mapped `customerPhoneVerified` and `customerPhoneVerifiedAt` from API response.
+    - `src/portals/dispatcher/components/workspace/DispatchDetailInspector.tsx`: Rendered emerald `Verified` chip (with `ShieldCheck`) or amber `Unverified` chip beside `errand.customerPhone`.
+    - `src/portals/dispatcher/components/ActiveErrandsPanel.tsx`: Added compact `ShieldCheck` verified badge beside customer phone.
+    - `src/portals/dispatcher/components/CustomerLocationModal.tsx`: Added `customerPhoneVerified` badge.
+    - Built via Vite (`dist/`) and deployed via `scripts/deploy-web.sh` to `/var/www/web/dist` on VPS. Verified live: HTTP 200 on `portal.sugo-express.org`.
+  - **Option 4 - Customer Mobile App (`CustomerApp`)**:
+    - `src/screens/RegisterScreen.tsx`: Integrated dual verification channel (`[ Email OTP | SMS (Phone) ]`). In-app browser session via `expo-web-browser` redirects to `/verify-phone` and returns verified Firebase ID token to the app.
+    - `src/screens/EditAccountScreen.tsx`: Enforced SMS OTP verification when changing phone number via `openAuthSessionAsync`, displaying green `VERIFIED` chip and requiring verification token before save.
+    - `src/navigation/types.ts` & `src/context/AuthContext.tsx`: Added `phoneVerified` and `phoneVerifiedAt` fields.
+    - Verified `npx tsc --noEmit` compiles cleanly with 0 errors.
+
 * **Status**: [Transactional Email & OTP Design Revamped]
 * **Files Synchronized**:
   - `C:\Capstone_Server\server\src\lib\emailTemplates.ts` (Revamped email design system: bulletproof MSO table shell, hidden preheaders, clean typography OTP hero, eliminated nested-card abuse and coupon dashed borders, added standardized builders `buildRegistrationOtpEmail`, `buildPasswordResetEmail`, `renderSecurityAdvisory`)
