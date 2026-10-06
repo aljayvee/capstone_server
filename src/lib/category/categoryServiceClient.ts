@@ -1,5 +1,6 @@
 import {
   CATEGORY_ADVICE_TIMEOUT_MS,
+  CATEGORY_NORMALIZE_TIMEOUT_MS,
   CATEGORY_SERVICE_URL,
   CATEGORY_SERVICE_TIMEOUT_MS,
 } from "../../config/env.js";
@@ -25,6 +26,10 @@ const breaker = new CircuitBreaker("category-service");
 // Its own breaker: a slow or refused second opinion must not open the one the
 // category guesses depend on.
 const adviceBreaker = new CircuitBreaker("category-service-advice");
+// And one for customers tidying their lists, so a burst of them timing out
+// cannot open the breaker a dispatcher's second opinion goes through, nor the
+// reverse.
+const normalizeBreaker = new CircuitBreaker("category-service-normalize");
 
 export interface CategoryPrediction {
   /** The merchant category NAME, or null when nothing cleared the threshold. */
@@ -191,6 +196,41 @@ export async function predictItemCategories(
     { timeoutMs: LIVE_CATEGORY_TIMEOUT_MS }
   );
   return data?.results ?? null;
+}
+
+export interface NormalizedItem {
+  name: string;
+  quantity: number;
+  /** "" when the line gave no size; the service never sends null (Gemma). */
+  size: string;
+  /** The rider instruction the line carried, "" when none. Older sidecars omit it. */
+  note?: string;
+}
+
+export interface NormalizeResult {
+  available: boolean;
+  /** n is the 1-based position of the line in the request. */
+  results?: Array<{ n: number; items: NormalizedItem[]; confident: boolean }>;
+  model?: string;
+  label?: string;
+  reason?: string;
+}
+
+/**
+ * Messy shopping lines, read by the service's large models: "5 Kilo of Chicken
+ * 2qty" is Chicken, 5 kg, two of them. The customer's Review screen asks with
+ * the lines its own rules could not settle. Null when the service cannot be
+ * reached, like everything here; the customer's list is then sent as typed.
+ */
+export function normalizeItems(lines: string[]): Promise<NormalizeResult | null> {
+  return post<NormalizeResult>(
+    "/normalize-items",
+    // The whole budget, less the hop back: the service gives the first model
+    // all of it and the next only what is left. Halved per model, as
+    // adviseChoice does, Gemini ran out of time on lists of three or more.
+    { lines, timeout_ms: Math.max(500, CATEGORY_NORMALIZE_TIMEOUT_MS - 750) },
+    { timeoutMs: CATEGORY_NORMALIZE_TIMEOUT_MS, gate: normalizeBreaker }
+  );
 }
 
 export interface SubstituteSuggestionResult {

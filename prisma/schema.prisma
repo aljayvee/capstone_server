@@ -50,6 +50,8 @@ model User {
   // first sign-in. Only the seeded bootstrap admin starts profile-incomplete.
   emailVerified    Boolean   @default(false)
   emailVerifiedAt  DateTime?
+  phoneVerified    Boolean   @default(false)
+  phoneVerifiedAt  DateTime?
   profileCompleted Boolean   @default(true)
 
   expoPushToken String?
@@ -150,10 +152,12 @@ model RiderPresence {
 model CustomerAccount {
   id            Int      @id @default(autoincrement())
   username      String   @unique
-  passwordHash  String
+  passwordHash  String?
+  googleId      String?  @unique
   email         String   @unique
   status        String   @default("Active")
   emailVerified Boolean  @default(false)
+  phoneVerified Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -189,9 +193,11 @@ model CustomerInformation {
   firstName  String
   middleName String?
   lastName   String
-  birthdate  DateTime?       @db.Date
-  phone      String
-  avatar     String?         @db.LongText
+  birthdate       DateTime?       @db.Date
+  phone           String
+  phoneVerified   Boolean         @default(false)
+  phoneVerifiedAt DateTime?
+  avatar          String?         @db.LongText
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
@@ -540,6 +546,17 @@ model PabiliDetail {
   // customer's original category picks.
   storeCategory     String?
   quantity          Int      @default(1)
+  // How big one of them is ("5 kg", "1.5 L"), kept apart from itemName so
+  // "5 Kilo of Chicken 2qty" is Chicken, 5 kg, quantity 2: the rider reads
+  // three facts, the fee counts two units, and the category model and learned
+  // memory see "Chicken". Null in ITEM_SIZE_STORAGE=fold mode, where the size
+  // is folded into itemName for rider builds that predate this column.
+  size              String?  @db.VarChar(40)
+  // What the customer asked the rider to mind about this one item ("paki pili
+  // yung walang bulok", "if out of stock, 150g x 2"). Kept apart so it stops
+  // riding inside itemName, where it read as part of the product and broke
+  // the category model. Folded into itemName too in fold mode.
+  notes             String?  @db.VarChar(200)
   unitPrice         Float    @default(0)
   estimatedSubtotal Float    @default(0)
   fulfillmentStatus String   @default("PENDING") @db.VarChar(32)
@@ -571,6 +588,9 @@ model PabiliItemRequest {
   itemName      String
   storeCategory String?
   quantity      Int      @default(1)
+  // Same meaning as PabiliDetail.size and .notes, as the customer confirmed them.
+  size          String?  @db.VarChar(40)
+  notes         String?  @db.VarChar(200)
   createdAt     DateTime @default(now())
 
   // Which stop the rider buys this at. Until this existed an item carried only a

@@ -24,6 +24,8 @@ import {
   enablePayment,
   confirmOrder,
   quoteErrand,
+  normalizeItemLines,
+  checkItemStores,
   uploadProofImage,
   scanProofImage,
   confirmScannedProof,
@@ -39,7 +41,7 @@ import { uploadTrackBatch, getTrack } from "../controllers/trackingController.js
 import { getRating, submitRating } from "../controllers/ratingController.js";
 import { submitSettlement } from "../controllers/settlementController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { userApiLimiter, readLimiter, trackingLimiter } from "../middleware/rateLimiters.js";
+import { userApiLimiter, readLimiter, trackingLimiter, itemTidyLimiter, itemStoreCheckLimiter } from "../middleware/rateLimiters.js";
 import {
   getPaymentLedger,
   confirmUpfrontPayment,
@@ -61,6 +63,17 @@ const router = Router();
 // readLimiter rather than the stricter write budget. The customer's checkout
 // re-quotes as they adjust their basket.
 router.post("/quote", authenticateToken, readLimiter, quoteErrand);
+
+// POST /api/errands/normalize-items - Read messy item lines ("5 Kilo of Chicken
+// 2qty") on the customer's Review screen. Writes nothing; declared above "/:id"
+// for the same reason as /quote. Its own limiter because every call can spend
+// the Gemini quota dispatchers share (see itemTidyLimiter).
+router.post("/normalize-items", authenticateToken, itemTidyLimiter, normalizeItemLines);
+
+// POST /api/errands/item-stores - Which kind of store usually sells each item,
+// while the customer adds them to a store ("usually bought at Pharmacy &
+// Health"). Writes nothing; above "/:id" like the two routes before it.
+router.post("/item-stores", authenticateToken, itemStoreCheckLimiter, checkItemStores);
 
 // --- Reconciliation exceptions ------------------------------------------------
 //

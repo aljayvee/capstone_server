@@ -12,6 +12,7 @@ import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import * as errandService from "./errandService.js";
 import { holdScan, findScan, type ReceiptScan } from "../lib/pendingReceiptScans.js";
+import { formatItemLabel } from "./patterns/itemLabel.js";
 import type { ProofImageUploadInput, ProofImageScanInput } from "../validators/proofImageValidators.js";
 
 /**
@@ -61,6 +62,7 @@ async function assertAllStoreItemsChecked(errandId: string, pinpointId?: number 
     select: {
       id: true,
       itemName: true,
+      size: true,
       fulfillmentStatus: true,
       pinpointId: true,
     },
@@ -70,7 +72,7 @@ async function assertAllStoreItemsChecked(errandId: string, pinpointId?: number 
     ? items
     : await prisma.pabiliDetail.findMany({
         where: { errandId },
-        select: { id: true, itemName: true, fulfillmentStatus: true, pinpointId: true },
+        select: { id: true, itemName: true, size: true, fulfillmentStatus: true, pinpointId: true },
       });
 
   if (targetItems.length === 0) {
@@ -82,7 +84,7 @@ async function assertAllStoreItemsChecked(errandId: string, pinpointId?: number 
   );
 
   if (pendingItems.length > 0) {
-    const itemNames = pendingItems.slice(0, 3).map((i) => `"${i.itemName}"`).join(", ");
+    const itemNames = pendingItems.slice(0, 3).map((i) => `"${formatItemLabel(i.itemName, i.size)}"`).join(", ");
     const remainingCount = pendingItems.length > 3 ? ` and ${pendingItems.length - 3} more` : "";
     throw new ServiceError(
       422,

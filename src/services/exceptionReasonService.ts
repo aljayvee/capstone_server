@@ -13,6 +13,7 @@ import {
 } from "./patterns/exceptionReasonModel.js";
 import { adviseChoice } from "../lib/category/categoryServiceClient.js";
 import { EXCEPTION_REASON_MODEL } from "./patterns/exceptionReasonWeights.js";
+import { formatItemLabel } from "./patterns/itemLabel.js";
 import type { ErrandException, ExceptionKind } from "./patterns/exceptionRules.js";
 
 /**
@@ -100,12 +101,14 @@ export function toReasonContext(errand: EvidenceRow, exception: ErrandException)
   // stores (UNVERIFIED_PURCHASE / NO_RECEIPT).
   const relevantItems =
     stop && stop.items.length > 0 ? stop.items : (errand.pabiliDetails ?? []);
+  const withQuantity = (label: string, quantity: number) =>
+    quantity > 1 ? `${label} x${quantity}` : label;
   const outOfStockItems = relevantItems
     .filter((i) => i.fulfillmentStatus === "OUT_OF_STOCK")
-    .map((i) => (i.quantity > 1 ? `${i.itemName} x${i.quantity}` : i.itemName));
+    .map((i) => withQuantity(formatItemLabel(i.itemName, i.size), i.quantity));
   const purchasedItems = relevantItems
     .filter((i) => i.fulfillmentStatus === "PURCHASED")
-    .map((i) => (i.quantity > 1 ? `${i.itemName} x${i.quantity}` : i.itemName));
+    .map((i) => withQuantity(formatItemLabel(i.itemName, i.size), i.quantity));
 
   const checklistNotes: string[] = [];
   if (outOfStockItems.length > 0) {

@@ -8,7 +8,19 @@ import type { Prisma, ErrandStatus } from "@prisma/client";
 // errandService.attachErrandNames() flattens it back to firstName/lastName/phone/name
 // so the HTTP response contract the web dashboard consumes is unchanged.
 export const ERRAND_INCLUDE = {
-  customer: { select: { information: { select: { firstName: true, lastName: true, phone: true } } } },
+  customer: {
+    select: {
+      information: {
+        select: {
+          firstName: true,
+          lastName: true,
+          phone: true,
+          phoneVerified: true,
+          phoneVerifiedAt: true,
+        },
+      },
+    },
+  },
   rider: { select: { firstName: true, lastName: true, phone: true } },
   pabiliDetails: true,
   pabiliItemRequests: true,
@@ -66,6 +78,8 @@ const RECONCILIATION_EVIDENCE_SELECT = {
     select: {
       id: true,
       itemName: true,
+      size: true,
+      notes: true,
       quantity: true,
       fulfillmentStatus: true,
       pinpointId: true,
@@ -77,7 +91,7 @@ const RECONCILIATION_EVIDENCE_SELECT = {
       storeName: true,
       mismatchDetectedAt: true,
       observedPlace: { select: { name: true } },
-      items: { select: { id: true, itemName: true, quantity: true, fulfillmentStatus: true } },
+      items: { select: { id: true, itemName: true, size: true, notes: true, quantity: true, fulfillmentStatus: true } },
     },
   },
   proofImages: {

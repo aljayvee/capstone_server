@@ -139,3 +139,42 @@ export const trackingLimiter = rateLimit({
     error: "Location upload rate limit reached.",
   },
 });
+
+/**
+ * 7. Item Tidy Limiter (POST /errands/normalize-items)
+ * Every call can reach Google through the category sidecar, whose Gemini quota
+ * (25 a minute, 5,000 a day) is shared with dispatcher categorisation. One
+ * Review screen asks once, and again only after the list changes, so 15 per
+ * 10 minutes covers a customer reworking a list several times while keeping
+ * one account from spending the dispatchers' budget.
+ */
+export const itemTidyLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: isDev ? 200 : 15,
+  keyGenerator: smartKeyGenerator,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: "Too many tidy-ups in a short time. Your list will be sent as you typed it.",
+  },
+});
+
+/**
+ * 8. Item Store Check Limiter (POST /errands/item-stores)
+ * The customer's store editor asks once per pause in typing. The local model
+ * answers most names for free, but an unsure one is passed to the shared
+ * Gemini quota in the background, so a single account is capped well below
+ * what would crowd out the dispatchers.
+ */
+export const itemStoreCheckLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: isDev ? 400 : 60,
+  keyGenerator: smartKeyGenerator,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: "Too many store checks in a short time. Your items are still on your list.",
+  },
+});

@@ -6,6 +6,7 @@ import {
   LANDMARK_MAX,
   DELIVERY_NOTES_MAX,
 } from "./locationValidators.js";
+import { itemSizeSchema, itemNotesSchema } from "./pabiliItemValidators.js";
 
 // Mirrors the optional/default semantics errandService.createErrand already
 // implements inline via destructuring defaults (category, description,
@@ -17,6 +18,8 @@ const pabiliItemInputSchema = z.object({
   name: z.string().trim().max(120, "Item name must be at most 120 characters.").optional(),
   storeCategory: z.string().trim().max(100, "Store category must be at most 100 characters.").optional(),
   quantity: z.coerce.number().int().positive("quantity must be a positive integer.").optional(),
+  size: itemSizeSchema,
+  notes: itemNotesSchema,
   unitPrice: z.coerce.number().nonnegative("unitPrice must be zero or positive.").optional(),
   estimatedSubtotal: z.coerce.number().nonnegative("estimatedSubtotal must be zero or positive.").optional(),
 });

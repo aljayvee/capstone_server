@@ -1,9 +1,15 @@
 import { prisma } from "../lib/prisma.js";
+import { ITEM_SIZE_STORAGE } from "../config/env.js";
+import { buildReplacementRows } from "../services/patterns/pabiliItemRows.js";
 
 export interface PabiliDetailInput {
   itemName: string;
   storeCategory?: string;
   quantity: number;
+  /** Omitted by clients built before the size column: the stored size is kept. */
+  size?: string | null;
+  /** Same as size: omitted means keep what is stored. */
+  notes?: string | null;
 }
 
 export const pabiliDetailRepository = {
@@ -17,30 +23,18 @@ export const pabiliDetailRepository = {
   // Preserves fulfillmentStatus ("PURCHASED" | "OUT_OF_STOCK") for items that were
   // NOT modified by the dispatcher, while resetting any modified item back to
   // "PENDING" so its checkbox becomes available again in Sugo Rider.
+  // A row that omits size keeps the size it had (buildReplacementRows), so an
+  // older dispatcher build saving the list cannot erase every size on it.
   async replaceForErrand(errandId: string, items: PabiliDetailInput[]) {
     const existingRows = await prisma.pabiliDetail.findMany({
       where: { errandId },
       orderBy: { id: "asc" },
     });
 
-    const normalize = (v?: string | null) => String(v ?? "").trim().toLowerCase();
-
-    const rowsToCreate = items.map((item, index) => {
-      const prev = existingRows[index];
-      const isUnmodified =
-        prev !== undefined &&
-        normalize(prev.itemName) === normalize(item.itemName) &&
-        Number(prev.quantity) === Number(item.quantity) &&
-        normalize(prev.storeCategory) === normalize(item.storeCategory);
-
-      return {
-        errandId,
-        itemName: item.itemName,
-        storeCategory: item.storeCategory || null,
-        quantity: item.quantity,
-        fulfillmentStatus: isUnmodified ? (prev.fulfillmentStatus || "PENDING") : "PENDING",
-      };
-    });
+    const rowsToCreate = buildReplacementRows(existingRows, items, ITEM_SIZE_STORAGE).map((row) => ({
+      errandId,
+      ...row,
+    }));
 
     return prisma.$transaction([
       prisma.pabiliDetail.deleteMany({ where: { errandId } }),

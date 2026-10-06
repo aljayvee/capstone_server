@@ -17,6 +17,7 @@ import { notificationRepository } from "../repositories/notificationRepository.j
 import { notificationFactory } from "./patterns/notificationFactory.js";
 import * as errandService from "./errandService.js";
 import { confirmedReceiptTotal } from "./proofImageService.js";
+import { formatItemLabel } from "./patterns/itemLabel.js";
 
 /**
  * The money on any errand the customer does not pay in cash at the door.
@@ -362,11 +363,11 @@ export async function requestHalfPayment(errandId: string, riderId: number) {
   // (either PURCHASED or OUT_OF_STOCK). No items may remain PENDING.
   const pendingItems = await prisma.pabiliDetail.findMany({
     where: { errandId, fulfillmentStatus: "PENDING" },
-    select: { id: true, itemName: true },
+    select: { id: true, itemName: true, size: true },
   });
 
   if (pendingItems.length > 0) {
-    const itemNames = pendingItems.map((i) => i.itemName).join(", ");
+    const itemNames = pendingItems.map((i) => formatItemLabel(i.itemName, i.size)).join(", ");
     throw new ServiceError(
       422,
       `Cannot request half-payment yet. All items must be checked (Purchased or Out of Stock) first: ${itemNames}.`

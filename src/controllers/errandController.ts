@@ -8,6 +8,9 @@ import { parseOrThrow } from "../validators/validate.js";
 import { createErrandSchema, assignRiderSchema, declineErrandSchema, errandQuoteSchema } from "../validators/errandValidators.js";
 import { pinpointsBodySchema } from "../validators/pinpointValidators.js";
 import { pabiliItemsBodySchema } from "../validators/pabiliItemValidators.js";
+import { itemTidyBodySchema, itemStoreCheckBodySchema } from "../validators/itemTidyValidators.js";
+import { tidyItemLines } from "../services/itemTidyService.js";
+import { inferItemCategories } from "../services/categoryInferenceService.js";
 import { occurredAtSchema } from "../validators/trackingValidators.js";
 import {
   proofImageUploadSchema,
@@ -98,6 +101,31 @@ export const createErrand = asyncHandler<AuthenticatedRequest>(async (req, res: 
 export const quoteErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(errandQuoteSchema, req.body);
   res.json(await errandService.quoteErrand(input));
+});
+
+/** The Review screen's messy lines, read by the category service's large models. */
+export const normalizeItemLines = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(itemTidyBodySchema, req.body);
+  res.json(await tidyItemLines(input));
+});
+
+/**
+ * Which kind of store usually sells each item, for the customer's store editor
+ * ("Biogesic is usually bought at Pharmacy & Health"). The same model the
+ * dispatcher console's item guesses use, reduced to what the app needs, and
+ * index-aligned with the names sent. A service that is down answers a null
+ * category for every name, never an error: the list is then just not checked.
+ */
+export const checkItemStores = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(itemStoreCheckBodySchema, req.body);
+  const inferred = await inferItemCategories(input.names);
+  res.json({
+    results: inferred.map((r) =>
+      r.available && "categoryName" in r
+        ? { category: r.categoryName, confidence: r.confidence, strong: r.strong }
+        : { category: null, confidence: "confidence" in r ? r.confidence : 0, strong: false }
+    ),
+  });
 });
 
 export const claimErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {

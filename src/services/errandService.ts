@@ -5,6 +5,9 @@ import { pabiliDetailRepository, type PabiliDetailInput } from "../repositories/
 import { forgetMemoryCache } from "./itemPlacementService.js";
 import { forgetStorePredictionMemory } from "./storePredictionService.js";
 import { warmItemCategories } from "../lib/category/categoryServiceClient.js";
+import { buildCreatedItemRows } from "./patterns/pabiliItemRows.js";
+import { formatItemLabel } from "./patterns/itemLabel.js";
+import { ITEM_SIZE_STORAGE } from "../config/env.js";
 import { checkStoreLocation } from "./storeLocationGuard.js";
 import { pricingStoreCount, distinctStopCount } from "./patterns/pricingStoreCount.js";
 import { smoothPath } from "../lib/routing/smoothPath.js";
@@ -74,7 +77,15 @@ type PinpointWithCategory = {
 
 type NamedPerson = { firstName: string; lastName: string } | null | undefined;
 type CustomerRelation =
-  | { information: { firstName: string; lastName: string; phone: string } | null }
+  | {
+      information: {
+        firstName: string;
+        lastName: string;
+        phone: string;
+        phoneVerified?: boolean;
+        phoneVerifiedAt?: Date | null;
+      } | null;
+    }
   | null
   | undefined;
 
@@ -84,12 +95,19 @@ function withPersonName<T extends NamedPerson>(person: T) {
 }
 
 // Flattens the CustomerAccount.information relation (split across two tables) back
-// into a flat { firstName, lastName, phone, name } shape, so the HTTP response
-// contract the web dashboard already consumes is unchanged.
+// into a flat { firstName, lastName, phone, phoneVerified, phoneVerifiedAt, name } shape,
+// so the HTTP response contract the web dashboard already consumes is preserved and enhanced.
 function withCustomerName(customer: CustomerRelation) {
   if (!customer?.information) return null;
-  const { firstName, lastName, phone } = customer.information;
-  return { firstName, lastName, phone, name: `${firstName} ${lastName}`.trim() };
+  const { firstName, lastName, phone, phoneVerified, phoneVerifiedAt } = customer.information;
+  return {
+    firstName,
+    lastName,
+    phone,
+    phoneVerified: Boolean(phoneVerified),
+    phoneVerifiedAt: phoneVerifiedAt ?? null,
+    name: `${firstName} ${lastName}`.trim(),
+  };
 }
 
 // Injects a computed `name` into an errand's customer/rider/dispatcher relations,
@@ -359,6 +377,8 @@ export interface CreateErrandInput {
     name?: string;
     storeCategory?: string;
     quantity?: number;
+    size?: string | null;
+    notes?: string | null;
     unitPrice?: number;
     estimatedSubtotal?: number;
   }>;
@@ -396,6 +416,7 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
   const finalCustomerId = customerId ? parseInt(String(customerId), 10) : fallbackCustomerId;
   const parsedEstimatedCost = parseFloat(String(estimatedCost));
   const parsedTip = parseFloat(String(tip));
+  const itemRows = buildCreatedItemRows(pabiliItems || [], ITEM_SIZE_STORAGE);
 
   // Fees are always server-computed from RateConfig — a client-supplied
   // deliveryFee/totalCost is never honored (previously it was, but the only
@@ -473,23 +494,21 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
     status: "AVAILABLE",
     customerId: finalCustomerId,
     storeCount,
+    // Size goes in its own column or folded into the name, per
+    // ITEM_SIZE_STORAGE (see patterns/pabiliItemRows.ts).
     pabiliDetails: {
-      create: (pabiliItems || []).map((item) => ({
-        itemName: item.itemName || item.name || "Item",
-        storeCategory: item.storeCategory || null,
-        quantity: parseInt(String(item.quantity || 1), 10),
-        unitPrice: parseFloat(String(item.unitPrice || 0)),
-        estimatedSubtotal: parseFloat(String(item.estimatedSubtotal || 0)),
-      })),
+      create: itemRows,
     },
     // Immutable audit-trail mirror of what the customer originally submitted —
     // never touched again after creation (see errandService.updateItems, which
     // only ever edits pabiliDetails, the working copy).
     pabiliItemRequests: {
-      create: (pabiliItems || []).map((item) => ({
-        itemName: item.itemName || item.name || "Item",
-        storeCategory: item.storeCategory || null,
-        quantity: parseInt(String(item.quantity || 1), 10),
+      create: itemRows.map(({ itemName, size, notes, storeCategory, quantity }) => ({
+        itemName,
+        size,
+        notes,
+        storeCategory,
+        quantity,
       })),
     },
   });
@@ -1637,8 +1656,10 @@ export async function updateItemFulfillmentStatus(
         (p: any) => p.id === itemRow.pinpointId
       );
       const storeName = pinpoint?.storeName ?? itemRow.storeCategory?.split("|")[0]?.trim() ?? undefined;
+      // Everything below is read by a person, so it carries the size too.
+      const itemLabel = formatItemLabel(itemRow.itemName, itemRow.size);
 
-      const oosNotification = notificationFactory.itemOutOfStock(itemRow.itemName, storeName);
+      const oosNotification = notificationFactory.itemOutOfStock(itemLabel, storeName);
       const latestLog = errandWithNames.dispatchLogs?.[0];
       if (latestLog?.dispatcherId) {
         void notificationRepository.create({
@@ -1649,13 +1670,13 @@ export async function updateItemFulfillmentStatus(
       eventPublisher.emitToRole("DISPATCHER", "errand:item_out_of_stock", {
         errandId,
         itemId: itemRow.id,
-        itemName: itemRow.itemName,
+        itemName: itemLabel,
         storeName,
       });
       eventPublisher.emitToRole("OWNER", "errand:item_out_of_stock", {
         errandId,
         itemId: itemRow.id,
-        itemName: itemRow.itemName,
+        itemName: itemLabel,
         storeName,
       });
 
@@ -1666,7 +1687,7 @@ export async function updateItemFulfillmentStatus(
         {
           errandId,
           itemId: itemRow.id,
-          itemName: itemRow.itemName,
+          itemName: itemLabel,
           storeName,
         }
       );
@@ -1707,7 +1728,7 @@ export async function declineItemSubstitute(
     {
       errandId,
       itemId: itemRow.id,
-      itemName: itemRow.itemName,
+      itemName: formatItemLabel(itemRow.itemName, itemRow.size),
     }
   );
 
@@ -1734,9 +1755,12 @@ export async function suggestSubstitutesForItem(errandId: string, itemId: number
     errand.customer?.name?.split(" ")[0] ||
     "Ma'am/Sir";
 
+  // The size is what makes "a different pack size" mean something.
+  const itemLabel = formatItemLabel(itemRow.itemName, itemRow.size);
+
   const { suggestItemSubstitutes } = await import("../lib/category/categoryServiceClient.js");
   const aiResult = await suggestItemSubstitutes({
-    itemName: itemRow.itemName,
+    itemName: itemLabel,
     storeName,
     storeCategory,
     customerName,
@@ -1747,12 +1771,12 @@ export async function suggestSubstitutesForItem(errandId: string, itemId: number
   }
 
   const fallbackSubs = [
-    `Alternative brand for ${itemRow.itemName}`,
-    `Different pack size of ${itemRow.itemName}`,
+    `Alternative brand for ${itemLabel}`,
+    `Different pack size of ${itemLabel}`,
   ];
   return {
     substitutes: fallbackSubs,
-    chatMessage: `Hello ${customerName}, out of stock po ang ${itemRow.itemName} sa ${storeName}. Okay lang po ba na palitan ng ${fallbackSubs[0]} o ${fallbackSubs[1]}?`,
+    chatMessage: `Hello ${customerName}, out of stock po ang ${itemLabel} sa ${storeName}. Okay lang po ba na palitan ng ${fallbackSubs[0]} o ${fallbackSubs[1]}?`,
     source: "catalog" as const,
   };
 }

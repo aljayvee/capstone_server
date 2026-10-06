@@ -40,7 +40,7 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from sugo_category.gemma import GemmaAdvisor, GemmaSettings, context_for, model_label
+from sugo_category.gemma import MAX_NAME_CHARS, GemmaAdvisor, GemmaSettings, context_for, model_label
 from sugo_category.item_search import ItemCatalogue
 from sugo_category.model import (
     DEFAULT_MIN_CONFIDENCE,
@@ -165,6 +165,15 @@ class AdviseRequest(BaseModel):
     note: str = Field(default="", max_length=500)
     options: list[AdviseOption] = Field(..., min_length=1, max_length=30)
     timeout_ms: int = Field(default=8000, ge=500, le=20_000)
+
+
+class NormalizeRequest(BaseModel):
+    """A customer's shopping lines the app's own rules would not touch."""
+
+    # One batch: the API server sends at most GEMMA_BATCH_SIZE lines.
+    lines: list[str] = Field(..., min_length=1, max_length=20)
+    # The whole answer's budget, shared down the model chain (GemmaAdvisor.normalize).
+    timeout_ms: int = Field(default=9000, ge=500, le=20_000)
 
 
 class ItemSearchRequest(BaseModel):
@@ -370,6 +379,43 @@ def advise(req: AdviseRequest) -> dict:
         "confidence": round(choice.confidence, 4),
         "model": choice.model,
         "label": model_label(choice.model)[1],
+    }
+
+
+@app.post("/normalize-items")
+def normalize_items(req: NormalizeRequest) -> dict:
+    """
+    A customer's messy shopping lines, each read into name, size and count:
+    "5 Kilo of Chicken 2qty" is Chicken, 5 kg, two of them. One line may be
+    several items ("chicken 2, rice 5kg").
+
+    For the customer app's Review screen (itemTidyService.ts on the API
+    server). An answer that drops or invents a word is discarded here
+    (gemma.parse_normalized), so a line comes back either faithfully
+    rearranged or not at all, and a line not answered is sent as typed.
+    """
+    lines = [" ".join(line.split())[:MAX_NAME_CHARS] for line in req.lines]
+    found = _gemma.normalize(lines, timeout=req.timeout_ms / 1000)
+    if found is None:
+        status = _gemma.status()
+        return {
+            "available": False,
+            "results": [],
+            "reason": status["last_error"] or f"No model could answer ({status['state']}).",
+        }
+    models = {line.model for line in found.values()}
+    model = next(iter(models)) if len(models) == 1 else None
+    return {
+        "available": True,
+        "results": [
+            {
+                "n": n,
+                "items": [{"name": i.name, "quantity": i.quantity, "size": i.size, "note": i.note} for i in line.items],
+                "confident": line.confident,
+            }
+            for n, line in sorted(found.items())
+        ],
+        **({"model": model, "label": model_label(model)[1]} if model else {}),
     }
 
 
