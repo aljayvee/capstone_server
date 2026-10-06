@@ -56,6 +56,34 @@ export async function authenticateToken(req: AuthenticatedRequest, res: Response
   }
 }
 
+// Optional Authentication Middleware (Attaches req.user if valid token present, allows unauthenticated callers through)
+export async function optionalAuthenticateToken(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return next();
+  }
+
+  try {
+    if (await isRevoked(token)) {
+      return next();
+    }
+
+    jwt.verify(token, JWT_SECRET, (err: jwt.VerifyErrors | null, decoded: unknown) => {
+      if (!err && decoded) {
+        const claims = decoded as Partial<TokenPayload> & { purpose?: string };
+        if (!claims?.purpose && claims?.role && claims?.id) {
+          req.user = decoded as TokenPayload;
+        }
+      }
+      next();
+    });
+  } catch {
+    next();
+  }
+}
+
 // Role-Based Authorization Middleware
 export function requireRole(allowedRoles: string | string[]) {
   const rolesArray = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];

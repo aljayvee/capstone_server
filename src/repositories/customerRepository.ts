@@ -6,16 +6,20 @@ const WITH_INFORMATION = { information: true, profilePhoto: true } as const;
 
 export interface CustomerCreateData {
   username: string;
-  passwordHash: string;
+  passwordHash?: string | null;
+  googleId?: string | null;
   email: string;
   status?: string;
   emailVerified?: boolean;
+  phoneVerified?: boolean;
   information: {
     firstName: string;
     middleName?: string;
     lastName: string;
     birthdate?: Date | null;
     phone?: string;
+    phoneVerified?: boolean;
+    phoneVerifiedAt?: Date | null;
     avatar?: string;
   };
 }
@@ -25,7 +29,9 @@ export interface CustomerUpdateData {
   email?: string;
   status?: string;
   emailVerified?: boolean;
-  passwordHash?: string;
+  phoneVerified?: boolean;
+  passwordHash?: string | null;
+  googleId?: string | null;
   expoPushToken?: string | null;
   information?: {
     firstName?: string;
@@ -33,11 +39,24 @@ export interface CustomerUpdateData {
     lastName?: string;
     birthdate?: Date | null;
     phone?: string | null;
+    phoneVerified?: boolean;
+    phoneVerifiedAt?: Date | null;
     avatar?: string | null;
   };
 }
 
 export const customerRepository = {
+  findByGoogleId(googleId: string) {
+    return prisma.customerAccount.findUnique({ where: { googleId }, include: WITH_INFORMATION });
+  },
+
+  findByEmail(email: string) {
+    return prisma.customerAccount.findFirst({
+      where: { email: normalizeEmail(email) },
+      include: WITH_INFORMATION,
+    });
+  },
+
   findByUsername(username: string) {
     return prisma.customerAccount.findUnique({ where: { username }, include: WITH_INFORMATION });
   },
@@ -67,6 +86,25 @@ export const customerRepository = {
 
   findById(id: number) {
     return prisma.customerAccount.findUnique({ where: { id }, include: WITH_INFORMATION });
+  },
+
+  findByPhone(phone: string) {
+    const digits = phone.replace(/\D/g, "");
+    const clean = digits.length >= 10 ? digits.slice(-10) : digits;
+    if (!clean) return Promise.resolve(null);
+    return prisma.customerAccount.findFirst({
+      where: {
+        information: {
+          OR: [
+            { phone: clean },
+            { phone: `+63${clean}` },
+            { phone: `0${clean}` },
+            { phone: `63${clean}` },
+          ],
+        },
+      },
+      include: WITH_INFORMATION,
+    });
   },
 
   // The duplicate check behind registration. Normalised for the same reason the

@@ -10,6 +10,7 @@ import { evaluateResend, streakSince } from "./otpCooldownPolicy.js";
 import * as sessionService from "./sessionService.js";
 import { logger } from "../lib/logger.js";
 import { ServiceError } from "./ServiceError.js";
+import { verifyFirebaseIdToken } from "../lib/firebaseAdmin.js";
 import {
   JWT_PASSWORD_RESET_SECRET,
   PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS,
@@ -99,8 +100,8 @@ function log(outcome: ResetOutcome, identifier: string, ctx: RequestContext, cus
 // password changes the stamp stops matching, so a token cannot be replayed to
 // set the password a second time — and a token minted before an unrelated
 // password change is dead on arrival.
-function credentialStamp(passwordHash: string): string {
-  return crypto.createHash("sha256").update(passwordHash).digest("hex").slice(0, 32);
+function credentialStamp(passwordHash: string | null | undefined): string {
+  return crypto.createHash("sha256").update(passwordHash || "NO_PASSWORD").digest("hex").slice(0, 32);
 }
 
 /**
@@ -235,6 +236,46 @@ export async function verifyResetCode(
 
   await emailVerificationRepository.markConsumed(record.id);
   log("CODE_VERIFIED", clean, ctx, customer.id);
+
+  const claims: ResetClaims = {
+    id: customer.id,
+    purpose: PURPOSE,
+    cs: credentialStamp(customer.passwordHash),
+  };
+  const resetToken = jwt.sign(claims, JWT_PASSWORD_RESET_SECRET, {
+    expiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS,
+  });
+
+  return { resetToken, expiresInSeconds: PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS };
+}
+
+/**
+ * Step 2 (SMS OTP alternative). Checks the verified Firebase phone ID token,
+ * matches the phone against active customer accounts, and mints the reset token.
+ */
+export async function verifyResetPhone(
+  firebaseIdToken: string,
+  ctx: RequestContext
+): Promise<{ resetToken: string; expiresInSeconds: number }> {
+  const decoded = await verifyFirebaseIdToken(firebaseIdToken);
+  if (!decoded.phoneNumber) {
+    throw new ServiceError(400, "Firebase ID token does not contain a verified mobile phone number.");
+  }
+  const digits = decoded.phoneNumber.replace(/\D/g, "");
+  const cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
+
+  const customer = await customerRepository.findByPhone(cleanPhone);
+  if (!customer) {
+    log("CODE_REJECTED", cleanPhone, ctx);
+    throw new ServiceError(404, "No customer account found with this verified mobile number.");
+  }
+
+  if (customer.status !== "Active") {
+    log("CODE_REJECTED", cleanPhone, ctx, customer.id);
+    throw new ServiceError(400, "This account is inactive.");
+  }
+
+  log("CODE_VERIFIED", cleanPhone, ctx, customer.id);
 
   const claims: ResetClaims = {
     id: customer.id,

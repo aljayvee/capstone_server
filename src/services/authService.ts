@@ -7,6 +7,8 @@ import { tokenBlocklistRepository } from "../repositories/tokenBlocklistReposito
 import { markRevoked } from "../lib/blocklistCache.js";
 import { buildCustomerAccountCreateData, flattenCustomerAccount } from "./patterns/customerFactory.js";
 import { sendVerificationCode } from "./emailVerificationService.js";
+import { emailVerificationRepository } from "../repositories/emailVerificationRepository.js";
+import { verifyFirebaseIdToken } from "../lib/firebaseAdmin.js";
 import * as loginChallengeService from "./loginChallengeService.js";
 import type { ChallengeAudience, LoginChallenge } from "./loginChallengeService.js";
 import * as staffVerificationService from "./staffVerificationService.js";
@@ -277,6 +279,10 @@ export async function loginCustomer(identifier: string, password: string): Promi
     throw new ServiceError(401, "Invalid username or password");
   }
 
+  if (!customer.passwordHash) {
+    throw new ServiceError(401, "This account uses Google Sign-In. Please sign in with Google.");
+  }
+
   const isMatch = await bcrypt.compare(password, customer.passwordHash);
   if (!isMatch) {
     throw new ServiceError(401, "Invalid username or password");
@@ -301,6 +307,228 @@ export async function loginCustomer(identifier: string, password: string): Promi
   };
 }
 
+export function normalizePhoneDigits(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length >= 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
+export async function verifyFirebasePhoneToken(
+  idToken: string,
+  expectedPhone?: string
+): Promise<{ uid: string; phone: string; verified: boolean }> {
+  const result = await verifyFirebaseIdToken(idToken);
+  if (!result.phoneNumber) {
+    throw new ServiceError(400, "Firebase ID token does not contain a verified phone number.");
+  }
+  if (expectedPhone && expectedPhone.trim()) {
+    const cleanExpected = normalizePhoneDigits(expectedPhone);
+    const cleanToken = normalizePhoneDigits(result.phoneNumber);
+    if (cleanExpected !== cleanToken) {
+      throw new ServiceError(400, "Verified phone number does not match expected phone number.");
+    }
+  }
+  return {
+    uid: result.uid,
+    phone: result.phoneNumber,
+    verified: true,
+  };
+}
+
+export type GoogleAuthResult =
+  | {
+      status: "AUTHENTICATED";
+      auth: AuthResult;
+    }
+  | {
+      status: "PHONE_SETUP_REQUIRED";
+      email: string;
+      firstName: string;
+      lastName: string;
+      googleUid: string;
+      avatar?: string;
+    };
+
+export async function loginCustomerWithGoogle(idToken: string): Promise<GoogleAuthResult> {
+  const decoded = await verifyFirebaseIdToken(idToken);
+  if (!decoded.email) {
+    throw new ServiceError(400, "Google account does not have an email address.");
+  }
+
+  // 1. Try finding by googleId
+  let customer = await customerRepository.findByGoogleId(decoded.uid);
+
+  // 2. If not found by googleId, try finding by email to link accounts
+  if (!customer) {
+    customer = await customerRepository.findByEmail(decoded.email);
+    if (customer) {
+      customer = await customerRepository.update(customer.id, {
+        googleId: decoded.uid,
+        emailVerified: true,
+      });
+    }
+  }
+
+  // 3. If customer exists, check if phone number is present
+  if (customer) {
+    const hasPhone = Boolean(customer.information?.phone && customer.information.phone.trim());
+    if (!hasPhone) {
+      const nameParts = (decoded.name || "").trim().split(/\s+/);
+      const firstName = customer.information?.firstName || nameParts[0] || "Customer";
+      const lastName = customer.information?.lastName || (nameParts.length > 1 ? nameParts.slice(1).join(" ") : "");
+      return {
+        status: "PHONE_SETUP_REQUIRED",
+        email: customer.email,
+        firstName,
+        lastName,
+        googleUid: decoded.uid,
+        avatar: decoded.picture,
+      };
+    }
+
+    const flatCustomer = flattenCustomerAccount(customer);
+    const tokenPayload: TokenPayload = {
+      id: flatCustomer.id,
+      username: flatCustomer.username,
+      email: flatCustomer.email,
+      role: "CUSTOMER",
+    };
+
+    const sessionId = newSessionId();
+    return {
+      status: "AUTHENTICATED",
+      auth: {
+        user: withFullName(flatCustomer),
+        accessToken: generateAccessToken(tokenPayload),
+        refreshToken: generateRefreshToken(tokenPayload, sessionId),
+        sessionId,
+        subjectType: "CUSTOMER",
+        role: "CUSTOMER",
+      },
+    };
+  }
+
+  // 4. New user: needs phone number setup
+  const nameParts = (decoded.name || "").trim().split(/\s+/);
+  const firstName = nameParts[0] || "Customer";
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
+
+  return {
+    status: "PHONE_SETUP_REQUIRED",
+    email: decoded.email,
+    firstName,
+    lastName,
+    googleUid: decoded.uid,
+    avatar: decoded.picture,
+  };
+}
+
+export interface GoogleRegisterInput {
+  idToken: string;
+  phone: string;
+  phoneToken: string;
+  firstName?: string;
+  lastName?: string;
+  avatar?: string;
+}
+
+export async function registerCustomerWithGoogle(input: GoogleRegisterInput): Promise<AuthResult> {
+  const decoded = await verifyFirebaseIdToken(input.idToken);
+  if (!decoded.email) {
+    throw new ServiceError(400, "Google account does not have an email address.");
+  }
+
+  // Verify that the phone number was actually verified via SMS OTP
+  await verifyFirebasePhoneToken(input.phoneToken, input.phone);
+
+  let existing = await customerRepository.findByGoogleId(decoded.uid);
+  if (!existing) {
+    existing = await customerRepository.findByEmail(decoded.email);
+  }
+
+  if (existing) {
+    const updated = await customerRepository.update(existing.id, {
+      googleId: decoded.uid,
+      emailVerified: true,
+      phoneVerified: true,
+      information: {
+        phone: input.phone.trim(),
+        phoneVerified: true,
+        phoneVerifiedAt: new Date(),
+        firstName: input.firstName?.trim() || existing.information?.firstName,
+        lastName: input.lastName?.trim() || existing.information?.lastName,
+        avatar: input.avatar || existing.information?.avatar || decoded.picture || null,
+      },
+    });
+
+    const flatCustomer = flattenCustomerAccount(updated);
+    const tokenPayload: TokenPayload = {
+      id: flatCustomer.id,
+      username: flatCustomer.username,
+      email: flatCustomer.email,
+      role: "CUSTOMER",
+    };
+    const sessionId = newSessionId();
+    return {
+      user: withFullName(flatCustomer),
+      accessToken: generateAccessToken(tokenPayload),
+      refreshToken: generateRefreshToken(tokenPayload, sessionId),
+      sessionId,
+      subjectType: "CUSTOMER",
+      role: "CUSTOMER",
+    };
+  }
+
+  // Generate unique username from email
+  let baseUsername = (decoded.email.split("@")[0] || "user").replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
+  if (baseUsername.length < 3) baseUsername = `user_${baseUsername}`;
+  let username = baseUsername;
+  let counter = 1;
+  while (await customerRepository.findByUsername(username)) {
+    username = `${baseUsername}_${counter++}`;
+  }
+
+  const nameParts = (decoded.name || "").trim().split(/\s+/);
+  const firstName = input.firstName?.trim() || nameParts[0] || "Customer";
+  const lastName = input.lastName?.trim() || (nameParts.length > 1 ? nameParts.slice(1).join(" ") : "");
+
+  const newCustomer = await customerRepository.create({
+    username,
+    email: decoded.email,
+    passwordHash: null,
+    googleId: decoded.uid,
+    emailVerified: true,
+    phoneVerified: true,
+    information: {
+      firstName,
+      lastName,
+      phone: input.phone.trim(),
+      phoneVerified: true,
+      phoneVerifiedAt: new Date(),
+      avatar: input.avatar || decoded.picture || undefined,
+    },
+  });
+
+  const flatCustomer = flattenCustomerAccount(newCustomer);
+  const tokenPayload: TokenPayload = {
+    id: flatCustomer.id,
+    username: flatCustomer.username,
+    email: flatCustomer.email,
+    role: "CUSTOMER",
+  };
+  const sessionId = newSessionId();
+  return {
+    user: withFullName(flatCustomer),
+    accessToken: generateAccessToken(tokenPayload),
+    refreshToken: generateRefreshToken(tokenPayload, sessionId),
+    sessionId,
+    subjectType: "CUSTOMER",
+    role: "CUSTOMER",
+  };
+}
+
 export interface RegisterInput {
   username: string;
   password: string;
@@ -311,6 +539,8 @@ export interface RegisterInput {
   birthdate?: string | Date | null;
   phone?: string;
   emailVerified?: boolean;
+  phoneVerified?: boolean;
+  firebaseIdToken?: string;
 }
 
 export async function registerCustomer(input: RegisterInput): Promise<AuthResult> {
@@ -324,6 +554,25 @@ export async function registerCustomer(input: RegisterInput): Promise<AuthResult
     throw new ServiceError(400, "Customer already exists with provided username or email");
   }
 
+  let isPhoneVerified = false;
+  let phoneVerifiedAt: Date | null = null;
+  let effectivePhone = input.phone ? input.phone.trim() : "";
+
+  if (input.firebaseIdToken) {
+    const verified = await verifyFirebasePhoneToken(input.firebaseIdToken, input.phone);
+    isPhoneVerified = true;
+    phoneVerifiedAt = new Date();
+    if (!effectivePhone && verified.phone) {
+      effectivePhone = verified.phone;
+    }
+  } else if (effectivePhone) {
+    const consumed = await emailVerificationRepository.findLatestConsumedForPhone(effectivePhone);
+    if (consumed?.consumedAt && Date.now() - consumed.consumedAt.getTime() < 30 * 60 * 1000) {
+      isPhoneVerified = true;
+      phoneVerifiedAt = consumed.consumedAt;
+    }
+  }
+
   const createData = await buildCustomerAccountCreateData({
     username: cleanUsername,
     password: input.password,
@@ -332,8 +581,10 @@ export async function registerCustomer(input: RegisterInput): Promise<AuthResult
     middleName: input.middleName,
     lastName: input.lastName,
     birthdate: input.birthdate,
-    phone: input.phone,
+    phone: effectivePhone,
     emailVerified: input.emailVerified ?? false,
+    phoneVerified: isPhoneVerified,
+    phoneVerifiedAt,
   });
   const newCustomer = await customerRepository.create(createData);
 

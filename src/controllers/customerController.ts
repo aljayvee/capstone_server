@@ -12,8 +12,11 @@ import {
   sendPhoneOtpSchema,
   verifyPhoneOtpSchema,
 } from "../validators/emailVerificationValidators.js";
+import { verifyFirebasePhoneTokenSchema } from "../validators/authValidators.js";
 import * as customerService from "../services/customerService.js";
+import * as authService from "../services/authService.js";
 import * as emailVerificationService from "../services/emailVerificationService.js";
+import { customerRepository } from "../repositories/customerRepository.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { ServiceError } from "../services/ServiceError.js";
 
@@ -139,6 +142,29 @@ export const verifyRegistrationPhoneOtp = asyncHandler(async (req, res) => {
   const input = parseOrThrow(verifyPhoneOtpSchema, req.body);
   await emailVerificationService.verifyRegistrationPhoneOtp(input.phone, input.code);
   res.json({ success: true, message: "Phone number verified successfully." });
+});
+
+export const verifyFirebasePhone = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(verifyFirebasePhoneTokenSchema, req.body);
+  const result = await authService.verifyFirebasePhoneToken(input.idToken, input.phone);
+
+  if (req.user && req.user.role === "CUSTOMER") {
+    await customerRepository.update(req.user.id, {
+      phoneVerified: true,
+      information: {
+        phone: result.phone,
+        phoneVerified: true,
+        phoneVerifiedAt: new Date(),
+      },
+    });
+  }
+
+  res.json({
+    success: true,
+    message: "Phone number verified successfully.",
+    phone: result.phone,
+    uid: result.uid,
+  });
 });
 
 // Deliberately unauthenticated — the customer has a JWT immediately after

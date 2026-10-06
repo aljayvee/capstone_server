@@ -3,8 +3,9 @@ import { customerTransactionRepository } from "../repositories/customerTransacti
 import { customerPhotoRepository } from "../repositories/customerPhotoRepository.js";
 import { recordCustomerModifications, getCustomerModificationLogs } from "./accountAuditService.js";
 import { ServiceError } from "./ServiceError.js";
-import { withFullName } from "./authService.js";
+import { withFullName, verifyFirebasePhoneToken, normalizePhoneDigits } from "./authService.js";
 import { flattenCustomerAccount } from "./patterns/customerFactory.js";
+import { formatItemLabel } from "./patterns/itemLabel.js";
 import type { CustomerProfileUpdateInput } from "../validators/customerValidators.js";
 
 export async function getProfile(customerId: number) {
@@ -31,6 +32,26 @@ export async function updateProfile(
   const newLastName = input.lastName !== undefined && input.lastName !== "" ? input.lastName.trim() : existing.information?.lastName;
   const newPhone = input.phone !== undefined && input.phone !== "" ? input.phone.trim() : existing.information?.phone;
   
+  const phoneChanged =
+    input.phone !== undefined &&
+    input.phone.trim() !== "" &&
+    normalizePhoneDigits(input.phone) !== normalizePhoneDigits(existing.information?.phone || "");
+
+  let phoneVerified = existing.phoneVerified;
+  let phoneVerifiedAt = existing.information?.phoneVerifiedAt;
+
+  if (phoneChanged) {
+    if (!input.firebaseIdToken) {
+      throw new ServiceError(400, "Verification code required when updating mobile number");
+    }
+    const tokenPhone = await verifyFirebasePhoneToken(input.firebaseIdToken, newPhone!);
+    if (!tokenPhone) {
+      throw new ServiceError(400, "Invalid or expired phone verification code");
+    }
+    phoneVerified = true;
+    phoneVerifiedAt = new Date();
+  }
+
   let newBirthdate: Date | null | undefined = undefined;
   if (input.birthdate !== undefined) {
     newBirthdate = input.birthdate ? new Date(input.birthdate) : null;
@@ -59,12 +80,15 @@ export async function updateProfile(
   try {
     const updated = await customerRepository.update(customerId, {
       email: newEmail,
+      phoneVerified,
       information: {
         firstName: newFirstName,
         middleName: newMiddleName,
         lastName: newLastName,
         birthdate: newBirthdate,
         phone: newPhone,
+        phoneVerified,
+        phoneVerifiedAt,
       },
     });
 
@@ -110,7 +134,7 @@ export async function listTransactions(customerId: number) {
       id: tx.errandId,
       orderId: tx.errandId,
       status: tx.errand.status,
-      categories: tx.errand.pabiliDetails.map((d) => d.itemName).join(", ") || tx.errand.category,
+      categories: tx.errand.pabiliDetails.map((d) => formatItemLabel(d.itemName, d.size)).join(", ") || tx.errand.category,
       grandTotal: Number(tx.errand.totalCost) || Number(tx.amount) || 0,
       deliveryFee: Number(tx.errand.deliveryFee) || 0,
       totalCost: Number(tx.errand.totalCost) || 0,

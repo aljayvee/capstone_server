@@ -102,6 +102,13 @@ export const emailVerificationRepository = {
     });
   },
 
+  findLatestConsumedForPhone(phone: string) {
+    return prisma.emailVerificationCode.findFirst({
+      where: { phone: phone.trim(), consumedAt: { not: null } },
+      orderBy: { consumedAt: "desc" },
+    });
+  },
+
   incrementAttempts(id: number) {
     return prisma.emailVerificationCode.update({ where: { id }, data: { attempts: { increment: 1 } } });
   },

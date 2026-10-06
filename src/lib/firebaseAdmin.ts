@@ -3,6 +3,7 @@ import { cert, getApps, initializeApp, type App, type ServiceAccount } from "fir
 import { getAuth } from "firebase-admin/auth";
 import { logger } from "./logger.js";
 import { FIREBASE_SERVICE_ACCOUNT_JSON, FIREBASE_SERVICE_ACCOUNT_PATH } from "../config/env.js";
+import { ServiceError } from "../services/ServiceError.js";
 
 /**
  * The Admin SDK, initialized once, for minting Firebase custom tokens.
@@ -166,4 +167,43 @@ export async function mintCustomToken(
 
   const token = await getAuth(initialized).createCustomToken(uid, claims);
   return { token, uid, claims };
+}
+
+export interface DecodedFirebaseToken {
+  uid: string;
+  phoneNumber?: string;
+  email?: string;
+  emailVerified?: boolean;
+  name?: string;
+  picture?: string;
+  signInProvider?: string;
+}
+
+/**
+ * Cryptographically verifies a client-provided Firebase ID token minted after
+ * successful Phone or Google Authentication. Extracts the confirmed identity.
+ */
+export async function verifyFirebaseIdToken(
+  idToken: string
+): Promise<DecodedFirebaseToken> {
+  const initialized = ensureApp();
+  if (!initialized) {
+    throw new ServiceError(503, initializationError || "Firebase Admin is not configured.");
+  }
+
+  try {
+    const decodedToken = await getAuth(initialized).verifyIdToken(idToken);
+    return {
+      uid: decodedToken.uid,
+      phoneNumber: decodedToken.phone_number,
+      email: decodedToken.email,
+      emailVerified: decodedToken.email_verified,
+      name: decodedToken.name,
+      picture: decodedToken.picture,
+      signInProvider: decodedToken.firebase?.sign_in_provider,
+    };
+  } catch (error: any) {
+    logger.warn(`[Firebase Admin] Invalid ID token: ${error?.message || error}`);
+    throw new ServiceError(401, "Invalid or expired Firebase authentication token.");
+  }
 }

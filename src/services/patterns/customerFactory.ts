@@ -12,6 +12,8 @@ export interface CustomerFactoryInput {
   birthdate?: string | Date | null;
   phone?: string;
   emailVerified?: boolean;
+  phoneVerified?: boolean;
+  phoneVerifiedAt?: Date | null;
 }
 
 // Mirrors userFactory.ts's hash-password + build-object logic, but targets the
@@ -26,6 +28,9 @@ export async function buildCustomerAccountCreateData(input: CustomerFactoryInput
     }
   }
 
+  const isPhoneVerified = input.phoneVerified ?? false;
+  const verifiedAt = isPhoneVerified ? (input.phoneVerifiedAt || new Date()) : null;
+
   return {
     // Stored in canonical form so the unique index, the duplicate check and
     // the sign-in lookup are all comparing the same string. Previously only
@@ -34,12 +39,15 @@ export async function buildCustomerAccountCreateData(input: CustomerFactoryInput
     passwordHash,
     email: normalizeEmail(input.email),
     emailVerified: input.emailVerified ?? false,
+    phoneVerified: isPhoneVerified,
     information: {
       firstName: input.firstName.trim(),
       middleName: input.middleName ? input.middleName.trim() : "",
       lastName: input.lastName.trim(),
       birthdate: parsedBirthdate,
       phone: input.phone ? input.phone.trim() : "",
+      phoneVerified: isPhoneVerified,
+      phoneVerifiedAt: verifiedAt,
     },
   };
 }
@@ -50,7 +58,9 @@ type CustomerWithInformation = {
   email: string;
   status: string;
   emailVerified?: boolean;
-  passwordHash: string;
+  phoneVerified?: boolean;
+  passwordHash?: string | null;
+  googleId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   information: {
@@ -59,6 +69,8 @@ type CustomerWithInformation = {
     lastName: string;
     birthdate?: Date | null;
     phone: string;
+    phoneVerified?: boolean;
+    phoneVerifiedAt?: Date | null;
     avatar: string | null;
   } | null;
   profilePhoto?: {
@@ -82,6 +94,7 @@ export function flattenCustomerAccount<T extends CustomerWithInformation>(custom
     lastName: information?.lastName ?? "",
     birthdate: information?.birthdate ? information.birthdate.toISOString().split("T")[0] : null,
     phone: information?.phone ?? "",
+    phoneVerified: (customer as any).phoneVerified || information?.phoneVerified || false,
     avatar: profilePhoto?.photoData ?? information?.avatar ?? null,
   };
 }

@@ -204,6 +204,22 @@ export const CATEGORY_SERVICE_TIMEOUT_MS =
 export const CATEGORY_ADVICE_TIMEOUT_MS =
   Number(process.env.CATEGORY_ADVICE_TIMEOUT_MS) || 10000;
 
+// The customer's Review screen tidying messy item lines (POST
+// /errands/normalize-items). The customer is looking at a shimmer on the rows,
+// and Send never waits for it. Not split per model: Gemini 3.8 Flash took
+// 2.6 s for one line, 2.9 s for four and 5.2 s for eight on production
+// (2026-10-06), so the 2.75 s half it used to get left most lists unread. The
+// service now shares the whole budget down its chain (gemma.normalize).
+export const CATEGORY_NORMALIZE_TIMEOUT_MS =
+  Number(process.env.CATEGORY_NORMALIZE_TIMEOUT_MS) || 10000;
+
+// Where a pabili item's size is stored (see services/patterns/pabiliItemRows.ts).
+// "fold" (the default) writes "Chicken · 5 kg" into itemName and leaves the
+// size column null, for rider builds that only read itemName. Set "column" once
+// every rider phone runs the build that renders size. No client release needed.
+export const ITEM_SIZE_STORAGE: "fold" | "column" =
+  process.env.ITEM_SIZE_STORAGE === "column" ? "column" : "fold";
+
 // Straight-line distance under-states real road distance. Both constants below
 // were measured, not guessed: six real Tacurong POI pairs from prisma/seedPlaces.ts
 // were routed against OSRM and compared to their haversine distance. Observed

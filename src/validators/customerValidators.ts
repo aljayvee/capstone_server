@@ -7,6 +7,7 @@ export const customerProfileUpdateSchema = z.object({
   email: z.string().trim().email("Please enter a valid email address").optional(),
   phone: z.string().trim().optional(),
   birthdate: z.string().trim().optional().nullable(),
+  firebaseIdToken: z.string().trim().optional(),
   recaptchaToken: z.string().trim().optional(),
 });
 export type CustomerProfileUpdateInput = z.infer<typeof customerProfileUpdateSchema>;

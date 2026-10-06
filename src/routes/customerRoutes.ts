@@ -2,8 +2,11 @@ import { Router } from "express";
 import {
   customerLogin,
   customerRegister,
+  customerGoogleLogin,
+  customerGoogleRegister,
   forgotPassword,
   verifyResetCode,
+  verifyResetPhone,
   resetPassword,
 } from "../controllers/authController.js";
 import {
@@ -19,9 +22,10 @@ import {
   verifyRegistrationOtp,
   sendRegistrationPhoneOtp,
   verifyRegistrationPhoneOtp,
+  verifyFirebasePhone,
   getCustomerModificationLogs,
 } from "../controllers/customerController.js";
-import { authenticateToken } from "../middleware/auth.js";
+import { authenticateToken, optionalAuthenticateToken } from "../middleware/auth.js";
 import {
   loginLimiter,
   userApiLimiter,
@@ -36,16 +40,20 @@ const router = Router();
 // Express would match "register"/"login"/etc. as an :id value.
 router.post("/register", userApiLimiter, customerRegister);
 router.post("/login", loginLimiter, customerLogin);
+router.post("/google-login", loginLimiter, customerGoogleLogin);
+router.post("/google-register", userApiLimiter, customerGoogleRegister);
 router.post("/send-registration-otp", verificationLimiter, sendRegistrationOtp);
 router.post("/verify-registration-otp", verificationLimiter, verifyRegistrationOtp);
 router.post("/send-registration-phone-otp", verificationLimiter, sendRegistrationPhoneOtp);
 router.post("/verify-registration-phone-otp", verificationLimiter, verifyRegistrationPhoneOtp);
+router.post("/verify-phone-firebase", verificationLimiter, optionalAuthenticateToken, verifyFirebasePhone);
 router.post("/verify-email", verificationLimiter, verifyEmail);
 // Password reset. All three are unauthenticated by necessity — the whole point
 // is that the caller cannot sign in — so each carries the IP-keyed limiter, and
 // the service behind them writes an audit row per attempt.
 router.post("/forgot-password", passwordResetLimiter, forgotPassword);
 router.post("/verify-reset-code", passwordResetLimiter, verifyResetCode);
+router.post("/verify-reset-phone", passwordResetLimiter, verifyResetPhone);
 router.post("/reset-password", passwordResetLimiter, resetPassword);
 
 router.post("/resend-verification-email", verificationLimiter, resendVerificationEmail);

@@ -10,6 +10,9 @@ import {
   challengeTokenSchema,
   completeLoginProfileSchema,
   verifyLoginOtpSchema,
+  customerGoogleLoginSchema,
+  customerGoogleRegisterSchema,
+  verifyResetPhoneSchema,
 } from "../validators/authValidators.js";
 import * as authService from "../services/authService.js";
 import * as passwordResetService from "../services/passwordResetService.js";
@@ -268,6 +271,29 @@ export const customerRegister = asyncHandler(async (req, res) => {
   await respondWithAuth(req, res, 201, "Customer registered successfully", result);
 });
 
+export const customerGoogleLogin = asyncHandler(async (req, res) => {
+  const { idToken } = parseOrThrow(customerGoogleLoginSchema, req.body);
+  const result = await authService.loginCustomerWithGoogle(idToken);
+  if (result.status === "AUTHENTICATED") {
+    await respondWithAuth(req, res, 200, "Google login successful", result.auth);
+  } else {
+    res.status(200).json({
+      status: "PHONE_SETUP_REQUIRED",
+      email: result.email,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      googleUid: result.googleUid,
+      avatar: result.avatar,
+    });
+  }
+});
+
+export const customerGoogleRegister = asyncHandler(async (req, res) => {
+  const input = parseOrThrow(customerGoogleRegisterSchema, req.body);
+  const result = await authService.registerCustomerWithGoogle(input);
+  await respondWithAuth(req, res, 201, "Google account registered successfully", result);
+});
+
 // --- Customer password reset (3 steps) ---
 //
 // Every handler passes the request's IP and user-agent down to the service,
@@ -289,6 +315,12 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 export const verifyResetCode = asyncHandler(async (req, res) => {
   const { identifier, code } = parseOrThrow(verifyResetCodeSchema, req.body);
   const result = await passwordResetService.verifyResetCode(identifier, code, resetContext(req));
+  res.status(200).json(result);
+});
+
+export const verifyResetPhone = asyncHandler(async (req, res) => {
+  const { firebaseIdToken } = parseOrThrow(verifyResetPhoneSchema, req.body);
+  const result = await passwordResetService.verifyResetPhone(firebaseIdToken, resetContext(req));
   res.status(200).json(result);
 });
 

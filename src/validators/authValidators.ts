@@ -77,5 +77,34 @@ export const customerRegisterSchema = z.object({
   birthdate: z.string().trim().optional(),
   phone: z.string().trim().optional().default(""),
   emailVerified: z.boolean().optional(),
+  phoneVerified: z.boolean().optional(),
+  firebaseIdToken: z.string().trim().optional(),
 });
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
+
+export const verifyFirebasePhoneTokenSchema = z.object({
+  idToken: nonEmptyTrimmed("Firebase ID token"),
+  phone: z.string().trim().optional(),
+});
+export type VerifyFirebasePhoneTokenInput = z.infer<typeof verifyFirebasePhoneTokenSchema>;
+
+export const customerGoogleLoginSchema = z.object({
+  idToken: nonEmptyTrimmed("Google or Firebase ID token"),
+});
+export type CustomerGoogleLoginInput = z.infer<typeof customerGoogleLoginSchema>;
+
+export const customerGoogleRegisterSchema = z.object({
+  idToken: nonEmptyTrimmed("Google or Firebase ID token"),
+  phone: nonEmptyTrimmed("Mobile phone number"),
+  phoneToken: nonEmptyTrimmed("Phone verification token"),
+  firstName: z.string().trim().optional(),
+  lastName: z.string().trim().optional(),
+  avatar: z.string().optional(),
+});
+export type CustomerGoogleRegisterInput = z.infer<typeof customerGoogleRegisterSchema>;
+
+export const verifyResetPhoneSchema = z.object({
+  firebaseIdToken: nonEmptyTrimmed("Firebase ID token"),
+});
+export type VerifyResetPhoneInput = z.infer<typeof verifyResetPhoneSchema>;
+
