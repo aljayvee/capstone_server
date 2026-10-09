@@ -29,10 +29,15 @@ export const completeLoginProfileSchema = z.object({
 });
 export type CompleteLoginProfileInput = z.infer<typeof completeLoginProfileSchema>;
 
-export const verifyLoginOtpSchema = z.object({
-  challengeToken: nonEmptyTrimmed("Sign-in session"),
-  code: z.string().trim().regex(/^\d{6}$/, "Verification code must be 6 digits."),
-});
+export const verifyLoginOtpSchema = z
+  .object({
+    challengeToken: nonEmptyTrimmed("Sign-in session"),
+    code: z.string().trim().regex(/^\d{6}$/, "Verification code must be 6 digits.").optional(),
+    firebaseIdToken: z.string().trim().min(1, "Firebase token cannot be empty.").optional(),
+  })
+  .refine((data) => Boolean(data.code || data.firebaseIdToken), {
+    message: "Either a 6-digit verification code or a Firebase phone ID token is required.",
+  });
 export type VerifyLoginOtpInput = z.infer<typeof verifyLoginOtpSchema>;
 
 // --- Customer password reset ---

@@ -234,16 +234,43 @@ export interface VerifyLoginOtpResult {
   audience: ChallengeAudience;
 }
 
-export async function completeLoginOtp(challengeToken: string, code: string): Promise<VerifyLoginOtpResult> {
+export async function completeLoginOtp(
+  challengeToken: string,
+  code?: string,
+  firebaseIdToken?: string
+): Promise<VerifyLoginOtpResult> {
   const { user, audience } = await loginChallengeService.consumeChallenge(challengeToken, { step: "OTP" });
 
   // Hard replay stop, independent of the token blocklist.
-  if (user.emailVerified) {
+  if (user.emailVerified || user.phoneVerified) {
     throw new ServiceError(401, "This sign-in has already been completed. Please sign in again.");
   }
 
-  await staffVerificationService.verifyLoginOtp(user.id, code);
-  await userRepository.markEmailVerified(user.id);
+  if (firebaseIdToken) {
+    // 1. SMS OTP path via Google Firebase Phone Auth
+    const decoded = await verifyFirebaseIdToken(firebaseIdToken);
+    if (!decoded.phoneNumber) {
+      throw new ServiceError(400, "Firebase ID token does not contain a verified mobile phone number.");
+    }
+
+    const cleanTokenPhone = decoded.phoneNumber.replace(/\D/g, "");
+    const cleanUserPhone = (user.phone || "").replace(/\D/g, "");
+    const tokenSuffix = cleanTokenPhone.length >= 10 ? cleanTokenPhone.slice(-10) : cleanTokenPhone;
+    const userSuffix = cleanUserPhone.length >= 10 ? cleanUserPhone.slice(-10) : cleanUserPhone;
+
+    if (!userSuffix || tokenSuffix !== userSuffix) {
+      throw new ServiceError(400, "Verified phone number does not match your registered staff account phone number.");
+    }
+
+    await userRepository.markPhoneVerified(user.id);
+  } else if (code) {
+    // 2. Email OTP path
+    await staffVerificationService.verifyLoginOtp(user.id, code);
+    await userRepository.markEmailVerified(user.id);
+  } else {
+    throw new ServiceError(400, "Please provide either an Email OTP code or Firebase SMS token.");
+  }
+
   await loginChallengeService.burnChallenge(challengeToken);
 
   // Re-read so the returned profile and the JWT carry the post-verification

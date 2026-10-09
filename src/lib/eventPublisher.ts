@@ -5,13 +5,15 @@ import { io, rooms } from "./socket.js";
 // A future alternate transport (e.g. Redis pub/sub for multi-instance scale-out —
 // see AGENTS.md server section 5) is a one-file swap of the implementation below.
 export interface IEventPublisher {
-  // Global broadcast to every connected client, authenticated or not. Retained
-  // for the pre-existing errand-queue events whose consumers (three web hooks,
-  // three CustomerApp call sites) still connect anonymously.
+  // Global broadcast to every connected client, authenticated or not: the
+  // customer app, the rider app and anonymous sockets alike. Only for news that
+  // belongs to everyone (maintenance, catalogue changes).
   //
-  // Do NOT use this for anything carrying a person's location, an ETA, or
-  // anything else that is not already public to every dashboard — use the
-  // scoped emitters below.
+  // NEVER for anything about one errand or one person. The errand-queue events
+  // (order:new/claimed/updated) went out this way until 2026-10-07, handing every
+  // customer's phone every other customer's errand, including its id, which was
+  // all the Firebase rules asked for before reading that errand's chat. Use
+  // emitToErrandParties.
   emit(event: string, payload: unknown): void;
 
   // Only the parties to one errand: its customer, its rider, and staff.
@@ -76,8 +78,10 @@ class SocketIOEventPublisher implements IEventPublisher {
     io.to(rooms.user(userId)).emit(event, payload);
   }
 
+  // The customer room only. It also went to rooms.user(customerId), which is
+  // the room of the dispatcher or rider who happens to share the number.
   emitToCustomer(customerId: number, event: string, payload: unknown): void {
-    io.to(rooms.customer(customerId)).to(rooms.user(customerId)).emit(event, payload);
+    io.to(rooms.customer(customerId)).emit(event, payload);
   }
 }
 

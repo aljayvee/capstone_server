@@ -15,9 +15,12 @@ export const PAYMENT_MODE_COD = "Cash on Delivery";
 /**
  * The channels a non-COD customer actually pays through.
  *
- * Both settle on the company's Facebook Page: the customer sends money, a
- * dispatcher sees it arrive and vouches for it. There is no gateway behind
- * either, which is why a person confirms rather than a callback.
+ * Since 2026-10-08 both are paid at the door, like cash on delivery: the
+ * customer transfers the whole bill when the rider arrives, the rider
+ * photographs the confirmation and the system reads and records it
+ * (errandPaymentService.confirmBalanceFromRiderProof). A confirmation the
+ * system cannot accept is paid in cash instead. Nobody pays before delivery and
+ * no dispatcher vouches for anything; there is still no gateway behind either.
  *
  * There was briefly a fifth catalogue row called "Non-COD — 50% Downpayment",
  * added on the mistaken reading that the downpayment was a payment METHOD. It
@@ -50,27 +53,22 @@ export function isCodSelection(selection: SelectionLike | null | undefined): boo
 }
 
 /**
- * A non-COD errand — which is to say, one on the 50% downpayment arrangement.
+ * Any mode whose money is tracked in ErrandPayment. Non-COD, in other words.
  *
- * The two are the same question. Every non-COD channel is settled half up front
- * and half on completion, without exception, so there is no second arrangement
- * to distinguish and no `planKind` to carry around. If that ever stops being
- * true, this is the function that grows a return value.
+ * The ledger holds the transfer the rider photographed at the door (a FINAL
+ * row), so the rider's cash settlement nets against it. It is no longer a
+ * downpayment plan: isDownpaymentPlan went with the 50% on 2026-10-08.
  */
-export function isDownpaymentPlan(selection: SelectionLike | null | undefined): boolean {
-  return selection != null && NON_COD_MODES.has(selection.paymentMode.name);
-}
-
-/** Any mode whose money is tracked in ErrandPayment. Non-COD, in other words. */
 export function hasPaymentLedger(selection: SelectionLike | null | undefined): boolean {
-  return isDownpaymentPlan(selection);
+  return selection != null && NON_COD_MODES.has(selection.paymentMode.name);
 }
 
 /**
  * Whether the RIDER carries money on this mode.
  *
  * Always, on every mode this system supports: COD hands over the whole bill at
- * the door, and a non-COD errand hands over the balance. Kept as a named
+ * the door, and a non-COD customer who cannot transfer pays the rider in cash
+ * instead. Kept as a named
  * function rather than inlined `true` because it is the question the settlement
  * guard is actually asking, and a mode that collects nothing is a plausible
  * future — a real gateway, whenever one exists, would be exactly that.

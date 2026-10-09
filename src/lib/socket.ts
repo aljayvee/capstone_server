@@ -8,11 +8,14 @@ import { prisma } from "./prisma.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import type { TokenPayload } from "../middleware/auth.js";
 
-async function syncUserPresenceToDb(userId: number, isOnline: boolean): Promise<void> {
+// Filtered by role as well as id: login logs hold customers and staff, whose ids
+// are separate sequences, so "userId 9" alone is customer 9 AND dispatcher 9.
+async function syncUserPresenceToDb(userId: number, role: string, isOnline: boolean): Promise<void> {
   try {
     await prisma.accountLoginLog.updateMany({
       where: {
         userId,
+        role,
         status: "SUCCESS",
         revokedAt: null,
       },
@@ -64,6 +67,12 @@ interface AuthenticatedSocketData {
 // client via a bare io.emit — including clients that never authenticated. That
 // was survivable while events carried only errand metadata; it is not once they
 // carry a rider's live position and ETA.
+//
+// `user:<id>` is STAFF AND RIDERS ONLY (rows in `users`). Customers are rows in
+// `customer_accounts`, numbered from 1 as well, so customer 9 and dispatcher 9
+// are different people with the same number. Customers used to join `user:9`
+// too, and every notification meant for dispatcher 9 popped up on customer 9's
+// phone (2026-10-07). A customer is reached through `customer:<id>` only.
 export const rooms = {
   role: (role: string) => `role:${role.toUpperCase()}`,
   user: (userId: number) => `user:${userId}`,
@@ -71,6 +80,20 @@ export const rooms = {
   customer: (customerId: number) => `customer:${customerId}`,
   errand: (errandId: string) => `errand:${errandId}`,
 };
+
+/**
+ * The rooms one signed-in socket joins. A customer: its customer room and its
+ * role room, never `user:<id>`, which belongs to the staff member or rider
+ * with the same number. Everyone else: `user:<id>`, a rider's own room, and
+ * the role room.
+ */
+export function identityRooms(userId: number, role: string | undefined): string[] {
+  if (role === "CUSTOMER") return [rooms.customer(userId), rooms.role(role)];
+  const joined = [rooms.user(userId)];
+  if (role === "RIDER") joined.push(rooms.rider(userId));
+  if (role) joined.push(rooms.role(role));
+  return joined;
+}
 
 // Whether this identity may listen to one errand's private channel. Mirrors the
 // object-level checks GET /errands/:id already enforces over HTTP — a socket
@@ -127,14 +150,8 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
   // Identity-scoped rooms, joined once at connect. An anonymous socket joins
   // nothing and therefore receives only the legacy global broadcasts.
   const { userId, role } = socket.data;
-  if (userId !== undefined) {
-    socket.join(rooms.user(userId));
-    if (role) {
-      socket.join(rooms.role(role));
-      if (role === "RIDER") socket.join(rooms.rider(userId));
-      if (role === "CUSTOMER") socket.join(rooms.customer(userId));
-    }
-  }
+  const isCustomer = role === "CUSTOMER";
+  if (userId !== undefined) socket.join(identityRooms(userId, role));
 
   // Per-errand channel, joined on request and only after the same ownership
   // check the HTTP endpoint applies. Acknowledged so the client can tell an
@@ -162,11 +179,15 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
     if (typeof errandId === "string" && errandId) socket.leave(rooms.errand(errandId));
   });
 
-  if (userId !== undefined) {
-    const becameOnline = userPresenceStore.addSocket(userId, socket.id);
-    if (becameOnline) {
-      io.emit("user:presence_changed", { userId, isOnline: true });
-      void syncUserPresenceToDb(userId, true);
+  // Staff and rider presence lives in userPresenceStore, keyed by `users` id, so
+  // a customer never enters it (customer 9 online used to show dispatcher 9 as
+  // online). A customer's own login-log rows are still kept current.
+  if (userId !== undefined && role) {
+    if (isCustomer) {
+      void syncUserPresenceToDb(userId, role, true);
+    } else if (userPresenceStore.addSocket(userId, socket.id)) {
+      emitToStaff("user:presence_changed", { userId, isOnline: true });
+      void syncUserPresenceToDb(userId, role, true);
     }
   }
 
@@ -180,11 +201,17 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
 
   socket.on("disconnect", () => {
     logger.info(`🔌 Client disconnected: ${socket.id}`);
-    if (userId !== undefined) {
-      const becameOffline = userPresenceStore.removeSocket(userId, socket.id);
-      if (becameOffline) {
-        io.emit("user:presence_changed", { userId, isOnline: false });
-        void syncUserPresenceToDb(userId, false);
+    if (userId !== undefined && role) {
+      if (isCustomer) {
+        // Only when this was the customer's last socket: a second open
+        // connection (a reconnect racing the old one) keeps them online.
+        void (async () => {
+          const remaining = await io.in(rooms.customer(userId)).fetchSockets();
+          if (remaining.length === 0) void syncUserPresenceToDb(userId, role, false);
+        })();
+      } else if (userPresenceStore.removeSocket(userId, socket.id)) {
+        emitToStaff("user:presence_changed", { userId, isOnline: false });
+        void syncUserPresenceToDb(userId, role, false);
       }
     }
     if (riderId !== undefined) {
@@ -196,6 +223,23 @@ io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
   });
 });
 
-export function notifySessionRevoked(userId: number, payload: { reason: string; newDevice?: unknown }): void {
-  io.to(rooms.user(userId)).emit("session:revoked", payload);
+/**
+ * Who sees staff presence: the people who manage staff. It went to every
+ * connected client, customers included.
+ */
+function emitToStaff(event: string, payload: unknown): void {
+  io.to(rooms.role("OWNER")).to(rooms.role("DISPATCHER")).emit(event, payload);
+}
+
+/**
+ * Signs one account's sockets out. `role` picks the room: without it, revoking
+ * staff member 9's session would have signed customer 9 out as well.
+ */
+export function notifySessionRevoked(
+  userId: number,
+  payload: { reason: string; newDevice?: unknown },
+  role?: string
+): void {
+  const room = String(role || "").toUpperCase() === "CUSTOMER" ? rooms.customer(userId) : rooms.user(userId);
+  io.to(room).emit("session:revoked", payload);
 }

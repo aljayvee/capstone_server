@@ -9,6 +9,8 @@ import {
   restartService,
   getServerErrorStatus,
   setServerErrorStatus,
+  getDispatcherAiSuggestionsEnabled,
+  setDispatcherAiSuggestionsEnabled,
 } from "../services/sysAdminDevOpsService.js";
 import { sysAdminBackupService } from "../services/sysAdminBackupService.js";
 import { sysAdminLogService, type LogSource } from "../services/sysAdminLogService.js";
@@ -103,6 +105,29 @@ export async function toggleServerErrorHandler(req: AuthenticatedRequest, res: R
       return res.status(err.status).json({ error: err.message });
     }
     return res.status(500).json({ error: "Failed to update 500 server error status." });
+  }
+}
+
+// Staff endpoint — read by the dispatcher portal to show or hide the AI reason suggestions
+export function getDispatcherAiSuggestionsHandler(req: AuthenticatedRequest, res: Response) {
+  return res.status(200).json({ enabled: getDispatcherAiSuggestionsEnabled() });
+}
+
+// SysAdmin mutation endpoint — turns the dispatchers' AI reason suggestions on or off
+export async function toggleDispatcherAiSuggestionsHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ error: "Property 'enabled' must be a boolean." });
+    }
+    const operator = req.user?.username || req.user?.email || "Administrator";
+    const result = await setDispatcherAiSuggestionsEnabled(enabled, operator);
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    if (err instanceof ServiceError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return res.status(500).json({ error: "Failed to update dispatcher AI suggestions." });
   }
 }
 

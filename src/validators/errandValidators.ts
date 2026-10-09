@@ -22,6 +22,21 @@ const pabiliItemInputSchema = z.object({
   notes: itemNotesSchema,
   unitPrice: z.coerce.number().nonnegative("unitPrice must be zero or positive.").optional(),
   estimatedSubtotal: z.coerce.number().nonnegative("estimatedSubtotal must be zero or positive.").optional(),
+  // Which of `stores` (below) the item is bought at, when the customer picked
+  // real stores. storeCategory then carries that store's category name.
+  storeIndex: z.coerce.number().int().min(0).max(2).optional(),
+});
+
+// A store the customer picked in the app's "Location" step (2026-10-08): a
+// Location Stores row (placeId) or a Google establishment (name and position
+// only). Becomes a pin in the dispatcher's Stage 1. categoryId is the app's
+// answer from the store search; the server keeps it only if it is active.
+const customerStoreSchema = z.object({
+  name: z.string().trim().min(1, "Store name is required.").max(150, "Store name must be at most 150 characters."),
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  placeId: z.string().trim().max(36).optional().nullable(),
+  categoryId: z.coerce.number().int().positive().optional().nullable(),
 });
 
 // Pabili is the only service this system offers. It was previously free text
@@ -75,6 +90,51 @@ export const createErrandSchema = z
     // See errandService.createErrand.
     storeCount: z.coerce.number().int().min(1, "storeCount must be at least 1.").max(3, "storeCount cannot exceed 3.").optional(),
     pabiliItems: z.array(pabiliItemInputSchema).optional(),
+    stores: z.array(customerStoreSchema).min(1).max(3, "An errand can visit up to 3 stores.").optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.stores) return;
+    if (data.storeCount !== undefined && data.storeCount !== data.stores.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["storeCount"],
+        message: "storeCount must match the number of stores picked.",
+      });
+    }
+    const seenPlaces = new Set<string>();
+    data.stores.forEach((store, index) => {
+      // One Location Stores row twice is provably one shop (see pinpointsBodySchema).
+      const placeId = store.placeId?.trim();
+      if (placeId) {
+        if (seenPlaces.has(placeId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["stores", index, "placeId"],
+            message: `${store.name} is picked twice.`,
+          });
+        }
+        seenPlaces.add(placeId);
+      }
+      if (
+        isServiceAreaConfigured() &&
+        !isWithinServiceBuffer({ latitude: store.latitude, longitude: store.longitude }, 0.1)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["stores", index],
+          message: `${store.name} is outside Tacurong City. SUGO Express buys only from stores inside the city.`,
+        });
+      }
+    });
+    (data.pabiliItems ?? []).forEach((item, index) => {
+      if (item.storeIndex !== undefined && item.storeIndex >= data.stores!.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["pabiliItems", index, "storeIndex"],
+          message: "An item names a store that was not picked.",
+        });
+      }
+    });
   })
   .refine(
     (data) => {

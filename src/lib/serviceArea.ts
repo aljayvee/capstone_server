@@ -158,3 +158,22 @@ export function distanceOutsideServiceAreaKm(point: GeoPoint): number {
 export function isServiceAreaConfigured(): boolean {
   return boundedPolygons.length > 0;
 }
+
+/** The box around every service-area polygon, or null when none is loaded. */
+export function serviceAreaEnvelope(): Envelope | null {
+  if (boundedPolygons.length === 0) return null;
+  return boundedPolygons.reduce<Envelope>(
+    (box, { envelope }) => ({
+      minLat: Math.min(box.minLat, envelope.minLat),
+      maxLat: Math.max(box.maxLat, envelope.maxLat),
+      minLng: Math.min(box.minLng, envelope.minLng),
+      maxLng: Math.max(box.maxLng, envelope.maxLng),
+    }),
+    { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity }
+  );
+}
+
+// The centre the web portal's maps open on (TACURONG_CENTER in the web repo's
+// constants/serviceArea.ts). Only a starting point for ranking by distance, for a
+// "near me" search that has no location of its own.
+export const SERVICE_AREA_CENTRE: GeoPoint = { latitude: 6.671, longitude: 124.6644 };

@@ -3,6 +3,7 @@ import { customerTransactionRepository } from "../repositories/customerTransacti
 import { customerPhotoRepository } from "../repositories/customerPhotoRepository.js";
 import { recordCustomerModifications, getCustomerModificationLogs } from "./accountAuditService.js";
 import { ServiceError } from "./ServiceError.js";
+import { assignPushToken } from "./pushTokenOwnership.js";
 import { withFullName, verifyFirebasePhoneToken, normalizePhoneDigits } from "./authService.js";
 import { flattenCustomerAccount } from "./patterns/customerFactory.js";
 import { formatItemLabel } from "./patterns/itemLabel.js";
@@ -237,6 +238,7 @@ export async function deleteCustomerPhoto(
  * dead token succeeds at the API level and simply never arrives.
  */
 export async function registerPushToken(customerId: number, input: { token: string }) {
-  await customerRepository.update(customerId, { expoPushToken: input.token });
+  // Taken off every other account first: see pushTokenOwnership.ts.
+  await assignPushToken({ kind: "customer", id: customerId }, input.token);
   return { success: true };
 }

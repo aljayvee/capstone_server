@@ -167,6 +167,21 @@ export const itemTidyLimiter = rateLimit({
  * Gemini quota in the background, so a single account is capped well below
  * what would crowd out the dispatchers.
  */
+// The customer's store picker (GET /api/places/establishments). Every call is a
+// billed Google Places request, so it is held well below what typing needs: the
+// app waits for a pause in typing before it asks.
+export const establishmentSearchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: isDev ? 300 : 30,
+  keyGenerator: smartKeyGenerator,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: "Too many store searches in a short time. Wait a moment, then search again.",
+  },
+});
+
 export const itemStoreCheckLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: isDev ? 400 : 60,

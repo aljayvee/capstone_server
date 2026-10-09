@@ -23,6 +23,8 @@ import { PRESET_DECLINE_REASONS } from "../validators/errandDeclineValidators.js
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
 import { ServiceError } from "./ServiceError.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
+import { grantCustomerChat, setChatDispatcher } from "../lib/chatAccess.js";
+import { grantRiderWatch, isWatchable, scheduleRiderWatchReconcile } from "../lib/riderWatch.js";
 import * as notificationService from "./notificationService.js";
 import { notificationRepository } from "../repositories/notificationRepository.js";
 import { notificationFactory } from "./patterns/notificationFactory.js";
@@ -68,6 +70,40 @@ import type { Prisma } from "@prisma/client";
  * the other two. The rider app now draws one fee capsule per errand up to this
  * number, which makes it a contract rather than an internal heuristic.
  */
+
+/**
+ * An errand's news, sent to the people on it: staff (both role rooms), its
+ * customer and its rider. These events went to every connected client until
+ * 2026-10-07, so every customer's phone heard every other customer's errand
+ * and opened its chat. `errand` picks the audience; `payload` defaults to it.
+ */
+function publishToErrand(
+  event: string,
+  errand: { id: string; customerId?: number | null; riderId?: number | null; status?: string | null } | null | undefined,
+  payload: unknown = errand
+): void {
+  if (!errand) return;
+  const emit = () =>
+    eventPublisher.emitToErrandParties(
+      errand.id,
+      { riderId: errand.riderId ?? null, customerId: errand.customerId ?? null },
+      event,
+      payload
+    );
+  // Who may read which rider's live position follows every errand change
+  // (lib/riderWatch.ts). A rider now on this errand is granted first, so the
+  // customer's map, which opens on this event, is never refused.
+  scheduleRiderWatchReconcile();
+  const watch = {
+    id: errand.id,
+    customerId: errand.customerId ?? null,
+    riderId: errand.riderId ?? null,
+    status: errand.status ?? null,
+  };
+  if (isWatchable(watch)) void grantRiderWatch(watch).finally(emit);
+  else emit();
+}
+
 export const MAX_ACTIVE_ERRANDS_PER_RIDER = 3;
 
 /** A stop as errandRepository loads it, with just enough of its category. */
@@ -145,25 +181,20 @@ function derivePaymentPlan(errand: unknown) {
     return null;
   }
 
-  const escalated = row.overageEscalatedAt ?? null;
-  const resolved = row.overageResolvedAt ?? null;
-  const overagePending = escalated ? !resolved || resolved < escalated : false;
-
   const summary = summarisePaymentPlan({
-    goodsSubtotal: row.estimatedCost ?? 0,
     grandTotal: row.totalCost,
     entries: (row.payments ?? []) as Array<{ kind: never; amount: number }>,
-    overagePending,
     cancelled: row.status === "CANCELLED",
   });
 
   return {
     ...summary,
     hasLedger: true,
-    // What the half is taken on, and whether the rider has asked for it yet.
-    // The customer's modal and the rider's waiting state both key off these.
     goodsTotal: row.estimatedCost ?? 0,
-    halfPaymentRequestedAt: row.halfPaymentRequestedAt ?? null,
+    // The 50% downpayment's "asked for" stamp. Always null on errands since
+    // 2026-10-08; installed apps still read it, and null keeps their
+    // half-payment screens closed.
+    halfPaymentRequestedAt: null,
   };
 }
 
@@ -381,7 +412,90 @@ export interface CreateErrandInput {
     notes?: string | null;
     unitPrice?: number;
     estimatedSubtotal?: number;
+    /** Which of `stores` the item is bought at. */
+    storeIndex?: number;
   }>;
+  /** Stores the customer picked in the app's "Location" step, in visit order. */
+  stores?: CustomerStoreInput[];
+}
+
+export interface CustomerStoreInput {
+  name: string;
+  latitude: number;
+  longitude: number;
+  placeId?: string | null;
+  categoryId?: number | null;
+}
+
+interface CustomerPin {
+  storeName: string;
+  latitude: number;
+  longitude: number;
+  placeId: string | null;
+  categoryId: number | null;
+  categoryName: string | null;
+}
+
+/** The pin validator's limit (validators/pinpointValidators.ts), so a later dispatcher save accepts it as is. */
+const PIN_NAME_MAX = 60;
+
+/**
+ * The stores a customer picked, made ready to be the errand's first pins.
+ *
+ * Every store passes the same location guard as a dispatcher's pin, before
+ * anything is written: a store the rider cannot reach refuses the order rather
+ * than leaving it half made. A Location Stores pick keeps its row and that
+ * row's category; any other category is kept only if it is active, the same
+ * trust as Merchant mode, where the customer names categories directly.
+ */
+async function resolveCustomerStores(stores: CustomerStoreInput[]): Promise<CustomerPin[]> {
+  for (const store of stores) {
+    const verdict = await checkStoreLocation({ latitude: store.latitude, longitude: store.longitude });
+    if (verdict.status === "blocked") {
+      throw new ServiceError(422, `${store.name}: ${verdict.message}`);
+    }
+  }
+
+  const active = await prisma.merchantCategory.findMany({
+    where: { status: "Active" },
+    select: { id: true, name: true },
+  });
+  const categoryById = new Map(active.map((c) => [c.id, c]));
+
+  return Promise.all(
+    stores.map(async (store) => {
+      const place = store.placeId
+        ? await prisma.verifiedPlace.findFirst({
+            where: { id: store.placeId, isActive: true },
+            select: { id: true, categoryId: true },
+          })
+        : null;
+      const category =
+        (place ? categoryById.get(place.categoryId) : undefined) ??
+        (store.categoryId != null ? categoryById.get(store.categoryId) : undefined) ??
+        null;
+      return {
+        storeName: store.name.trim().slice(0, PIN_NAME_MAX).trim(),
+        latitude: store.latitude,
+        longitude: store.longitude,
+        placeId: place?.id ?? null,
+        categoryId: category?.id ?? null,
+        categoryName: category?.name ?? null,
+      };
+    })
+  );
+}
+
+/**
+ * The dispatcher's own filing for an item bought at stop `index`: "Store 2 -
+ * Mercury Drug | Pharmacy". itemStopAssignment files it under that stop by
+ * number, which holds even when two picked stores share a category.
+ */
+export function customerStoreFiling(pins: CustomerPin[], index: number | undefined, fallback: string | null): string | null {
+  const pin = index === undefined ? undefined : pins[index];
+  if (!pin) return fallback;
+  const category = pin.categoryName ?? fallback;
+  return `Store ${index! + 1} - ${pin.storeName}${category ? ` | ${category}` : ""}`.slice(0, 191);
 }
 
 export async function createErrand(fallbackCustomerId: number, input: CreateErrandInput) {
@@ -418,6 +532,21 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
   const parsedTip = parseFloat(String(tip));
   const itemRows = buildCreatedItemRows(pabiliItems || [], ITEM_SIZE_STORAGE);
 
+  // Stores the customer picked themselves become the errand's first pins, so
+  // they arrive pinned in the dispatcher's Stage 1. Resolved before anything is
+  // written (see resolveCustomerStores).
+  const customerPins = input.stores?.length ? await resolveCustomerStores(input.stores) : [];
+  // The working copy is filed under those stops by number. The customer's own
+  // request keeps the plain category name: the handling fee is decided from it
+  // (categoryFeeModes.ts), so it matches the quote the customer agreed to.
+  const detailRows =
+    customerPins.length > 0
+      ? itemRows.map((row, i) => ({
+          ...row,
+          storeCategory: customerStoreFiling(customerPins, pabiliItems[i]?.storeIndex, row.storeCategory),
+        }))
+      : itemRows;
+
   // Fees are always server-computed from RateConfig — a client-supplied
   // deliveryFee/totalCost is never honored (previously it was, but the only
   // real caller, ErrandFormScreen.tsx, only ever sent placeholder 80/80
@@ -435,9 +564,11 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
   // charged a multi-store fee per item: a single-category order of burgers and
   // noodles was priced as a two-store run before anyone had pinned anything.
   const storeCount =
-    input.storeCount && input.storeCount > 0
-      ? Math.round(input.storeCount)
-      : distinctStoreCategories(pabiliItems);
+    customerPins.length > 0
+      ? customerPins.length
+      : input.storeCount && input.storeCount > 0
+        ? Math.round(input.storeCount)
+        : distinctStoreCategories(pabiliItems);
   const rateConfig = await rateConfigRepository.findFirst();
 
   // Same categories the quote was priced against, so the errand a customer
@@ -497,8 +628,24 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
     // Size goes in its own column or folded into the name, per
     // ITEM_SIZE_STORAGE (see patterns/pabiliItemRows.ts).
     pabiliDetails: {
-      create: itemRows,
+      create: detailRows,
     },
+    // In the same write as the errand, so an order never exists without the
+    // stores its customer picked. sequence is 0-based, as replaceForErrand writes it.
+    ...(customerPins.length > 0
+      ? {
+          pinpoints: {
+            create: customerPins.map((pin, index) => ({
+              sequence: index,
+              storeName: pin.storeName,
+              latitude: pin.latitude,
+              longitude: pin.longitude,
+              categoryId: pin.categoryId,
+              placeId: pin.placeId,
+            })),
+          },
+        }
+      : {}),
     // Immutable audit-trail mirror of what the customer originally submitted —
     // never touched again after creation (see errandService.updateItems, which
     // only ever edits pabiliDetails, the working copy).
@@ -514,9 +661,26 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
   });
 
   await customerTransactionRepository.create(finalCustomerId, newErrand.id, totalCost, input.paymentMethod || "PENDING");
+  // Before the reply, so the customer's chat opens the moment the app shows it.
+  await grantCustomerChat(newErrand.id, finalCustomerId);
 
-  const errandWithNames = attachErrandNames(newErrand);
-  eventPublisher.emit("order:new", errandWithNames);
+  let created = newErrand;
+  if (customerPins.length > 0) {
+    // File each item under its stop now, as savePinpoints does once a dispatcher
+    // pins. Not fatal: an unfiled item shows the rider a general list, and the
+    // dispatcher's Continue in Stage 1 files it again.
+    try {
+      await pabiliItemRepository.attachToPinpoints(newErrand.id);
+      created = (await errandRepository.findById(newErrand.id)) ?? newErrand;
+    } catch (error) {
+      logger.warn(`Errand ${newErrand.id}: could not file items under the customer's stores:`, error);
+    }
+    // The picked stores join the directory the store predictor learns from.
+    forgetStorePredictionMemory();
+  }
+
+  const errandWithNames = attachErrandNames(created);
+  publishToErrand("order:new", errandWithNames);
   // Gemma's answers for unfamiliar items take seconds; asked now, they are
   // cached before a dispatcher opens the order. Never awaited.
   warmItemCategories((pabiliItems || []).map((item) => item.itemName || item.name || ""));
@@ -723,7 +887,7 @@ export async function recalculateFee(errandId: string) {
   await customerTransactionRepository.updateAmountByErrandId(errandId, effectiveTotalCost);
 
   const errandWithNames = attachErrandNames(updatedErrand);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   void notificationService.notifyFeeUpdated(errand.customerId, errandId, effectiveTotalCost);
   return errandWithNames;
 }
@@ -808,10 +972,12 @@ export async function claimErrand(errandId: string, dispatcherId: number) {
   }
 
   await dispatchLogRepository.create(errandId, dispatcherId);
+  // Awaited: the portal writes the chat's meta node right after this returns.
+  await setChatDispatcher(errandId, dispatcherId);
 
   const updatedErrand = await errandRepository.findById(errandId);
   const errandWithNames = updatedErrand ? attachErrandNames(updatedErrand) : updatedErrand;
-  eventPublisher.emit("order:claimed", errandWithNames);
+  publishToErrand("order:claimed", errandWithNames);
 
   // Tell the customer a person has picked this up.
   //
@@ -876,7 +1042,7 @@ export async function verifyErrand(errandId: string, dispatcherId: number) {
 
   const updated = await errandRepository.findById(errandId);
   const errandWithNames = updated ? attachErrandNames(updated) : updated;
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -920,6 +1086,8 @@ export async function releaseErrand(errandId: string, dispatcherId: number) {
   if (count === 0) {
     throw new ServiceError(409, "This order is no longer yours to return.");
   }
+  // Back in the queue: the chat is nobody's until the next claim.
+  await setChatDispatcher(errandId, null);
 
   // Back to AVAILABLE so the queue shows it again. Done after the log delete so
   // a failure here cannot leave an unclaimed errand hidden from every dispatcher.
@@ -927,7 +1095,7 @@ export async function releaseErrand(errandId: string, dispatcherId: number) {
 
   const updated = await errandRepository.findById(errandId);
   const errandWithNames = updated ? attachErrandNames(updated) : updated;
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1255,8 +1423,8 @@ export async function assignRider(
   }
 
   const errandWithNames = attachErrandNames(updatedErrand);
-  eventPublisher.emit("order:updated", errandWithNames);
-  eventPublisher.emit("order:assigned", {
+  publishToErrand("order:updated", errandWithNames);
+  publishToErrand("order:assigned", errandWithNames, {
     errandId: updatedErrand.id,
     riderId: finalRiderId,
     riderName: `${rider.firstName} ${rider.lastName}`.trim(),
@@ -1292,8 +1460,8 @@ export async function declineErrand(errandId: string, riderId: number, reason?: 
   });
 
   const errandWithNames = attachErrandNames(updatedErrand);
-  eventPublisher.emit("order:updated", errandWithNames);
-  eventPublisher.emit("errand:re_routing", {
+  publishToErrand("order:updated", errandWithNames);
+  publishToErrand("errand:re_routing", errandWithNames, {
     errandId,
     previousRiderId: riderId,
     statusText: "Finding the best rider for your delivery...",
@@ -1305,7 +1473,7 @@ export async function declineErrand(errandId: string, riderId: number, reason?: 
     return reassigned;
   } catch (_reRouteErr) {
     // Alert dispatcher only if all eligible riders decline or are out of radius
-    eventPublisher.emit("errand:all_riders_declined", {
+    publishToErrand("errand:all_riders_declined", errandWithNames, {
       errandId,
       reason: reason || "All eligible riders declined or timed out",
     });
@@ -1349,8 +1517,8 @@ export async function confirmOrder(errandId: string, customerId: number) {
   const confirmed = await errandRepository.update(errandId, stamp);
 
   const errandWithNames = attachErrandNames(confirmed);
-  eventPublisher.emit("order:confirmed", { errandId, customerId, confirmedAt: new Date() });
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:confirmed", errandWithNames, { errandId, customerId, confirmedAt: new Date() });
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1405,7 +1573,7 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
   // unconditionally so the dispatcher's map view still picks up the new pins
   // on the common case where the fee doesn't happen to change.
   const errandWithNames = await recalculateFee(errandId);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1456,7 +1624,7 @@ export async function updateItems(errandId: string, items: PabiliDetailInput[]) 
 
   const updatedErrand = await errandRepository.findById(errandId);
   const errandWithNames = attachErrandNames(updatedErrand!);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1478,7 +1646,7 @@ export async function enablePayment(errandId: string, dispatcherId: number) {
       });
 
   const errandWithNames = attachErrandNames(updatedErrand!);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1570,7 +1738,7 @@ export async function markItemsPurchased(
 
   // Recalculate fees with the verified receipt subtotal to accurately apply groceryFee from rate_configs
   const errandWithNames = await recalculateFee(errandId);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
 
   // Everything is bought and the rider is heading to the customer: the push
   // that reaches them with the app closed. Only the first time, so a retried
@@ -1649,7 +1817,7 @@ export async function updateItemFulfillmentStatus(
 
   const errandWithNames = await getErrandById(errandId);
   if (errandWithNames) {
-    eventPublisher.emit("order:updated", errandWithNames);
+    publishToErrand("order:updated", errandWithNames);
 
     if (normalizedStatus === "OUT_OF_STOCK") {
       const pinpoint = (errandWithNames.pinpoints ?? []).find(
@@ -1811,7 +1979,7 @@ export async function applyReceiptTotal(errandId: string, riderId: number, recei
   }
 
   const errandWithNames = await recalculateFee(errandId);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1853,7 +2021,7 @@ export async function acceptErrand(errandId: string, riderId: number, occurredAt
   });
 
   const errandWithNames = attachErrandNames(updatedErrand);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   // The rider is now en route, so an ETA becomes meaningful for the first time.
   etaService.recomputeInBackground(errandId, { force: true });
   return errandWithNames;
@@ -1919,7 +2087,7 @@ export async function updateStatus(
   }
 
   const errandWithNames = attachErrandNames(updatedErrand);
-  eventPublisher.emit("order:updated", errandWithNames);
+  publishToErrand("order:updated", errandWithNames);
   return errandWithNames;
 }
 
@@ -1957,8 +2125,8 @@ export async function declineErrandReview(
 
   const updated = await errandRepository.update(errandId, { status: "CANCELLED" });
   const errandWithNames = attachErrandNames(updated);
-  eventPublisher.emit("order:updated", errandWithNames);
-  eventPublisher.emit("errand:declined", { errandId, reason: trimmed, customerId: errand.customerId });
+  publishToErrand("order:updated", errandWithNames);
+  publishToErrand("errand:declined", errandWithNames, { errandId, reason: trimmed, customerId: errand.customerId });
 
   void (async () => {
     try {

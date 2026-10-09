@@ -4,6 +4,8 @@ import { parseOrThrow } from "../validators/validate.js";
 import { resolveExceptionSchema, reasonSuggestionQuerySchema } from "../validators/exceptionValidators.js";
 import * as exceptionService from "../services/exceptionService.js";
 import * as exceptionReasonService from "../services/exceptionReasonService.js";
+import { getDispatcherAiSuggestionsEnabled } from "../services/sysAdminDevOpsService.js";
+import { ServiceError } from "../services/ServiceError.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 
 /**
@@ -43,6 +45,11 @@ export const resolveException = asyncHandler<AuthenticatedRequest>(async (req, r
  * record is written by resolveException, from whatever the person submits.
  */
 export const suggestExceptionReason = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  // The sysadmin's switch, enforced here too: hiding the button alone would
+  // leave the model one direct request away while it is meant to be off.
+  if (!getDispatcherAiSuggestionsEnabled()) {
+    throw new ServiceError(403, "AI suggestions are turned off by the system administrator.");
+  }
   const query = parseOrThrow(reasonSuggestionQuerySchema, req.query);
   res.json(await exceptionReasonService.suggestExceptionReason(req.params.id, query.kind, query.occurredAt));
 });

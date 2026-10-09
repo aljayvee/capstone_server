@@ -49,13 +49,19 @@ export async function confirmPaymentSelection(
 
   const selection = await paymentSelectionRepository.create(errandId, input.paymentModeId);
   await customerTransactionRepository.updatePaymentMethodByErrandId(errandId, paymentMode.name);
-  await errandRepository.update(errandId, { paymentModeId: input.paymentModeId });
+  const paidErrand = await errandRepository.update(errandId, { paymentModeId: input.paymentModeId });
 
-  eventPublisher.emit("payment:selected", {
+  // To this errand's people only; it went to every connected client.
+  eventPublisher.emitToErrandParties(
     errandId,
-    paymentMode: selection.paymentMode,
-    confirmedAt: selection.confirmedAt,
-  });
+    { riderId: paidErrand?.riderId ?? null, customerId: paidErrand?.customerId ?? null },
+    "payment:selected",
+    {
+      errandId,
+      paymentMode: selection.paymentMode,
+      confirmedAt: selection.confirmedAt,
+    }
+  );
 
   // Idempotent recompute, awaited (unlike a push notification, this is real
   // pricing data the errand record now depends on — not safe to fire-and-

@@ -11,6 +11,7 @@ import { normalizeUsername, normalizeEmail } from "../lib/identity.js";
 import { ROLE_CHANGE_REAUTH_ROLES } from "../validators/userValidators.js";
 import type { CreateUserInput, UpdateUserInput, ProfileUpdateInput, ChangePasswordInput } from "../validators/userValidators.js";
 import type { PushTokenInput } from "../validators/pushTokenValidators.js";
+import { assignPushToken } from "./pushTokenOwnership.js";
 import { riderPhotoRepository } from "../repositories/riderPhotoRepository.js";
 import type { RiderPhotoUploadInput } from "../validators/riderPhotoValidators.js";
 import * as userPresenceStore from "../lib/userPresenceStore.js";
@@ -206,7 +207,8 @@ export async function registerPushToken(riderId: number, input: PushTokenInput) 
   if (!existingUser) {
     throw new ServiceError(404, "User not found");
   }
-  await userRepository.updatePushToken(riderId, input.token);
+  // Taken off every other account first: see pushTokenOwnership.ts.
+  await assignPushToken({ kind: "user", id: riderId }, input.token);
 }
 
 export async function getRiderProfile(riderId: number) {

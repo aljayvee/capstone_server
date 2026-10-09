@@ -35,6 +35,13 @@ export const userRepository = {
     });
   },
 
+  markPhoneVerified(id: number) {
+    return prisma.user.update({
+      where: { id },
+      data: { phoneVerified: true, phoneVerifiedAt: new Date() },
+    });
+  },
+
   // The bootstrap admin supplying a real identity for the first time. Saving a
   // new address necessarily un-verifies the account: the OTP that follows is
   // what proves this new mailbox is reachable.

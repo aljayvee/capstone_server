@@ -19,6 +19,7 @@ import { scheduleDwellLearningJob } from "./jobs/dwellLearning.js";
 import { scheduleNightlyBackupJob } from "./jobs/nightlyBackup.js";
 import { scheduleRiderShiftJobs } from "./jobs/riderShiftJobs.js";
 import { scheduleCategoryRetrainingJob } from "./jobs/categoryRetraining.js";
+import { scheduleRiderWatchReconcileJob } from "./jobs/riderWatchReconcile.js";
 import { threatInterceptor } from "./middleware/threatInterceptor.js";
 import { sysAdminThreatService } from "./services/sysAdminThreatService.js";
 import apiRoutes from "./routes/index.js";
@@ -44,10 +45,17 @@ app.use(
       return callback(new Error("CORS policy violation: Origin not allowed"));
     },
     credentials: true,
-    // Without this the browser hides Content-Disposition from JS, and the report
-    // PDF downloads would have to guess their own filenames client-side rather
-    // than using the one the server built.
-    exposedHeaders: ["Content-Disposition"],
+    // Expose headers for client-side streaming and PDF/APK file downloads
+    exposedHeaders: [
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Range",
+      "Accept-Ranges",
+      "X-Chunk-Index",
+      "X-Total-Chunks",
+      "X-Chunk-Size",
+      "X-Total-Size",
+    ],
   })
 );
 
@@ -149,6 +157,7 @@ scheduleDwellLearningJob();
 scheduleNightlyBackupJob();
 scheduleRiderShiftJobs();
 scheduleCategoryRetrainingJob();
+scheduleRiderWatchReconcileJob();
 
 // Start HTTP Server (which includes Express and Socket.IO)
 httpServer.listen(Number(PORT), "0.0.0.0", () => {

@@ -173,6 +173,13 @@ export const ROUTE_MAX_SPEED_KMH = Number.isFinite(routeMaxSpeed) && routeMaxSpe
 // Maps key can reach. Blank disables receipt OCR — the adapter reports itself
 // unconfigured and is skipped, rather than failing every upload.
 export const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY || "";
+
+// Google Places API (New), for the customer app's "Location" store picker
+// (lib/places/googlePlacesClient.ts). Falls back to the Maps key, which must then
+// have "Places API (New)" enabled in its Cloud project and API restrictions.
+// Blank, or a key without that API, leaves the picker with the owner's Location
+// Stores alone: the search answers `google: "unavailable"` instead of failing.
+export const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || "";
 export const ROUTING_PROVIDER_ORDER = (process.env.ROUTING_PROVIDER_ORDER || "osrm,google,haversine")
   .split(",")
   .map((name) => name.trim().toLowerCase())
@@ -255,3 +262,8 @@ export const FALLBACK_AVG_SPEED_KMH = Number(process.env.FALLBACK_AVG_SPEED_KMH)
 // authority, unlike the public client config that ships in the app bundles.
 export const FIREBASE_SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "";
 export const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
+
+// The Realtime Database the server writes chat access entries to
+// (lib/chatAccess.ts). The same public URL the three clients ship with.
+export const FIREBASE_DATABASE_URL =
+  process.env.FIREBASE_DATABASE_URL || "https://capstonedata-3589c-default-rtdb.asia-southeast1.firebasedatabase.app";

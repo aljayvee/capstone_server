@@ -18,3 +18,30 @@ export const storeLocationCheckSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
 });
+
+/**
+ * The customer's store search (GET /api/places/establishments). Both
+ * coordinates or neither: one alone is not a place to search near.
+ */
+/** The Home tab's "Popular Stores": where the customer is, and whether to include photos. */
+export const popularEstablishmentsSchema = z
+  .object({
+    lat: z.coerce.number().min(-90).max(90).optional(),
+    lng: z.coerce.number().min(-180).max(180).optional(),
+    photos: z.enum(["1", "true"]).optional(),
+  })
+  .refine((query) => (query.lat === undefined) === (query.lng === undefined), {
+    message: "lat and lng go together.",
+  });
+
+export const establishmentSearchSchema = z
+  .object({
+    q: z.string().trim().max(80, "Search is at most 80 characters.").optional(),
+    lat: z.coerce.number().min(-90).max(90).optional(),
+    lng: z.coerce.number().min(-180).max(180).optional(),
+    /** "1": include each shop's photo address (the Home row). Each is a billed lookup. */
+    photos: z.enum(["1", "true"]).optional(),
+  })
+  .refine((query) => (query.lat === undefined) === (query.lng === undefined), {
+    message: "lat and lng go together.",
+  });

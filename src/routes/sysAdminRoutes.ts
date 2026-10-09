@@ -46,6 +46,8 @@ import {
   sendTestAlertHandler,
   getServerErrorStatusHandler,
   toggleServerErrorHandler,
+  getDispatcherAiSuggestionsHandler,
+  toggleDispatcherAiSuggestionsHandler,
 } from "../controllers/sysAdminDevOpsController.js";
 import {
   requestProfileOtpHandler,
@@ -61,6 +63,17 @@ import {
   addWhitelistedIpHandler,
   removeWhitelistedIpHandler,
 } from "../controllers/sysAdminThreatController.js";
+import {
+  getPublicReleasesHandler,
+  getSysAdminReleasesHandler,
+  updateReleaseDetailsHandler,
+  uploadApkHandler,
+  uploadChunkHandler,
+  finalizeChunkedUploadHandler,
+  cancelChunkedUploadHandler,
+  downloadApkHandler,
+  downloadApkChunkHandler,
+} from "../controllers/appReleaseController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { verificationLimiter, readLimiter } from "../middleware/rateLimiters.js";
 import {
@@ -139,6 +152,7 @@ router.get("/sysadmin/devops/logs", authenticateToken, requireRole("SYSADMIN"), 
 router.get("/sysadmin/devops/alerts/status", authenticateToken, requireRole("SYSADMIN"), readLimiter, getAlertStatusHandler);
 router.post("/sysadmin/devops/alerts/test", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, sendTestAlertHandler);
 router.post("/sysadmin/devops/server-error", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleServerErrorHandler);
+router.post("/sysadmin/devops/dispatcher-ai-suggestions", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleDispatcherAiSuggestionsHandler);
 
 // ── Security Threat Center & IP Defense (Dual-Tier) ──────────────────────────
 router.get("/sysadmin/threats/overview", authenticateToken, requireRole("SYSADMIN"), readLimiter, getThreatOverviewHandler);
@@ -154,5 +168,21 @@ router.get("/maintenance/status", getPublicMaintenanceStatusHandler);
 
 // ── Public Server Error Status Endpoint (Polled by login screen, unauthenticated) ──
 router.get("/system/server-error-status", getServerErrorStatusHandler);
+
+// ── Dispatcher AI Suggestions Status (Read by the dispatcher portal) ─────────
+router.get("/system/dispatcher-ai-suggestions", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, getDispatcherAiSuggestionsHandler);
+
+// ── App Releases & APK Deployment (Sugo Express & Sugo Rider) ────────────────
+router.get("/sysadmin/app-releases", authenticateToken, requireRole("SYSADMIN"), readLimiter, getSysAdminReleasesHandler);
+router.put("/sysadmin/app-releases/:target", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, updateReleaseDetailsHandler);
+router.post("/sysadmin/app-releases/upload/:target", authenticateToken, requireRole("SYSADMIN"), uploadApkHandler);
+router.post("/sysadmin/app-releases/upload-chunk/:target", authenticateToken, requireRole("SYSADMIN"), uploadChunkHandler);
+router.post("/sysadmin/app-releases/finalize-upload/:target", authenticateToken, requireRole("SYSADMIN"), finalizeChunkedUploadHandler);
+router.post("/sysadmin/app-releases/cancel-upload/:target", authenticateToken, requireRole("SYSADMIN"), cancelChunkedUploadHandler);
+
+// ── Public App Releases (Landing Page & Mobile Update Feed) ──────────────────
+router.get("/app-releases/public", getPublicReleasesHandler);
+router.get("/app-releases/download/:target", downloadApkHandler);
+router.get("/app-releases/download-chunk/:target", downloadApkChunkHandler);
 
 export default router;

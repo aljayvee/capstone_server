@@ -5,6 +5,7 @@ import { prisma } from "./prisma.js";
 import { logger } from "./logger.js";
 import { recomputeFromLivePosition } from "../services/etaService.js";
 import * as deliveryReminders from "../services/deliveryReminderService.js";
+import { TRACKABLE_STATUSES } from "./riderWatch.js";
 
 /**
  * The Socket.IO half of live rider tracking.
@@ -76,7 +77,8 @@ const SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 /** Statuses in which the customer is entitled to watch the rider approach. */
-const TRACKABLE_STATUSES = ["ASSIGNED", "IN_TRANSIT"] as const;
+// ASSIGNED and IN_TRANSIT. The same list decides who may read the rider in
+// Firebase, so it is imported from riderWatch.ts rather than repeated.
 
 interface ThrottleState {
   lastSentAt: number;

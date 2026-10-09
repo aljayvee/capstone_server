@@ -72,6 +72,12 @@ const maintenanceState: Record<PortalKey, PortalMaintenanceConfig> = {
 
 let serverErrorSimulated = false;
 
+// Whether dispatchers get the AI reason suggestions in the Help Desk (the
+// "Generate suggestion" button and the Tab shortcut). A sysadmin decision for
+// every dispatcher at once, so it is kept here rather than in each browser.
+// Off until a sysadmin turns it on.
+let dispatcherAiSuggestionsEnabled = false;
+
 async function loadMaintenanceState(): Promise<void> {
   try {
     const raw = await fs.readFile(CONFIG_FILE_PATH, "utf-8");
@@ -88,6 +94,9 @@ async function loadMaintenanceState(): Promise<void> {
     if (typeof parsed.serverErrorSimulated === "boolean") {
       serverErrorSimulated = parsed.serverErrorSimulated;
     }
+    if (typeof parsed.dispatcherAiSuggestionsEnabled === "boolean") {
+      dispatcherAiSuggestionsEnabled = parsed.dispatcherAiSuggestionsEnabled;
+    }
     logger.info("[DevOpsService] Loaded persistent maintenance config from disk.");
   } catch (err: any) {
     if (err?.code !== "ENOENT") {
@@ -101,7 +110,7 @@ async function saveMaintenanceState(): Promise<void> {
     await fs.mkdir(path.dirname(CONFIG_FILE_PATH), { recursive: true });
     await fs.writeFile(
       CONFIG_FILE_PATH,
-      JSON.stringify({ ...maintenanceState, serverErrorSimulated }, null, 2),
+      JSON.stringify({ ...maintenanceState, serverErrorSimulated, dispatcherAiSuggestionsEnabled }, null, 2),
       "utf-8"
     );
   } catch (err) {
@@ -128,6 +137,22 @@ export async function setServerErrorStatus(
     logger.warn("[DevOpsService] Failed to emit system:server_error_update:", err);
   }
   return { active };
+}
+
+export function getDispatcherAiSuggestionsEnabled(): boolean {
+  return dispatcherAiSuggestionsEnabled;
+}
+
+export async function setDispatcherAiSuggestionsEnabled(
+  enabled: boolean,
+  operatorUsername?: string
+): Promise<{ enabled: boolean }> {
+  dispatcherAiSuggestionsEnabled = enabled;
+  await saveMaintenanceState();
+  logger.info(
+    `[DevOpsService] Dispatcher AI suggestions set to ${enabled} by ${operatorUsername || "SysAdmin"}`
+  );
+  return { enabled };
 }
 
 // Initial load on startup
@@ -176,6 +201,7 @@ export interface SystemTelemetry {
   };
   maintenance: Record<PortalKey, PortalMaintenanceConfig>;
   serverErrorSimulated: boolean;
+  dispatcherAiSuggestionsEnabled: boolean;
 }
 
 export async function getSystemTelemetry(): Promise<SystemTelemetry> {
@@ -266,6 +292,7 @@ export async function getSystemTelemetry(): Promise<SystemTelemetry> {
     },
     maintenance: { ...maintenanceState },
     serverErrorSimulated: getServerErrorStatus(),
+    dispatcherAiSuggestionsEnabled: getDispatcherAiSuggestionsEnabled(),
   };
 }
 

@@ -349,17 +349,15 @@ router.post("/:id/payment-selection", authenticateToken, userApiLimiter, confirm
 // the controller): the customer needs to see what they owe, the rider needs the
 // figure to collect at the door.
 
-// ── the customer's own payment screenshot ────────────────────────────────
+// ── the 50% downpayment, retired 2026-10-08 ──────────────────────────────
 //
-// Read by Cloud Vision and checked against the errand before it is stored: it
-// must carry a reference number, be for the amount owed, and be dated today.
-// For the mid-way half-payment a receipt that passes confirms it on its own
-// (see paymentProofService.settleAutomatically); a reused reference number and
-// the balance still wait for a dispatcher.
+// GCash / PayMaya and Bank Transfer are paid in full at the door now: the rider
+// photographs the customer's transfer (proof-images, RIDER_BALANCE_PROOF) and
+// the system records it. Both routes below stay so installed apps get a
+// sentence saying so instead of a 404.
 
-// POST /api/errands/:id/payments/request-half - the rider, holding every item,
-// asks for the customer's 50% before heading to them. The one payment write a
-// rider may make: it records nothing as paid, it only asks.
+// POST /api/errands/:id/payments/request-half - refused: there is no half to
+// ask for. The rider heads to the customer as on cash on delivery.
 router.post(
   "/:id/payments/request-half",
   authenticateToken,
@@ -368,7 +366,8 @@ router.post(
   requestHalfPayment
 );
 
-// POST /api/errands/:id/payment-proof - customer uploads their confirmation
+// POST /api/errands/:id/payment-proof - refused: the customer shows their
+// confirmation to the rider at the door instead
 router.post(
   "/:id/payment-proof",
   authenticateToken,

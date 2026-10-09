@@ -10,35 +10,13 @@ import type { AuthenticatedRequest } from "../middleware/auth.js";
 /**
  * POST /api/errands/:id/payment-proof — the customer uploads what they sent.
  *
- * Customer-only. A rider or dispatcher uploading a customer's payment proof
- * would be attesting to their own evidence, which is the thing the ledger's
- * confirmedBy field exists to prevent.
+ * Refused since 2026-10-08 with where to go instead: the whole bill is paid at
+ * the door and the rider photographs the transfer (paymentProofService). The
+ * route stays so installed apps get that sentence rather than a 404.
  */
-export const uploadPaymentProof = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+export const uploadPaymentProof = asyncHandler<AuthenticatedRequest>(async (req) => {
   const input = parseOrThrow(paymentProofUploadSchema, req.body);
-  const { image: proof, autoConfirmed, reviewReason } = await paymentProofService.uploadPaymentProof(
-    req.params.id,
-    req.user!.id,
-    input
-  );
-
-  // The bytes never come back. The customer has the original on their phone and
-  // the dispatcher reads it through the proof-image endpoint.
-  res.json({
-    success: true,
-    // True when the receipt settled the half-payment on its own. False means a
-    // dispatcher will look at it; reviewReason says why, for the app's wording.
-    autoConfirmed,
-    reviewReason,
-    proof: {
-      id: proof.id,
-      capturedAt: proof.capturedAt,
-      referenceNo: proof.extraction?.referenceNo ?? null,
-      transactionId: proof.extraction?.transactionId ?? null,
-      amount: proof.extraction?.extractedTotal ?? null,
-      transactionDate: proof.extraction?.extractedDate ?? null,
-    },
-  });
+  await paymentProofService.uploadPaymentProof(req.params.id, req.user!.id, input);
 });
 
 /** GET /api/errands/:id/payment-proof — what was read, for either party. */

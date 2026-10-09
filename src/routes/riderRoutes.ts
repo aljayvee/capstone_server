@@ -40,8 +40,9 @@ router.post("/beacon", authenticateToken, requireRole(["RIDER"]), trackingLimite
 // jpeg/jpg/png limits, same dedicated-table storage, same base64 data URI on the
 // wire. Kept off /users so the rider app has one namespace for everything it owns.
 router.get("/:riderId/photo", authenticateToken, readLimiter, getRiderPhoto);
-router.put("/:riderId/photo", authenticateToken, userApiLimiter, uploadRiderPhoto);
-router.delete("/:riderId/photo", authenticateToken, userApiLimiter, deleteRiderPhoto);
+// RIDER as well as self: customer 9 and rider 9 share a number.
+router.put("/:riderId/photo", authenticateToken, requireRole(["RIDER"]), userApiLimiter, uploadRiderPhoto);
+router.delete("/:riderId/photo", authenticateToken, requireRole(["RIDER"]), userApiLimiter, deleteRiderPhoto);
 
 // NOTE: live rider GPS position is NOT served from this backend — it streams
 // through Firebase Realtime Database (see AGENTS.md server section 5), matching

@@ -25,6 +25,8 @@ import type { AuthenticatedRequest } from "../middleware/auth.js";
 import * as riderPresenceService from "../services/riderPresenceService.js";
 import * as sessionService from "../services/sessionService.js";
 import { notifySessionRevoked } from "../lib/socket.js";
+import { pushTokenOwnerFor, releasePushToken } from "../services/pushTokenOwnership.js";
+import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma.js";
 
 import { REFRESH_SESSION_TTL_MS, COOKIE_DOMAIN, CROSS_SITE_COOKIES } from "../config/env.js";
@@ -119,6 +121,8 @@ function respondWithChallenge(res: Response, challenge: LoginChallenge) {
     ...(challenge.step === "PROFILE_SETUP" ? { profileSetupRequired: true } : { otpRequired: true }),
     challengeToken: challenge.challengeToken,
     maskedEmail: challenge.maskedEmail,
+    maskedPhone: challenge.maskedPhone,
+    phone: challenge.phone,
     // Disclosed only after a correct password, so it is not an enumeration
     // vector — and it lets both clients turn away a wrong-surface role before
     // walking someone through an OTP they were never going to be able to use.
@@ -219,8 +223,8 @@ export const completeLoginProfile = asyncHandler(async (req, res) => {
 });
 
 export const verifyLoginOtp = asyncHandler(async (req, res) => {
-  const { challengeToken, code } = parseOrThrow(verifyLoginOtpSchema, req.body);
-  const { result, user, audience } = await authService.completeLoginOtp(challengeToken, code);
+  const { challengeToken, code, firebaseIdToken } = parseOrThrow(verifyLoginOtpSchema, req.body);
+  const { result, user, audience } = await authService.completeLoginOtp(challengeToken, code, firebaseIdToken);
   void loginNotificationService.sendLoginAlert(user, loginContext(req, audience));
 
   if (audience === "WEB_PORTAL" && (user.role === "OWNER" || user.role === "DISPATCHER")) {
@@ -410,7 +414,15 @@ export const logout = asyncHandler<AuthenticatedRequest>(async (req, res) => {
       sessionId: refreshToken ? authService.sessionIdFromRefreshToken(refreshToken) : null,
       revokedReason: "USER_LOGOUT",
     });
-    void riderPresenceService.closeLoginSession(req.user.id);
+    // Riders only. Customer ids are a separate sequence, so customer 9 signing
+    // out used to take rider 9 off duty and close their shift (2026-10-07).
+    if (String(req.user.role || "").toUpperCase() === "RIDER") {
+      void riderPresenceService.closeLoginSession(req.user.id);
+    }
+    // This account's alerts stop reaching the phone it signed out of.
+    void releasePushToken(pushTokenOwnerFor(req.user.role, req.user.id)).catch((err) =>
+      logger.warn("Could not release the push token on logout:", err)
+    );
   }
 
   const domain = getCookieDomain();
@@ -447,17 +459,20 @@ export const getActiveSessions = asyncHandler<AuthenticatedRequest>(async (req, 
 
 export const revokeSessionById = asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = req.user!.id;
+  const role = req.user!.role;
   const { sessionId } = req.params;
 
+  // subjectType as well as subjectId: customers and staff are numbered
+  // separately, so customer 9 matched dispatcher 9's sessions here.
   const session = await prisma.userSession.findFirst({
-    where: { id: sessionId, subjectId: userId, revokedAt: null },
+    where: { id: sessionId, subjectId: userId, subjectType: sessionService.subjectTypeForRole(role), revokedAt: null },
   });
   if (!session) {
     return res.status(404).json({ error: "Session not found or already ended." });
   }
 
   await sessionService.revokeSession(sessionId, "REVOKED_BY_USER");
-  notifySessionRevoked(userId, { reason: "REVOKED_BY_USER" });
+  notifySessionRevoked(userId, { reason: "REVOKED_BY_USER" }, role);
 
   res.status(200).json({ message: "Session signed out successfully." });
 });
@@ -479,7 +494,7 @@ export const revokeOtherSessionsHandler = asyncHandler<AuthenticatedRequest>(asy
     currentSessionId,
     "REVOKED_ALL_OTHERS"
   );
-  notifySessionRevoked(userId, { reason: "REVOKED_ALL_OTHERS" });
+  notifySessionRevoked(userId, { reason: "REVOKED_ALL_OTHERS" }, role);
 
   res.status(200).json({ message: `Signed out ${count} other device(s).` });
 });

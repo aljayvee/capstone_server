@@ -7,7 +7,7 @@ import { errandRepository } from "../repositories/errandRepository.js";
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
 import { errandPaymentRepository } from "../repositories/errandPaymentRepository.js";
 import { hasPaymentLedger } from "./patterns/paymentModes.js";
-import { summarisePaymentPlan, isOveragePending } from "./patterns/paymentLedger.js";
+import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import * as errandService from "./errandService.js";
@@ -22,6 +22,9 @@ import type { ProofImageUploadInput, ProofImageScanInput } from "../validators/p
  */
 const MIN_LEGIBLE_CHARACTERS = 40;
 
+/** The rider's way out at the door when a transfer cannot be accepted (the user's call, 2026-10-08). */
+const TAKE_CASH = "If it still won't go through, collect the payment in cash instead.";
+
 /**
  * How far a rider's confirmed total may drift from the OCR reading before
  * dispatch is told. Whichever is greater, so a ₱50 correction on a ₱120 fast-food
@@ -31,6 +34,7 @@ const MIN_LEGIBLE_CHARACTERS = 40;
  * Small corrections are routine: OCR misreads a digit on creased paper and the
  * rider fixes it. Alerting on those trains dispatch to ignore the alert.
  */
+
 export const DIVERGENCE_ABSOLUTE = 100;
 export const DIVERGENCE_FRACTION = 0.2;
 
@@ -203,12 +207,12 @@ export async function uploadProofImage(
     return { ...declared, clarityVerdict: null, extraction: null };
   }
 
-  // The rider's photo of the CUSTOMER's GCash/Maya receipt, shown at the door
-  // instead of (or alongside) the customer's own upload. Goes through the same
-  // fraud check the customer's own upload gets — reference number, amount
-  // against the live balance, same calendar day — via the shared validator
-  // both paths call, so tightening one path can never silently leave the
-  // other one weaker.
+  // The rider's photo of the CUSTOMER's GCash, PayMaya or bank confirmation,
+  // shown at the door. Since 2026-10-08 this is how a non-COD bill is paid: the
+  // whole of it, at the door, read and recorded by the system with no
+  // dispatcher (errandPaymentService.confirmBalanceFromRiderProof). Checked by
+  // the shared validator: reference number, amount against the live balance,
+  // same calendar day. Anything it cannot accept tells the rider to take cash.
   //
   // Always reads through Cloud Vision — never `input.deviceText`. TRANSFER
   // prefers on-device text because that path is a shopping-receipt
@@ -221,15 +225,10 @@ export async function uploadProofImage(
     }
 
     const entries = await errandPaymentRepository.findAmountsByErrandId(errandId);
-    const plan = summarisePaymentPlan({
-      goodsSubtotal: errand.estimatedCost,
-      grandTotal: errand.totalCost,
-      entries,
-      overagePending: isOveragePending(errand),
-    });
+    const plan = summarisePaymentPlan({ grandTotal: errand.totalCost, entries });
 
     if (plan.state !== "AWAITING_BALANCE") {
-      throw new ServiceError(409, "There's no outstanding balance to confirm on this errand.");
+      throw new ServiceError(409, "This order is already paid. Hand the items over.");
     }
 
     const ocr = await readText(base64);
@@ -238,16 +237,24 @@ export async function uploadProofImage(
       throw new ServiceError(
         engineAvailable ? 422 : 503,
         engineAvailable
-          ? "We couldn't read that photo. Make sure the whole confirmation is in frame and try again."
-          : "Receipt scanning is unavailable right now. Please try again in a moment."
+          ? `We couldn't read that photo. Retake it with the whole confirmation in frame. ${TAKE_CASH}`
+          : `Transfer checks are unavailable right now. ${TAKE_CASH}`
       );
     }
 
-    const parsed = validateTransferReceipt({
-      ocrText: ocr.text,
-      dueAmount: plan.balanceDue,
-      dueLabel: "balance",
-    });
+    // The validator's sentences are written for the customer who sent it; at
+    // the door the rider also needs the way out.
+    let parsed: ReturnType<typeof validateTransferReceipt>;
+    try {
+      parsed = validateTransferReceipt({
+        ocrText: ocr.text,
+        dueAmount: plan.balanceDue,
+        dueLabel: "balance",
+      });
+    } catch (err) {
+      if (err instanceof ServiceError) throw new ServiceError(err.status, `${err.message} ${TAKE_CASH}`);
+      throw err;
+    }
 
     const image = await prisma.errandProofImage.create({
       data: {
@@ -280,6 +287,15 @@ export async function uploadProofImage(
       `Errand ${errandId}: rider ${riderId} photographed the customer's balance receipt — ` +
         `ref ${parsed.referenceNo}, ₱${parsed.amount}.`
     );
+
+    // Recorded as paid now, by the system. Imported here rather than at the top:
+    // errandPaymentService already imports this module.
+    const { confirmBalanceFromRiderProof } = await import("./errandPaymentService.js");
+    await confirmBalanceFromRiderProof(errandId, {
+      proofImageId: image.id,
+      amount: parsed.amount,
+      referenceNo: parsed.referenceNo,
+    });
 
     return image;
   }

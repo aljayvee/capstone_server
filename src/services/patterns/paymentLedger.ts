@@ -7,13 +7,17 @@ export interface LedgerEntry {
 }
 
 /**
- * The share of the goods a customer pays before the rider buys anything.
+ * The 50% downpayment was retired on 2026-10-08, on the owner's instruction.
  *
- * Half, per the owner's rule: "the payment starts after half of the purchase".
- * Taken on the GOODS only — the delivery and service fees fall due with the
- * balance, which the rider collects at the door.
+ * GCash / PayMaya and Bank Transfer now run the way cash on delivery does: the
+ * rider buys everything with the company's money and the customer pays the
+ * whole bill at the door, by transfer (the rider photographs the confirmation
+ * and the system records it, errandPaymentService.confirmBalanceFromRiderProof)
+ * or in cash. Nothing is owed before the door, and nothing waits on a dispatcher.
+ *
+ * Old errands keep the UPFRONT rows they already have: they still count as money
+ * paid, so a half collected before the change is never asked for twice.
  */
-export const DOWNPAYMENT_RATE = 0.5;
 
 /**
  * How far a receipt may exceed what the customer agreed to before the errand
@@ -31,29 +35,23 @@ export const DOWNPAYMENT_RATE = 0.5;
 export const OVERAGE_ESCALATION_PESOS = 20;
 
 /**
- * Five states, each one a different thing somebody has to do next:
+ * Three states, each one a different thing somebody has to do next:
  *
- *  - `AWAITING_UPFRONT`  — the dispatcher is waiting on the Facebook Page.
- *  - `OVERAGE_PENDING`   — the receipt beat the agreement; the office owes the
- *                          customer a conversation and the rider is standing
- *                          still until it happens.
- *  - `AWAITING_BALANCE`  — money is owed and the rider will collect it.
+ *  - `AWAITING_BALANCE`  — money is owed and the rider collects it at the door.
  *  - `SETTLED`           — nothing owed.
  *  - `REFUNDED`          — cancelled; money goes back.
+ *
+ * `AWAITING_UPFRONT` (the 50% before delivery) and `OVERAGE_PENDING` (goods held
+ * over a receipt above the agreed basket) were retired with the downpayment on
+ * 2026-10-08. Neither is ever reported now, so the apps' waits on them never
+ * start, including on builds installed before the change.
  */
-export type PaymentPlanState =
-  | "AWAITING_UPFRONT"
-  | "OVERAGE_PENDING"
-  | "AWAITING_BALANCE"
-  | "SETTLED"
-  | "REFUNDED";
+export type PaymentPlanState = "AWAITING_BALANCE" | "SETTLED" | "REFUNDED";
 
 export interface PaymentPlanSummary {
   /**
-   * What must arrive before a rider is sent: half the GOODS.
-   *
-   * Half the purchase, not half the invoice — the delivery and service fees ride
-   * with the balance the rider collects at the door.
+   * What had to arrive before delivery. Always 0 since the downpayment was
+   * retired; kept because installed rider and customer apps still read it.
    */
   dueUpFront: number;
   /** UPFRONT + TOP_UP + FINAL, less REFUND. Money actually in hand. */
@@ -99,17 +97,13 @@ export function isOveragePending(errand: {
  * apart.
  */
 export function summarisePaymentPlan(input: {
-  /** The goods figure the 50% downpayment is taken on. */
-  goodsSubtotal: number;
   /** Goods + all fees + tip: the whole bill. */
   grandTotal: number;
   entries: LedgerEntry[];
-  /** An unresolved receipt overage holds the goods regardless of what is paid. */
-  overagePending: boolean;
   /** A cancelled errand's money is owed back, not collected. */
   cancelled?: boolean;
 }): PaymentPlanSummary {
-  const { goodsSubtotal, grandTotal, entries, overagePending } = input;
+  const { grandTotal, entries } = input;
 
   const paidIn = entries
     .filter((e) => e.kind === "UPFRONT" || e.kind === "TOP_UP" || e.kind === "FINAL")
@@ -120,26 +114,15 @@ export function summarisePaymentPlan(input: {
 
   const amountPaid = round2(paidIn - refunded);
 
-  const dueUpFront = round2(goodsSubtotal * DOWNPAYMENT_RATE);
-
   // Never negative: an over-collection is a variance for the settlement report
   // to explain, not a negative amount owing that a rider might try to hand back.
   const balanceDue = round2(Math.max(0, grandTotal - amountPaid));
 
-  const hasUpfront = entries.some((e) => e.kind === "UPFRONT");
-
-  // Ordered by which fact overrides which. An unresolved overage outranks a
-  // healthy balance: the goods are held whatever the arithmetic says, because
-  // the company has fronted money the customer has not agreed to.
   const state: PaymentPlanState = input.cancelled
     ? "REFUNDED"
-    : !hasUpfront
-      ? "AWAITING_UPFRONT"
-      : overagePending
-        ? "OVERAGE_PENDING"
-        : balanceDue > 0
-          ? "AWAITING_BALANCE"
-          : "SETTLED";
+    : balanceDue > 0
+      ? "AWAITING_BALANCE"
+      : "SETTLED";
 
-  return { dueUpFront, amountPaid, balanceDue, state };
+  return { dueUpFront: 0, amountPaid, balanceDue, state };
 }

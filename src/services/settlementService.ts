@@ -2,7 +2,7 @@ import { settlementRepository } from "../repositories/settlementRepository.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
 import { errandPaymentRepository } from "../repositories/errandPaymentRepository.js";
-import { riderCollectsCash, isDownpaymentPlan } from "./patterns/paymentModes.js";
+import { riderCollectsCash, hasPaymentLedger } from "./patterns/paymentModes.js";
 import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { ServiceError } from "./ServiceError.js";
 
@@ -64,18 +64,16 @@ export async function submitSettlement(
 
   // What the rider is expected to hand back, which is not the same as the bill.
   //
-  // On the downpayment plan the customer has already paid part of it through the
-  // Facebook Page, and that money never passes through the rider. Expecting the
-  // full totalCost would record every such errand as SHORT by exactly the
-  // downpayment — feeding CASH_VARIANCE exceptions and inflating shortageCount
-  // in riderPerformanceService, so riders doing exactly their job would read as
-  // chronic short-collectors.
-  const alreadyPaid = isDownpaymentPlan(selection)
+  // On GCash / PayMaya and Bank Transfer the customer usually transfers at the
+  // door, and the rider's photo of it is recorded as paid (a FINAL row); an old
+  // errand may also carry a 50% downpayment from before 2026-10-08. That money
+  // never passes through the rider. Expecting the full totalCost would record
+  // every such errand as SHORT by exactly that amount, feeding CASH_VARIANCE
+  // exceptions and inflating shortageCount in riderPerformanceService.
+  const alreadyPaid = hasPaymentLedger(selection)
     ? summarisePaymentPlan({
-        goodsSubtotal: errand.estimatedCost,
         grandTotal: errand.totalCost,
         entries: await errandPaymentRepository.findAmountsByErrandId(errandId),
-        overagePending: false,
       }).amountPaid
     : 0;
 

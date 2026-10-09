@@ -92,6 +92,18 @@ export const listErrandsForRider = asyncHandler<AuthenticatedRequest>(async (req
 
 export const createErrand = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(createErrandSchema, req.body);
+  // A customer's order is always their own (2026-10-08). The body's customerId
+  // used to be honoured for any caller, so one account could file an errand
+  // under another, and a dispatcher's id (a different table, the same numbers)
+  // was taken for a customer's. Only the owner's tooling may name a customer.
+  const role = String(req.user!.role ?? "").toUpperCase();
+  if (role === "CUSTOMER") {
+    input.customerId = undefined;
+  } else if (role !== "OWNER") {
+    throw new ServiceError(403, "Only a customer can place an order.");
+  } else if (input.customerId === undefined) {
+    throw new ServiceError(400, "Name the customer this order is for.");
+  }
   const errand = await errandService.createErrand(req.user!.id, input);
   res.status(201).json(errand);
 });

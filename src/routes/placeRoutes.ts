@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { placeController } from "../controllers/placeController.js";
 import { checkStoreLocationHandler } from "../controllers/storeLocationController.js";
+import { popularEstablishmentsHandler, searchEstablishmentsHandler } from "../controllers/establishmentController.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { readLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
+import { establishmentSearchLimiter, readLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
 
 const router = Router();
 
@@ -36,6 +37,29 @@ router.get("/", authenticateToken, readLimiter, (req, res) => placeController.ge
 // and "/:id" would otherwise capture "reverse" as an id and 404 every call.
 router.get("/reverse", authenticateToken, readLimiter, (req, res) =>
   placeController.reverse(req, res)
+);
+
+// GET /api/places/establishments?q=&lat=&lng= - the customer app's "Location"
+// store picker: Location Stores plus Google Places (services/establishmentService.ts).
+// Its own limiter, because each call is a billed Google request. Above "/:id"
+// for the same reason as "/reverse".
+router.get(
+  "/establishments",
+  authenticateToken,
+  requireRole(["CUSTOMER", "DISPATCHER", "OWNER"]),
+  establishmentSearchLimiter,
+  searchEstablishmentsHandler
+);
+
+// GET /api/places/establishments/popular?lat=&lng=&photos=1 - the customer app's
+// Home "Popular Stores": Google's most popular shops nearby, best rated first.
+// The same limiter as the store search: each call is a billed Google request.
+router.get(
+  "/establishments/popular",
+  authenticateToken,
+  requireRole(["CUSTOMER", "DISPATCHER", "OWNER"]),
+  establishmentSearchLimiter,
+  popularEstablishmentsHandler
 );
 
 // GET /api/places/:id - single place detail

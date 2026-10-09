@@ -23,6 +23,8 @@ export interface LoginChallenge {
   step: ChallengeStep;
   challengeToken: string;
   maskedEmail: string | null;
+  maskedPhone: string | null;
+  phone: string | null;
   role: string;
   expiresInSeconds: number;
 }
@@ -40,13 +42,15 @@ const PURPOSE = "LOGIN_CHALLENGE";
 
 // The single source of truth for "is this sign-in gated?". Every caller that
 // mints a session consults this and nothing else.
-export function evaluateGate(user: Pick<StaffRow, "profileCompleted" | "emailVerified" | "email">): ChallengeStep | null {
+export function evaluateGate(
+  user: Pick<StaffRow, "profileCompleted" | "emailVerified" | "phoneVerified" | "email" | "phone">
+): ChallengeStep | null {
   const email = (user.email || "").trim();
-  // The `!email` clause is not redundant: legacy rows are allowed to carry a
-  // blank email and were grandfathered as verified, so without it such an
-  // account would be routed to an OTP that can never be delivered.
-  if (!user.profileCompleted || !email) return "PROFILE_SETUP";
-  if (!user.emailVerified) return "OTP";
+  const phone = (user.phone || "").trim();
+  // An account must have a profile and at least one contact channel (email or phone)
+  if (!user.profileCompleted || (!email && !phone)) return "PROFILE_SETUP";
+  // If either email or phone is already verified, the gate is satisfied
+  if (!user.emailVerified && !user.phoneVerified) return "OTP";
   return null;
 }
 
@@ -72,6 +76,14 @@ export function maskEmail(email: string): string {
   return `${local.slice(0, 2)}${"*".repeat(Math.min(local.length - 2, 6))}${domain}`;
 }
 
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length <= 4) return phone;
+  const prefix = digits.startsWith("63") ? "+63 " : digits.startsWith("0") ? "0" : "";
+  const last4 = digits.slice(-4);
+  return `${prefix}*** *** ${last4}`;
+}
+
 function mintToken(user: StaffRow, step: ChallengeStep, audience: ChallengeAudience): string {
   const claims: ChallengeClaims = {
     id: user.id,
@@ -91,7 +103,9 @@ function toChallenge(user: StaffRow, step: ChallengeStep, audience: ChallengeAud
   return {
     step,
     challengeToken: mintToken(user, step, audience),
-    maskedEmail: step === "OTP" ? maskEmail(user.email) : null,
+    maskedEmail: step === "OTP" && user.email ? maskEmail(user.email) : null,
+    maskedPhone: step === "OTP" && user.phone ? maskPhone(user.phone) : null,
+    phone: step === "OTP" && user.phone ? user.phone : null,
     role: user.role,
     expiresInSeconds: LOGIN_CHALLENGE_EXPIRES_IN_SECONDS,
   };

@@ -22,7 +22,10 @@ import { ServiceError } from "../services/ServiceError.js";
 
 function assertSelfOrOwner(req: AuthenticatedRequest, targetId: number) {
   const callerRole = String(req.user?.role || "").toUpperCase();
-  if (callerRole !== "OWNER" && req.user?.id !== targetId) {
+  // "Self" is a CUSTOMER with this id. The id alone let dispatcher 9 and rider 9
+  // through as customer 9: the two tables are numbered separately.
+  const isSelf = callerRole === "CUSTOMER" && req.user?.id === targetId;
+  if (callerRole !== "OWNER" && !isSelf) {
     throw new ServiceError(403, "Access denied: You can only access your own customer account.");
   }
 }

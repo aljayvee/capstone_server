@@ -16,16 +16,16 @@ import { sendPushNotification } from "../lib/pushNotifications.js";
 import { notificationRepository } from "../repositories/notificationRepository.js";
 import { notificationFactory } from "./patterns/notificationFactory.js";
 import * as errandService from "./errandService.js";
-import { confirmedReceiptTotal } from "./proofImageService.js";
-import { formatItemLabel } from "./patterns/itemLabel.js";
 
 /**
- * The money on any errand the customer does not pay in cash at the door.
+ * The money on any errand the customer does not pay in cash.
  *
- * Payment arrives on the company's Facebook Page, outside this system. There is
- * no callback to trust — a dispatcher looks at the page and says they saw it —
- * so every function here is an attestation being recorded, and every one of them
- * records WHO made it. That is the whole control.
+ * Since 2026-10-08 GCash / PayMaya and Bank Transfer are paid at the door, the
+ * way cash on delivery is: no 50% before delivery, nothing held, no dispatcher
+ * step. The rider photographs the customer's transfer confirmation, the system
+ * reads it against the bill and records it here (confirmBalanceFromRiderProof);
+ * one it cannot accept is paid in cash instead. Every row still records who, or
+ * which photo, vouched for it. That is the whole control.
  *
  * Guard order mirrors paymentSelectionService.confirmPaymentSelection: exists,
  * then applicable, then not already done, then the amount makes sense. Each
@@ -39,9 +39,9 @@ export interface PaymentLedgerView extends Partial<PaymentPlanSummary> {
   errandId: string;
   /** False on COD, where there is no ledger and nothing below applies. */
   hasLedger: boolean;
-  /** The goods figure the half is taken on: the rider's receipts once they exist. */
+  /** The goods figure: the rider's receipts once they exist. */
   goodsTotal: number;
-  /** When the rider, holding every item, asked for the half. Null until then. */
+  /** When a rider asked for the 50% downpayment, on errands from before 2026-10-08. */
   halfPaymentRequestedAt: Date | null;
   overageEscalatedAt: Date | null;
   overageResolvedAt: Date | null;
@@ -66,10 +66,8 @@ async function loadPlan(errandId: string) {
 
   const summary = hasPaymentLedger(selection)
     ? summarisePaymentPlan({
-        goodsSubtotal: errand.estimatedCost,
         grandTotal: errand.totalCost,
         entries: entries.map((e) => ({ kind: e.kind, amount: e.amount })),
-        overagePending: isOveragePending(errand),
         cancelled: errand.status === "CANCELLED",
       })
     : null;
@@ -111,13 +109,7 @@ export async function getPaymentLedger(errandId: string): Promise<PaymentLedgerV
 }
 
 /** Why a payment update was sent. Clients decide what to show from this. */
-export type PaymentUpdateReason =
-  | "half_payment_requested"
-  | "proof_uploaded"
-  | "upfront_confirmed"
-  | "balance_confirmed"
-  | "overage_resolved"
-  | "refunded";
+export type PaymentUpdateReason = "balance_confirmed" | "overage_resolved" | "refunded";
 
 /** The rider, the customer and what to call each, for telling them things. */
 async function loadParties(errandId: string) {
@@ -173,38 +165,6 @@ export async function publishPaymentUpdate(
   return view;
 }
 
-/**
- * Tells the rider to go, and the customer that their money counted.
- *
- * Only once the goods are actually free to leave: with a receipt overage still
- * open the half is paid but the rider must stay, and "head to the customer"
- * would send them to a door they then cannot hand anything over at.
- */
-async function announceHalfSettled(errandId: string, view: PaymentLedgerView, amount: number) {
-  if (view.state !== "AWAITING_BALANCE" && view.state !== "SETTLED") return;
-  const parties = await loadParties(errandId);
-  if (!parties) return;
-
-  if (parties.riderId) {
-    const content = notificationFactory.halfPaymentSettled(parties.customerName, view.balanceDue ?? 0);
-    await notificationRepository.create({ userId: parties.riderId, ...content });
-    void sendPushNotification(parties.riderPushToken, {
-      title: content.title,
-      body: content.body,
-      data: { errandId, type: content.type },
-      urgent: true,
-    });
-  }
-
-  const received = notificationFactory.halfPaymentReceived(amount);
-  await notificationRepository.create({ customerId: parties.customerId, ...received });
-  void sendPushNotification(parties.customerPushToken, {
-    title: received.title,
-    body: received.body,
-    data: { errandId, type: received.type },
-  });
-}
-
 function assertHasLedger(selection: Parameters<typeof hasPaymentLedger>[0]) {
   if (!hasPaymentLedger(selection)) {
     throw new ServiceError(
@@ -254,188 +214,90 @@ function assertAmountMatches(amount: number, due: number, what: string) {
   }
 }
 
+/** What a retired 50% step answers, for apps installed before 2026-10-08. */
+const DOWNPAYMENT_RETIRED =
+  "The 50% payment is no longer used. The customer pays the whole bill at the door, like cash on delivery.";
+
 /**
- * The customer paid what was owed before dispatch. Recorded so a rider can go.
- *
- * One function for both plans: half the goods on the 50% plan, the whole bill on
- * GCash / Bank Transfer / Card. The amount differs, the act does not — money
- * arrived on the Facebook Page and a dispatcher is vouching for it.
- *
- * `confirmedByUserId` is null when no person is: paymentProofService confirms
- * a customer's receipt on its own once it passes every check. It must then
- * carry the proof image, which is the only evidence left standing.
+ * The dispatcher's confirmation of the 50% downpayment. Retired 2026-10-08:
+ * nothing is owed before delivery, so there is nothing to confirm.
  */
 export async function confirmUpfrontPayment(
-  errandId: string,
-  confirmedByUserId: number | null,
-  input: { amount: number; note?: string; proofImageId?: number }
-) {
-  if (confirmedByUserId === null && !input.proofImageId) {
-    throw new ServiceError(400, "An automatic confirmation needs the receipt it was read from.");
-  }
-  const { selection, summary } = await loadPlan(errandId);
-  assertHasLedger(selection);
-
-  if (await errandPaymentRepository.findOneOfKind(errandId, "UPFRONT")) {
-    throw new ServiceError(409, "The payment for this errand is already confirmed.");
-  }
-
-  assertAmountMatches(input.amount, summary!.dueUpFront, "payment");
-  const proofImageId = await assertProofImageAvailable(errandId, input.proofImageId);
-
-  await errandPaymentRepository.create({
-    errandId,
-    kind: "UPFRONT",
-    amount: input.amount,
-    confirmedByUserId,
-    note: input.note?.trim() || null,
-    proofImageId,
-  });
-
-  const view = await getPaymentLedger(errandId);
-  eventPublisher.emitToErrand(errandId, "errand:upfront_confirmed", view);
-  await publishPaymentUpdate(errandId, "upfront_confirmed", view);
-  await announceHalfSettled(errandId, view, input.amount);
-  return view;
+  _errandId: string,
+  _confirmedByUserId: number | null,
+  _input: { amount: number; note?: string; proofImageId?: number }
+): Promise<never> {
+  throw new ServiceError(409, DOWNPAYMENT_RETIRED);
 }
 
 /**
- * The rider has every item and asks for the customer's half before heading out.
- *
- * The half is taken on what the rider actually paid, which is only known now:
- * each confirmed receipt already folds into the errand's goods figure
- * (proofImageService.confirmProofImage), so the amount asked for here is half
- * of real receipts, not of the customer's estimate. Asking before the receipts
- * exist is refused for that reason.
- *
- * Safe to press twice. The first press is stamped; a later one re-sends the
- * alerts as a nudge without moving the stamp, so "waiting since" stays true.
+ * The rider asking for the customer's half before heading to them. Retired
+ * 2026-10-08: the rider heads straight to the customer, as on cash on delivery.
+ * The plan the apps read never reports the half as owed, so an installed rider
+ * app does not offer this; one that still asks is told to go.
  */
-export async function requestHalfPayment(errandId: string, riderId: number) {
+export async function requestHalfPayment(errandId: string, riderId: number): Promise<never> {
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) throw new ServiceError(404, "Errand not found");
   if (errand.riderId !== riderId) {
     throw new ServiceError(403, "Access denied: this errand isn't assigned to you.");
   }
-  if (errand.status !== "IN_TRANSIT") {
-    throw new ServiceError(409, "Accept the errand and buy the items before asking for the half-payment.");
-  }
+  throw new ServiceError(409, `${DOWNPAYMENT_RETIRED} Head to the customer.`);
+}
 
-  const selection = await paymentSelectionRepository.findByErrandId(errandId);
-  if (!hasPaymentLedger(selection)) {
+/**
+ * The customer's transfer, photographed by the rider at the door, recorded as
+ * paid with no person in the loop.
+ *
+ * The photo has already passed validateTransferReceipt in proofImageService: a
+ * reference number, the amount within ₱1 of the whole balance, dated today.
+ * What that cannot see is one confirmation shown at two doors, so a reference
+ * number already used on another errand is refused, and the rider collects cash
+ * instead (the user's call, 2026-10-08: nothing waits on a dispatcher).
+ *
+ * The row carries no person (confirmedByUserId null) and names the photo, so
+ * the audit trail says exactly what vouched for it. The rider's cash settlement
+ * then nets against it and expects nothing (settlementService).
+ */
+export async function confirmBalanceFromRiderProof(
+  errandId: string,
+  input: { proofImageId: number; amount: number; referenceNo: string }
+): Promise<PaymentLedgerView> {
+  if (await errandPaymentRepository.isReferenceUsedElsewhere(input.referenceNo, errandId)) {
+    logger.warn(
+      `Errand ${errandId}: transfer ref ${input.referenceNo} already paid for another errand; rider told to take cash.`
+    );
     throw new ServiceError(
       409,
-      "This errand is cash on delivery, so there's no half-payment to ask for. Head to the customer."
+      "That confirmation's reference number was already used on another order. Collect the payment in cash instead."
     );
   }
-  if (await errandPaymentRepository.findOneOfKind(errandId, "UPFRONT")) {
-    throw new ServiceError(409, "The customer's half-payment is already settled. Head to the customer.");
-  }
 
-  // Multi-Store Invariant: If the errand has assigned store pins, verify that
-  // EVERY store pin has recorded proof (RECEIPT or NO_RECEIPT) before requesting half-payment.
-  const pinpoints = await prisma.errandPinpoint.findMany({
-    where: { errandId },
-    select: { id: true, storeName: true },
+  const { selection, summary } = await loadPlan(errandId);
+  assertHasLedger(selection);
+  if (summary!.state !== "AWAITING_BALANCE") {
+    throw new ServiceError(409, "This order is already paid. Hand the items over.");
+  }
+  if (await errandPaymentRepository.findOneOfKind(errandId, "FINAL")) {
+    throw new ServiceError(409, "This order is already paid. Hand the items over.");
+  }
+  assertAmountMatches(input.amount, summary!.balanceDue, "bill");
+  const proofImageId = await assertProofImageAvailable(errandId, input.proofImageId);
+
+  await errandPaymentRepository.create({
+    errandId,
+    kind: "FINAL",
+    amount: input.amount,
+    confirmedByUserId: null,
+    note: `Paid by transfer at the door, ref ${input.referenceNo}. Read from the rider's photo.`,
+    proofImageId,
   });
-
-  if (pinpoints.length > 0) {
-    const proofs = await prisma.errandProofImage.findMany({
-      where: {
-        errandId,
-        kind: { in: ["RECEIPT", "NO_RECEIPT"] },
-        pinpointId: { not: null },
-      },
-      select: { pinpointId: true },
-    });
-    const provenPinpointIds = new Set(proofs.map((p) => p.pinpointId));
-    const uncompletedStores = pinpoints.filter((p) => !provenPinpointIds.has(p.id));
-    if (uncompletedStores.length > 0) {
-      const missingNames = uncompletedStores.map((s) => s.storeName).join(", ");
-      throw new ServiceError(
-        422,
-        `Cannot request half-payment yet. Complete shopping and file receipts for remaining stores first: ${missingNames}.`
-      );
-    }
-  }
-
-  // Items Completion Invariant: Verify that all items on the errand have been checked
-  // (either PURCHASED or OUT_OF_STOCK). No items may remain PENDING.
-  const pendingItems = await prisma.pabiliDetail.findMany({
-    where: { errandId, fulfillmentStatus: "PENDING" },
-    select: { id: true, itemName: true, size: true },
-  });
-
-  if (pendingItems.length > 0) {
-    const itemNames = pendingItems.map((i) => formatItemLabel(i.itemName, i.size)).join(", ");
-    throw new ServiceError(
-      422,
-      `Cannot request half-payment yet. All items must be checked (Purchased or Out of Stock) first: ${itemNames}.`
-    );
-  }
-
-  const goodsTotal = await confirmedReceiptTotal(errandId);
-  if (goodsTotal <= 0) {
-    throw new ServiceError(
-      409,
-      "File the receipts for what you bought first, so the half comes from what you actually paid."
-    );
-  }
-  // Normally already equal. Re-synced through the one existing path in case a
-  // receiptless declaration landed without a confirm to fold it in.
-  if (Math.abs(goodsTotal - errand.estimatedCost) > 0.005) {
-    await errandService.applyReceiptTotal(errandId, riderId, goodsTotal);
-  }
-
-  const firstAsk = errand.halfPaymentRequestedAt == null;
-  const requestedAt = errand.halfPaymentRequestedAt ?? new Date();
-  if (firstAsk) {
-    await errandRepository.update(errandId, { halfPaymentRequestedAt: requestedAt });
-  }
 
   const view = await getPaymentLedger(errandId);
-  const parties = await loadParties(errandId);
-  const amount = view.dueUpFront ?? 0;
-
-  eventPublisher.emitToErrandParties(
-    errandId,
-    { riderId: parties?.riderId, customerId: parties?.customerId },
-    "errand:half_payment_requested",
-    {
-      errandId,
-      customerId: parties?.customerId ?? null,
-      customerName: parties?.customerName ?? null,
-      riderId,
-      riderName: parties?.riderName ?? null,
-      goodsTotal: view.goodsTotal,
-      dueUpFront: amount,
-      requestedAt,
-      repeat: !firstAsk,
-    }
-  );
-  await publishPaymentUpdate(errandId, "half_payment_requested", view);
-
-  if (parties) {
-    const toCustomer = notificationFactory.halfPaymentRequested(amount, view.goodsTotal);
-    await notificationRepository.create({ customerId: parties.customerId, ...toCustomer });
-    void sendPushNotification(parties.customerPushToken, {
-      title: toCustomer.title,
-      body: toCustomer.body,
-      data: { errandId, type: toCustomer.type },
-      urgent: true,
-    });
-
-    if (parties.dispatcherId) {
-      const toStaff = notificationFactory.halfPaymentRequestedStaff(parties.customerName, amount);
-      await notificationRepository.create({ userId: parties.dispatcherId, ...toStaff });
-    }
-  }
-
-  logger.info(
-    `Errand ${errandId}: rider ${riderId} asked for the half-payment, ₱${amount} of ₱${view.goodsTotal}` +
-      (firstAsk ? "." : " (again).")
-  );
-  return { ledger: view, requestedAt, repeat: !firstAsk };
+  eventPublisher.emitToErrand(errandId, "errand:balance_confirmed", view);
+  await publishPaymentUpdate(errandId, "balance_confirmed", view);
+  logger.info(`Errand ${errandId}: ₱${input.amount} paid by transfer at the door, ref ${input.referenceNo}.`);
+  return view;
 }
 
 /**
@@ -579,15 +441,14 @@ export async function recordRefund(
 }
 
 /**
- * The receipt beat what the customer agreed to. Hold the goods.
+ * Whether a receipt above the agreed basket stops the errand. It no longer does.
  *
- * Called from markItemsPurchased and applyReceiptTotal, at the one moment the real total becomes
- * known — which is also, unavoidably, after the rider has already paid for the
- * goods. There is no longer any way to ask the customer first, so the choice is
- * between billing them something they never agreed to and stopping to ask. This
- * stops to ask.
- *
- * Returns whether it escalated, so the caller can decide what to tell whom.
+ * It used to hold the goods on GCash and Bank Transfer errands until the office
+ * arranged the difference, because the customer had paid half up front against
+ * the estimate. With the downpayment retired on 2026-10-08 they run as cash on
+ * delivery does, and cash on delivery never held: the customer pays the real
+ * total at the door. Kept as a function so its two callers read the same answer
+ * they always did, and an overage is still logged for the exception report.
  */
 export async function checkReceiptOverage(
   errandId: string,
@@ -596,61 +457,25 @@ export async function checkReceiptOverage(
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) throw new ServiceError(404, "Errand not found");
 
-  const selection = await paymentSelectionRepository.findByErrandId(errandId);
   const agreedBasket = errand.quotedHandlingBasket;
-
-  // Nothing to exceed. An errand the customer never confirmed a basket for has
-  // no agreement to breach, and a COD errand is settled in full at the door
-  // anyway — the company is not fronting anything it cannot recover.
-  if (!hasPaymentLedger(selection) || agreedBasket == null) {
-    return { escalated: false, overage: 0, agreedBasket };
+  const overage = agreedBasket == null ? 0 : Math.round((receiptTotal - agreedBasket) * 100) / 100;
+  if (overage > OVERAGE_ESCALATION_PESOS) {
+    logger.info(
+      `Errand ${errandId}: receipt ₱${receiptTotal} is ₱${overage} above the agreed ₱${agreedBasket}; paid at the door.`
+    );
   }
-
-  const overage = Math.round((receiptTotal - agreedBasket) * 100) / 100;
-  if (overage <= OVERAGE_ESCALATION_PESOS) {
-    return { escalated: false, overage, agreedBasket };
-  }
-
-  await errandRepository.update(errandId, { overageEscalatedAt: new Date() });
-  eventPublisher.emitToErrand(errandId, "errand:overage_escalated", {
-    errandId,
-    agreedBasket,
-    receiptTotal,
-    overage,
-  });
-  logger.warn(
-    `Errand ${errandId}: receipt ₱${receiptTotal} exceeds agreed basket ₱${agreedBasket} by ₱${overage} — goods held.`
-  );
-
-  return { escalated: true, overage, agreedBasket };
+  return { escalated: false, overage, agreedBasket };
 }
 
 /**
- * Whether the goods may be handed over, and if not, why — in the rider's words.
+ * Whether the goods may be handed over. Always, since 2026-10-08.
  *
- * The rider cannot fix either of these, so both read as a wait rather than a
- * task. A 409 with no explanation at the door is how a rider ends up standing in
- * front of a customer with no idea what to say.
+ * Two holds used to live here: the 50% downpayment not yet confirmed, and a
+ * receipt overage not yet cleared. Both went with the downpayment, so a GCash or
+ * Bank Transfer errand hands over the way a cash on delivery one does, and the
+ * customer pays at the door. An errand held before the change is released too.
  */
 export async function assertGoodsReleasable(errandId: string): Promise<void> {
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) throw new ServiceError(404, "Errand not found");
-
-  if (isOveragePending(errand)) {
-    throw new ServiceError(
-      409,
-      "The receipt came in higher than the customer agreed to. The office is arranging the difference — hold the items until it clears."
-    );
-  }
-
-  const selection = await paymentSelectionRepository.findByErrandId(errandId);
-  if (!hasPaymentLedger(selection)) return;
-
-  const entries = await errandPaymentRepository.findAmountsByErrandId(errandId);
-  if (!entries.some((e) => e.kind === "UPFRONT")) {
-    throw new ServiceError(
-      409,
-      "The customer's payment hasn't been confirmed yet — hold the items until the office confirms it."
-    );
-  }
 }
