@@ -62,10 +62,16 @@ export const listErrandsForUser = asyncHandler<AuthenticatedRequest>(async (req,
     throw new ServiceError(400, "Invalid user ID");
   }
 
-  // IDOR check: customers can only query their own errand history
+  // IDOR check: customers can only query their own errand history.
+  //
+  // An allowlist, not a block on customers only. Riders used to fall through
+  // and could read any customer's orders, phone and home address. The role is
+  // part of the check because customer and staff ids are separate sequences.
   const callerRole = String(req.user?.role || "").toUpperCase();
   const callerId = req.user?.id;
-  if (callerRole === "CUSTOMER" && callerId !== userId) {
+  const isStaff = callerRole === "OWNER" || callerRole === "DISPATCHER";
+  const isSelf = callerRole === "CUSTOMER" && callerId === userId;
+  if (!isStaff && !isSelf) {
     throw new ServiceError(403, "Access denied: You can only view your own errand history.");
   }
 
@@ -79,10 +85,14 @@ export const listErrandsForRider = asyncHandler<AuthenticatedRequest>(async (req
     throw new ServiceError(400, "Invalid rider ID");
   }
 
-  // IDOR check: riders can only query their own assigned errands
+  // IDOR check: riders can only query their own assigned errands. Same
+  // allowlist as listErrandsForUser: customers used to fall through here and
+  // could list any rider's runs.
   const callerRole = String(req.user?.role || "").toUpperCase();
   const callerId = req.user?.id;
-  if (callerRole === "RIDER" && callerId !== riderId) {
+  const isStaff = callerRole === "OWNER" || callerRole === "DISPATCHER";
+  const isSelf = callerRole === "RIDER" && callerId === riderId;
+  if (!isStaff && !isSelf) {
     throw new ServiceError(403, "Access denied: You can only view errands assigned to you.");
   }
 

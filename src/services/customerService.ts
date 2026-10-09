@@ -4,7 +4,7 @@ import { customerPhotoRepository } from "../repositories/customerPhotoRepository
 import { recordCustomerModifications, getCustomerModificationLogs } from "./accountAuditService.js";
 import { ServiceError } from "./ServiceError.js";
 import { assignPushToken } from "./pushTokenOwnership.js";
-import { withFullName, verifyFirebasePhoneToken, normalizePhoneDigits } from "./authService.js";
+import { withFullName, verifyFirebasePhoneToken, normalizePhoneDigits, assertPhoneAvailable } from "./authService.js";
 import { flattenCustomerAccount } from "./patterns/customerFactory.js";
 import { formatItemLabel } from "./patterns/itemLabel.js";
 import type { CustomerProfileUpdateInput } from "../validators/customerValidators.js";
@@ -49,6 +49,9 @@ export async function updateProfile(
     if (!tokenPhone) {
       throw new ServiceError(400, "Invalid or expired phone verification code");
     }
+    // Verified ownership of the SIM does not make the number free: another
+    // account may have verified it first (see assertPhoneAvailable).
+    await assertPhoneAvailable(newPhone, customerId);
     phoneVerified = true;
     phoneVerifiedAt = new Date();
   }

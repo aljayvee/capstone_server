@@ -91,4 +91,48 @@ export const pinpointRepository = {
       }),
     ]);
   },
+
+  // Each stop with the number of receipt photos filed against it. A stop with
+  // any is evidence of money spent there, and replaceForErrand would orphan
+  // those photos (pinpointId SET NULL), so savePinpoints checks this first.
+  findWithProofCounts(errandId: string) {
+    return prisma.errandPinpoint.findMany({
+      where: { errandId },
+      orderBy: { sequence: "asc" },
+      select: {
+        id: true,
+        storeName: true,
+        latitude: true,
+        longitude: true,
+        placeId: true,
+        _count: { select: { proofImages: true } },
+      },
+    });
+  },
+
+  // replaceForErrand for an errand whose stops already carry evidence.
+  // keepIds[i] is the existing row pins[i] continues, or null for a new stop.
+  // Kept rows are updated in place, so their id (and every receipt, arrival
+  // stamp and dwell observation hanging off it) survives; every other existing
+  // row is deleted, the same as the replace-all path. One transaction.
+  replaceForErrandKeeping(errandId: string, pins: PinpointInput[], keepIds: Array<number | null>) {
+    const kept = keepIds.filter((id): id is number => id !== null);
+    return prisma.$transaction([
+      prisma.errandPinpoint.deleteMany({ where: { errandId, id: { notIn: kept } } }),
+      ...pins.map((pin, index) => {
+        const id = keepIds[index];
+        const data = {
+          sequence: index,
+          categoryId: pin.categoryId ?? null,
+          placeId: pin.placeId ?? null,
+          sequenceLocked: pin.sequenceLocked ?? false,
+        };
+        return id !== null && id !== undefined
+          ? prisma.errandPinpoint.update({ where: { id }, data })
+          : prisma.errandPinpoint.create({
+              data: { errandId, storeName: pin.storeName, latitude: pin.latitude, longitude: pin.longitude, ...data },
+            });
+      }),
+    ]);
+  },
 };

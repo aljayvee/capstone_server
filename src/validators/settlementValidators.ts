@@ -14,6 +14,9 @@ export const submitSettlementSchema = z.object({
     .number()
     .nonnegative("collectedAmount must be zero or positive.")
     .optional(),
+  // Optional here on purpose: whether an amount is short depends on the
+  // expected figure, which only the server holds. settlementService refuses a
+  // SHORT settlement without one.
   shortReason: z.string().trim().min(1).max(300).optional(),
 
   // The photo the rider took backing this settlement — cash in hand, or a

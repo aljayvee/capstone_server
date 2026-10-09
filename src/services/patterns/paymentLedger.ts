@@ -35,18 +35,23 @@ export interface LedgerEntry {
 export const OVERAGE_ESCALATION_PESOS = 20;
 
 /**
- * Three states, each one a different thing somebody has to do next:
+ * Four states, each one a different thing somebody has to do next:
  *
  *  - `AWAITING_BALANCE`  — money is owed and the rider collects it at the door.
  *  - `SETTLED`           — nothing owed.
- *  - `REFUNDED`          — cancelled; money goes back.
+ *  - `REFUNDED`          — cancelled after money came in; it goes back.
+ *  - `CANCELLED`         — cancelled before any money came in; nothing to return.
+ *
+ * `CANCELLED` was split out of `REFUNDED` on 2026-10-09. Since pay-at-the-door,
+ * most cancelled GCash / PayMaya / Bank errands never took a peso, and the
+ * customer app was telling them their payment "is being returned".
  *
  * `AWAITING_UPFRONT` (the 50% before delivery) and `OVERAGE_PENDING` (goods held
  * over a receipt above the agreed basket) were retired with the downpayment on
  * 2026-10-08. Neither is ever reported now, so the apps' waits on them never
  * start, including on builds installed before the change.
  */
-export type PaymentPlanState = "AWAITING_BALANCE" | "SETTLED" | "REFUNDED";
+export type PaymentPlanState = "AWAITING_BALANCE" | "SETTLED" | "REFUNDED" | "CANCELLED";
 
 export interface PaymentPlanSummary {
   /**
@@ -118,8 +123,13 @@ export function summarisePaymentPlan(input: {
   // to explain, not a negative amount owing that a rider might try to hand back.
   const balanceDue = round2(Math.max(0, grandTotal - amountPaid));
 
+  // REFUNDED turns on money ever paid IN, not on the net amountPaid. After the
+  // refund row lands, amountPaid is back to 0, and keying on it would tell a
+  // customer who paid and got it back that no payment was ever collected.
   const state: PaymentPlanState = input.cancelled
-    ? "REFUNDED"
+    ? paidIn > 0
+      ? "REFUNDED"
+      : "CANCELLED"
     : balanceDue > 0
       ? "AWAITING_BALANCE"
       : "SETTLED";

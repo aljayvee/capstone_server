@@ -1,165 +1,111 @@
 import { describe, expect, it } from "vitest";
 import {
   summarisePaymentPlan,
-  DOWNPAYMENT_RATE,
   OVERAGE_ESCALATION_PESOS,
   type LedgerEntry,
 } from "../src/services/patterns/paymentLedger.js";
+import { hasPaymentLedger, PAYMENT_MODE_BANK, PAYMENT_MODE_COD, PAYMENT_MODE_GCASH } from "../src/services/patterns/paymentModes.js";
 
 /**
- * The owner's rule: the customer pays half the GOODS through the Facebook Page
- * before a rider is sent, and the rider collects everything else at the door.
+ * The owner's rule since 2026-10-08: GCash / PayMaya and Bank Transfer are paid
+ * the way cash on delivery is, the whole bill at the door. Nothing is owed
+ * before delivery, and no state waits on the office.
  *
  * A worked example carried through most of these cases: ₱1,000 of groceries,
- * ₱70 base + ₱50 handling = ₱120 of fees, no tip. Goods ₱1,000, bill ₱1,120,
- * downpayment ₱500, balance ₱620.
+ * ₱70 base + ₱50 handling = ₱120 of fees, no tip. Bill ₱1,120.
  */
-const GOODS = 1000;
 const GRAND_TOTAL = 1120;
 
-const plan = (entries: LedgerEntry[], opts: { overagePending?: boolean; cancelled?: boolean } = {}) =>
-  summarisePaymentPlan({
-    goodsSubtotal: GOODS,
-    grandTotal: GRAND_TOTAL,
-    entries,
-    overagePending: opts.overagePending ?? false,
-    cancelled: opts.cancelled,
+const plan = (entries: LedgerEntry[], opts: { cancelled?: boolean } = {}) =>
+  summarisePaymentPlan({ grandTotal: GRAND_TOTAL, entries, cancelled: opts.cancelled });
+
+describe("nothing is owed before the door", () => {
+  it("asks for no downpayment", () => {
+    expect(plan([]).dueUpFront).toBe(0);
   });
 
-describe("what the customer pays up front", () => {
-  it("is half the goods, not half the bill", () => {
-    // The fees ride with the balance. Half of ₱1,120 would be ₱560 — this is
-    // ₱500, because the rule is about the purchase, not the invoice.
-    expect(plan([]).dueUpFront).toBe(500);
-    expect(DOWNPAYMENT_RATE).toBe(0.5);
-  });
-
-  it("rounds to centavos", () => {
-    const odd = summarisePaymentPlan({
-        goodsSubtotal: 999.99,
-      grandTotal: 1119.99,
-      entries: [],
-      overagePending: false,
-    });
-
-    expect(odd.dueUpFront).toBe(500);
+  it("owes the whole bill at the door, fees included", () => {
+    expect(plan([])).toMatchObject({ balanceDue: 1120, amountPaid: 0, state: "AWAITING_BALANCE" });
   });
 });
 
-describe("the balance the rider collects", () => {
-  it("is the whole bill before anything is paid", () => {
-    expect(plan([]).balanceDue).toBe(1120);
+describe("the bill paid at the door", () => {
+  it("settles once the transfer the rider photographed is recorded", () => {
+    expect(plan([{ kind: "FINAL", amount: 1120 }])).toMatchObject({ balanceDue: 0, state: "SETTLED" });
   });
 
-  it("drops by the downpayment", () => {
-    const p = plan([{ kind: "UPFRONT", amount: 500 }]);
-
-    expect(p.amountPaid).toBe(500);
-    expect(p.balanceDue).toBe(620);
+  it("still counts a half paid before the change, so it is never asked for twice", () => {
+    expect(plan([{ kind: "UPFRONT", amount: 500 }])).toMatchObject({
+      amountPaid: 500,
+      balanceDue: 620,
+      state: "AWAITING_BALANCE",
+    });
   });
 
-  it("counts a top-up as money in, the same as a downpayment", () => {
-    // Separate KINDS so the ledger can say why each was collected — not so they
-    // are counted apart.
-    const p = plan([
-      { kind: "UPFRONT", amount: 500 },
-      { kind: "TOP_UP", amount: 100 },
-    ]);
-
-    expect(p.amountPaid).toBe(600);
-    expect(p.balanceDue).toBe(520);
+  it("counts a top-up as money in", () => {
+    expect(plan([{ kind: "TOP_UP", amount: 120 }]).balanceDue).toBe(1000);
   });
 
   it("gives a refund back", () => {
-    const p = plan([
-      { kind: "UPFRONT", amount: 500 },
+    expect(plan([
+      { kind: "FINAL", amount: 1120 },
       { kind: "REFUND", amount: 200 },
-    ]);
-
-    expect(p.amountPaid).toBe(300);
-    expect(p.balanceDue).toBe(820);
+    ]).amountPaid).toBe(920);
   });
 
   it("never goes negative", () => {
-    // An over-collection is a settlement variance for the report to explain, not
-    // a negative amount owing that a rider might try to hand back at the door.
-    const p = plan([
-      { kind: "UPFRONT", amount: 500 },
-      { kind: "FINAL", amount: 700 },
-    ]);
+    expect(plan([{ kind: "FINAL", amount: 1500 }]).balanceDue).toBe(0);
+  });
 
-    expect(p.amountPaid).toBe(1200);
-    expect(p.balanceDue).toBe(0);
+  it("rounds to centavos", () => {
+    expect(plan([{ kind: "FINAL", amount: 333.333 }]).amountPaid).toBe(333.33);
   });
 });
 
 describe("what has to happen next", () => {
-  it("waits on the downpayment before anything else", () => {
-    expect(plan([]).state).toBe("AWAITING_UPFRONT");
+  it("reads as refunded once cancelled after money came in", () => {
+    expect(plan([{ kind: "FINAL", amount: 1120 }], { cancelled: true }).state).toBe("REFUNDED");
   });
 
-  it("waits on the balance once the downpayment lands", () => {
-    expect(plan([{ kind: "UPFRONT", amount: 500 }]).state).toBe("AWAITING_BALANCE");
+  it("reads as cancelled, not refunded, when nothing was ever paid", () => {
+    expect(plan([], { cancelled: true }).state).toBe("CANCELLED");
   });
 
-  it("settles when nothing is owed", () => {
-    const p = plan([
-      { kind: "UPFRONT", amount: 500 },
-      { kind: "FINAL", amount: 620 },
-    ]);
-
-    expect(p.balanceDue).toBe(0);
-    expect(p.state).toBe("SETTLED");
+  it("stays refunded after the refund row brings the net paid back to zero", () => {
+    const refunded = plan(
+      [
+        { kind: "UPFRONT", amount: 500 },
+        { kind: "REFUND", amount: 500 },
+      ],
+      { cancelled: true }
+    );
+    expect(refunded.amountPaid).toBe(0);
+    expect(refunded.state).toBe("REFUNDED");
   });
 
-  it("holds for an overage whatever the arithmetic says", () => {
-    // The goods are held because the company fronted money the customer never
-    // agreed to — a healthy-looking balance does not release them.
-    const p = plan([{ kind: "UPFRONT", amount: 500 }], { overagePending: true });
-
-    expect(p.state).toBe("OVERAGE_PENDING");
+  it("never reports the retired waits the apps used to stop on", () => {
+    const states = [plan([]), plan([{ kind: "UPFRONT", amount: 500 }]), plan([{ kind: "FINAL", amount: 1120 }])].map(
+      (p) => p.state as string
+    );
+    expect(states).not.toContain("AWAITING_UPFRONT");
+    expect(states).not.toContain("OVERAGE_PENDING");
   });
+});
 
-  it("still reports the downpayment as missing even during an overage", () => {
-    // Ordering matters: an unpaid downpayment is the more basic problem, and
-    // telling a dispatcher to chase a top-up first would be the wrong instruction.
-    const p = plan([], { overagePending: true });
-
-    expect(p.state).toBe("AWAITING_UPFRONT");
-  });
-
-  it("reads as refunded once cancelled, whatever else is true", () => {
-    const p = plan([{ kind: "UPFRONT", amount: 500 }], {
-      overagePending: true,
-      cancelled: true,
-    });
-
-    expect(p.state).toBe("REFUNDED");
+describe("which modes keep a ledger", () => {
+  it("records GCash / PayMaya and Bank Transfer, not cash on delivery", () => {
+    const mode = (name: string) => ({ paymentMode: { name } });
+    expect(hasPaymentLedger(mode(PAYMENT_MODE_GCASH))).toBe(true);
+    expect(hasPaymentLedger(mode(PAYMENT_MODE_BANK))).toBe(true);
+    expect(hasPaymentLedger(mode(PAYMENT_MODE_COD))).toBe(false);
+    expect(hasPaymentLedger(null)).toBe(false);
   });
 });
 
 describe("the overage floor", () => {
   it("matches the exception report's materiality", () => {
-    // One number for "worth a person's attention" across the system. Below it
-    // the company absorbs a few pesos rather than holding a rider at a door over
-    // small change.
+    // Still the line above which an overage is logged for the report, though it
+    // no longer holds the goods.
     expect(OVERAGE_ESCALATION_PESOS).toBe(20);
-  });
-});
-
-describe('every non-COD channel runs one arrangement', () => {
-  // GCash and Bank Transfer are settled identically: half the goods before a
-  // rider is sent, the balance at the door. There is no second arrangement, and
-  // therefore no plan kind to pass in — which is why summarisePaymentPlan takes
-  // the facts and nothing else.
-  it('always takes half the goods, never half the invoice', () => {
-    // Half of ₱1,120 would be ₱560. The rule is about the purchase.
-    expect(plan([]).dueUpFront).toBe(500);
-  });
-
-  it('leaves the fees with the balance the rider collects', () => {
-    const p = plan([{ kind: 'UPFRONT', amount: 500 }]);
-    // ₱1,000 goods + ₱120 fees, ₱500 paid: the ₱620 balance carries every fee.
-    expect(p.balanceDue).toBe(620);
   });
 });

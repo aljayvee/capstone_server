@@ -7,7 +7,9 @@ const {
   createCustomer,
   updateCustomer,
   verifyFirebaseIdTokenMock,
+  findAllByPhone,
 } = vi.hoisted(() => ({
+  findAllByPhone: vi.fn(),
   findByGoogleId: vi.fn(),
   findByEmail: vi.fn(),
   findByUsername: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock("../src/repositories/customerRepository.js", () => ({
     findByGoogleId,
     findByEmail,
     findByUsername,
+    findAllByPhone,
     create: createCustomer,
     update: updateCustomer,
   },
@@ -42,6 +45,7 @@ import {
 describe("Google Authentication Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    findAllByPhone.mockResolvedValue([]);
   });
 
   describe("loginCustomerWithGoogle", () => {

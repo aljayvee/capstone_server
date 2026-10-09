@@ -264,7 +264,19 @@ export async function verifyResetPhone(
   const digits = decoded.phoneNumber.replace(/\D/g, "");
   const cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
 
-  const customer = await customerRepository.findByPhone(cleanPhone);
+  // Only accounts that verified this number, and only when exactly one did.
+  // findByPhone's findFirst used to reset whichever holder MariaDB returned
+  // first, and an account that merely typed the number (or mistyped its own)
+  // could be taken over by whoever owns the SIM (2026-10-09).
+  const holders = await customerRepository.findAllByPhone(cleanPhone, { verifiedOnly: true });
+  if (holders.length > 1) {
+    log("CODE_REJECTED", cleanPhone, ctx);
+    throw new ServiceError(
+      400,
+      "More than one account uses this mobile number. Reset your password by email instead."
+    );
+  }
+  const customer = holders[0];
   if (!customer) {
     log("CODE_REJECTED", cleanPhone, ctx);
     throw new ServiceError(404, "No customer account found with this verified mobile number.");

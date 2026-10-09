@@ -5,6 +5,7 @@ import { errandPaymentRepository } from "../repositories/errandPaymentRepository
 import { riderCollectsCash, hasPaymentLedger } from "./patterns/paymentModes.js";
 import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { ServiceError } from "./ServiceError.js";
+import { syncTransactionStatusQuietly } from "./transactionStatusService.js";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -39,6 +40,13 @@ export async function submitSettlement(
   }
   if (errand.riderId !== riderId) {
     throw new ServiceError(403, "Access denied: you can only settle errands assigned to you.");
+  }
+  // Cash is reconciled after the handover, never before. A settlement filed on
+  // an ASSIGNED or IN_TRANSIT errand locked in an expected amount that later
+  // receipts would still have changed. The rider app PATCHes DELIVERED first
+  // and only then settles (useRiderMission's advance step), so it never trips this.
+  if (errand.status !== "DELIVERED" && errand.status !== "COMPLETED") {
+    throw new ServiceError(409, "This errand can only be settled after it has been delivered.");
   }
 
   const selection = await paymentSelectionRepository.findByErrandId(errandId);
@@ -90,7 +98,14 @@ export async function submitSettlement(
   const variance = round2(collectedAmount - expectedAmount);
   const status = variance === 0 ? "MATCHED" : variance > 0 ? "OVER" : "SHORT";
 
-  return settlementRepository.create({
+  // A shortfall has to say why, or it is not reviewable, only recorded. Checked
+  // here rather than in the validator because only this function knows the
+  // expected amount, so only it knows whether a typed figure is short at all.
+  if (status === "SHORT" && !input.shortReason?.trim()) {
+    throw new ServiceError(400, "A reason is required when the settlement has a cash shortage.");
+  }
+
+  const settlement = await settlementRepository.create({
     errandId,
     riderId,
     expectedAmount,
@@ -102,4 +117,7 @@ export async function submitSettlement(
     shortReason: input.shortReason?.trim() || null,
     proofImageId: input.proofImageId ?? null,
   });
+  // Cash in hand is when a cash-on-delivery transaction is actually paid.
+  syncTransactionStatusQuietly(errandId);
+  return settlement;
 }

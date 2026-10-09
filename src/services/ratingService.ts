@@ -12,8 +12,16 @@ export async function submitRating(errandId: string, customerId: number, input: 
   if (!errand) {
     throw new ServiceError(404, "Errand not found");
   }
+  // customerId is a CustomerAccount id. The route's requireRole(["CUSTOMER"])
+  // is what makes it one: a staff User id can carry the same number.
   if (errand.customerId !== customerId) {
     throw new ServiceError(403, "Access denied: you can only rate your own errand.");
+  }
+  // Only once the goods have arrived. A rating left on an ASSIGNED or CANCELLED
+  // errand could never be corrected, because the duplicate check below then
+  // refuses the real one after delivery.
+  if (errand.status !== "DELIVERED" && errand.status !== "COMPLETED") {
+    throw new ServiceError(400, "Ratings can only be submitted for delivered or completed errands.");
   }
   if (!errand.riderId) {
     throw new ServiceError(400, "This errand has no assigned rider to rate.");

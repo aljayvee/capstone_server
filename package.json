@@ -20,7 +20,8 @@
     "seed:places": "tsx prisma/seedPlaces.ts",
     "seed:sysadmin": "tsx src/scripts/seedSysAdmin.ts",
     "security:unban": "tsx src/scripts/emergencyUnban.ts",
-    "chat-access:backfill": "tsx src/scripts/backfillChatAccess.ts"
+    "chat-access:backfill": "tsx src/scripts/backfillChatAccess.ts",
+    "transactions:backfill-status": "tsx src/scripts/backfillTransactionStatus.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

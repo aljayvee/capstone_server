@@ -107,6 +107,32 @@ export const customerRepository = {
     });
   },
 
+  // Every account holding this number, in any of the four spellings findByPhone
+  // matches. customer_information.phone is not unique, so "the" account for a
+  // number is a question with more than one answer; findByPhone's findFirst
+  // picked whichever row MariaDB returned first. verifiedOnly limits it to
+  // accounts that proved the number by SMS, which is the only claim worth
+  // honouring for a password reset or a duplicate check.
+  findAllByPhone(phone: string, opts: { verifiedOnly?: boolean } = {}) {
+    const digits = phone.replace(/\D/g, "");
+    const clean = digits.length >= 10 ? digits.slice(-10) : digits;
+    if (!clean) return Promise.resolve([]);
+    return prisma.customerAccount.findMany({
+      where: {
+        information: {
+          OR: [
+            { phone: clean },
+            { phone: `+63${clean}` },
+            { phone: `0${clean}` },
+            { phone: `63${clean}` },
+          ],
+          ...(opts.verifiedOnly ? { phoneVerified: true } : {}),
+        },
+      },
+      include: WITH_INFORMATION,
+    });
+  },
+
   // The duplicate check behind registration. Normalised for the same reason the
   // lookup above is: "is this name taken?" must be asked in exactly the canonical
   // form the name would be stored in, or a case variant slips past and creates a

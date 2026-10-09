@@ -111,6 +111,20 @@ export const customerTransactionRepository = {
     });
   },
 
+  // status used to be written once, as PENDING, and never again, so the
+  // Transaction Summary's paymentStatus column said PENDING for every errand
+  // ever placed. paidAt is stamped the first time the row reads PAID and kept
+  // after, so a later re-sync does not move the moment the money arrived.
+  async updateStatusByErrandId(errandId: string, status: string) {
+    await prisma.customerTransaction.updateMany({ where: { errandId }, data: { status } });
+    if (status === "PAID") {
+      await prisma.customerTransaction.updateMany({
+        where: { errandId, paidAt: null },
+        data: { paidAt: new Date() },
+      });
+    }
+  },
+
   findBetween(start: Date, end: Date) {
     return prisma.customerTransaction.findMany({
       where: { createdAt: { gte: start, lt: end } },

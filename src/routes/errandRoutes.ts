@@ -426,11 +426,15 @@ router.post(
 // GET /api/errands/:id/rating - Existing rating for this errand, if any
 router.get("/:id/rating", authenticateToken, readLimiter, getRating);
 
-// POST /api/errands/:id/rating - Customer rates the rider after delivery
-router.post("/:id/rating", authenticateToken, userApiLimiter, submitRating);
+// POST /api/errands/:id/rating - Customer rates the rider after delivery.
+// CUSTOMER only: staff ids and customer ids are separate sequences, so without
+// the role a rider whose User.id equals the customer's id passed the ownership
+// check in ratingService (2026-10-09).
+router.post("/:id/rating", authenticateToken, requireRole(["CUSTOMER"]), userApiLimiter, submitRating);
 
-// POST /api/errands/:id/confirm-order - Customer confirms itemized store-grouped breakdown
-router.post("/:id/confirm-order", authenticateToken, userApiLimiter, confirmOrder);
+// POST /api/errands/:id/confirm-order - Customer confirms itemized store-grouped breakdown.
+// CUSTOMER only, for the same reason as the rating route above.
+router.post("/:id/confirm-order", authenticateToken, requireRole(["CUSTOMER"]), userApiLimiter, confirmOrder);
 
 // POST /api/errands/:id/settle - Rider reconciles cash collected against the
 // expected total (COD errands only — see settlementService.ts's guard)

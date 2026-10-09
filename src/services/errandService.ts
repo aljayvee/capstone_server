@@ -16,6 +16,7 @@ import { GEOFENCE_RADIUS_METERS } from "./geofenceService.js";
 import { decodePolyline, encodePolyline } from "../lib/routing/polyline.js";
 import { rateConfigRepository } from "../repositories/rateConfigRepository.js";
 import { customerTransactionRepository } from "../repositories/customerTransactionRepository.js";
+import { syncTransactionStatusQuietly } from "./transactionStatusService.js";
 import { userRepository } from "../repositories/userRepository.js";
 import { customerRepository } from "../repositories/customerRepository.js";
 import { errandDeclineRepository } from "../repositories/errandDeclineRepository.js";
@@ -1486,6 +1487,11 @@ export async function confirmOrder(errandId: string, customerId: number) {
   if (!errand) {
     throw new ServiceError(404, "Errand not found");
   }
+  // Only the errand's own customer can agree to its price. This was missing, so
+  // any signed-in account could stamp the quote on someone else's order.
+  if (errand.customerId !== customerId) {
+    throw new ServiceError(403, "You cannot confirm an order that does not belong to you.");
+  }
 
   // Stamp what the customer is agreeing to, so nothing can quietly bill them
   // more handling fee than this later.
@@ -1523,6 +1529,24 @@ export async function confirmOrder(errandId: string, customerId: number) {
 }
 
 
+// How far a re-sent pin may sit from the stop it continues. The dispatcher screen
+// sends back the coordinates it loaded, so an unchanged stop matches exactly;
+// this only absorbs float noise, not a pin dragged to another shop.
+const SAME_STOP_METERS = 25;
+
+// Whether an incoming pin is the same stop as an existing one. The catalogue id
+// decides when both have one; otherwise the same name at the same spot.
+function continuesStop(
+  existing: { storeName: string; latitude: number; longitude: number; placeId: string | null },
+  pin: PinpointInput
+): boolean {
+  if (existing.placeId && pin.placeId) return existing.placeId === pin.placeId;
+  return (
+    existing.storeName.trim().toLowerCase() === pin.storeName.trim().toLowerCase() &&
+    haversineDistanceKm(existing, pin) * 1000 <= SAME_STOP_METERS
+  );
+}
+
 // Dispatcher sets/replaces the store pinpoints (waypoints) a rider must follow for
 // this errand. Persisted as structured data (not just an ephemeral chat message) so
 // both the rider's live map and any GIS routing have a single source of truth.
@@ -1541,7 +1565,29 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
     }
   }
 
-  await pinpointRepository.replaceForErrand(errandId, pins);
+  // A stop the rider has already filed a receipt against is kept, not deleted
+  // and recreated. Replace-all used to run unconditionally, so re-pinning
+  // mid-errand set every receipt's pinpointId to NULL and deleted the stop's
+  // dwell observations (2026-10-09). Such a stop must still be in the new list;
+  // a stop with no receipt (a closed store the rider only reached) can go.
+  const existingStops = await pinpointRepository.findWithProofCounts(errandId);
+  const withReceipts = existingStops.filter((stop) => stop._count.proofImages > 0);
+  if (withReceipts.length === 0) {
+    await pinpointRepository.replaceForErrand(errandId, pins);
+  } else {
+    const keepIds: Array<number | null> = pins.map(() => null);
+    for (const stop of withReceipts) {
+      const index = pins.findIndex((pin, i) => keepIds[i] === null && continuesStop(stop, pin));
+      if (index === -1) {
+        throw new ServiceError(
+          409,
+          `${stop.storeName} already has a receipt filed, so it can't be removed or moved. Keep it and change the other stops.`
+        );
+      }
+      keepIds[index] = stop.id;
+    }
+    await pinpointRepository.replaceForErrandKeeping(errandId, pins, keepIds);
+  }
   // New stops join the store directory the pin predictor learns from.
   forgetStorePredictionMemory();
 
@@ -1549,9 +1595,9 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
   // bought at. This is the moment it becomes possible: the customer listed the
   // items at creation, when there were no stops to attach them to.
   //
-  // replaceForErrand deletes and recreates the stops, so the old pinpointIds are
-  // already gone (SET NULL on the FK) — this re-derives the mapping rather than
-  // trying to preserve one that no longer refers to anything.
+  // Stops without a receipt are deleted and recreated, so their old pinpointIds
+  // are already gone (SET NULL on the FK) — this re-derives the mapping rather
+  // than trying to preserve one that no longer refers to anything.
   const attached = await pabiliItemRepository.attachToPinpoints(errandId);
   if (attached > 0) {
     logger.info(`Errand ${errandId}: filed ${attached} item(s) under their store stops.`);
@@ -2085,6 +2131,9 @@ export async function updateStatus(
       logger.error(`Could not record commission for errand ${errandId}:`, error);
     });
   }
+  // The transaction row's status follows the errand's (delivered, completed,
+  // cancelled). Same fire-and-forget rule as the commission above.
+  syncTransactionStatusQuietly(errandId);
 
   const errandWithNames = attachErrandNames(updatedErrand);
   publishToErrand("order:updated", errandWithNames);
@@ -2124,6 +2173,7 @@ export async function declineErrandReview(
   await errandDeclineRepository.create({ errandId, dispatcherId, reason: trimmed, isCustom });
 
   const updated = await errandRepository.update(errandId, { status: "CANCELLED" });
+  syncTransactionStatusQuietly(errandId);
   const errandWithNames = attachErrandNames(updated);
   publishToErrand("order:updated", errandWithNames);
   publishToErrand("errand:declined", errandWithNames, { errandId, reason: trimmed, customerId: errand.customerId });

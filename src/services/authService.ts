@@ -342,6 +342,26 @@ export function normalizePhoneDigits(phone: string): string {
   return digits;
 }
 
+/**
+ * Refuses a mobile number another account has already verified.
+ *
+ * customer_information.phone is not unique, and SMS password reset resolves an
+ * account FROM the number, so two holders made that reset pick one of them
+ * arbitrarily (2026-10-09). Only a VERIFIED holder blocks: an unverified number
+ * is an unproven claim, and letting it block would let anyone pre-register
+ * someone else's number and lock its owner out.
+ *
+ * 400, not 409: the customer app reads a 409 as "that changed, refresh" and
+ * shows this sentence only for a 400.
+ */
+export async function assertPhoneAvailable(phone: string | null | undefined, exceptCustomerId?: number) {
+  if (!phone || !normalizePhoneDigits(phone)) return;
+  const holders = await customerRepository.findAllByPhone(phone, { verifiedOnly: true });
+  if (holders.some((holder) => holder.id !== exceptCustomerId)) {
+    throw new ServiceError(400, "This mobile number is already registered to another account.");
+  }
+}
+
 export async function verifyFirebasePhoneToken(
   idToken: string,
   expectedPhone?: string
@@ -475,6 +495,10 @@ export async function registerCustomerWithGoogle(input: GoogleRegisterInput): Pr
     existing = await customerRepository.findByEmail(decoded.email);
   }
 
+  // Both branches below write this number as verified, so neither may take one
+  // another account already holds. The account being linked keeps its own.
+  await assertPhoneAvailable(input.phone, existing?.id);
+
   if (existing) {
     const updated = await customerRepository.update(existing.id, {
       googleId: decoded.uid,
@@ -599,6 +623,9 @@ export async function registerCustomer(input: RegisterInput): Promise<AuthResult
       phoneVerifiedAt = consumed.consumedAt;
     }
   }
+
+  // After the Firebase step, which may be what supplied effectivePhone.
+  await assertPhoneAvailable(effectivePhone);
 
   const createData = await buildCustomerAccountCreateData({
     username: cleanUsername,

@@ -16,6 +16,7 @@ import { sendPushNotification } from "../lib/pushNotifications.js";
 import { notificationRepository } from "../repositories/notificationRepository.js";
 import { notificationFactory } from "./patterns/notificationFactory.js";
 import * as errandService from "./errandService.js";
+import { syncTransactionStatusQuietly } from "./transactionStatusService.js";
 
 /**
  * The money on any errand the customer does not pay in cash.
@@ -155,6 +156,9 @@ export async function publishPaymentUpdate(
   ledger?: PaymentLedgerView
 ): Promise<PaymentLedgerView> {
   const view = ledger ?? (await getPaymentLedger(errandId));
+  // Every ledger row (FINAL, TOP_UP, REFUND) passes through here, which makes
+  // it the one place the transaction row learns that money moved.
+  syncTransactionStatusQuietly(errandId);
   const parties = await loadParties(errandId);
   eventPublisher.emitToErrandParties(
     errandId,

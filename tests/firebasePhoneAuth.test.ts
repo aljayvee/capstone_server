@@ -7,7 +7,9 @@ const {
   updateCustomer,
   findLatestConsumedForPhone,
   verifyFirebaseIdTokenMock,
+  findAllByPhone,
 } = vi.hoisted(() => ({
+  findAllByPhone: vi.fn(),
   findByUsernameOrEmail: vi.fn(),
   createCustomer: vi.fn(),
   findByIdCustomer: vi.fn(),
@@ -19,6 +21,7 @@ const {
 vi.mock("../src/repositories/customerRepository.js", () => ({
   customerRepository: {
     findByUsernameOrEmail,
+    findAllByPhone,
     create: createCustomer,
     findById: findByIdCustomer,
     update: updateCustomer,
@@ -62,6 +65,7 @@ describe("Firebase Phone Auth & Verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     findByUsernameOrEmail.mockResolvedValue(null);
+    findAllByPhone.mockResolvedValue([]);
   });
 
   describe("normalizePhoneDigits", () => {
@@ -309,6 +313,38 @@ describe("Firebase Phone Auth & Verification", () => {
       );
       expect(res.phone).toBe("09129876543");
       expect(res.phoneVerified).toBe(true);
+    });
+
+    it("refuses a number another account has already verified", async () => {
+      findByIdCustomer.mockResolvedValue(mockExistingCustomer);
+      verifyFirebaseIdTokenMock.mockResolvedValue({ uid: "valid-fb-uid", phoneNumber: "+639129876543" });
+      findAllByPhone.mockResolvedValue([{ id: 77 }]);
+
+      await expect(
+        updateProfile(50, { phone: "09129876543", firebaseIdToken: "valid-token-for-new-number" })
+      ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("already registered") });
+      expect(findAllByPhone).toHaveBeenCalledWith("09129876543", { verifiedOnly: true });
+      expect(updateCustomer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("one verified account per mobile number", () => {
+    it("refuses registration with a number another account has verified", async () => {
+      verifyFirebaseIdTokenMock.mockResolvedValue({ uid: "fb-uid-456", phoneNumber: "+639171234567" });
+      findAllByPhone.mockResolvedValue([{ id: 9 }]);
+
+      await expect(
+        registerCustomer({
+          username: "second",
+          password: "password123",
+          email: "second@example.com",
+          firstName: "Maria",
+          lastName: "Santos",
+          phone: "09171234567",
+          firebaseIdToken: "valid-firebase-token",
+        })
+      ).rejects.toMatchObject({ status: 400 });
+      expect(createCustomer).not.toHaveBeenCalled();
     });
   });
 });
