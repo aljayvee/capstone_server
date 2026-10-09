@@ -148,9 +148,50 @@ describe("what the rider is told to buy at each stop", () => {
     expect(assignItemsToStops(items, STOPS)).toEqual([{ id: 1, pinpointId: 102 }]);
   });
 
-  it("matches a renamed store by its position in the run", () => {
-    const items = [{ id: 1, storeCategory: "Store 2 - some older name | Supermarket & Grocery" }];
-    expect(assignItemsToStops(items, STOPS)).toEqual([{ id: 1, pinpointId: 102 }]);
+  it("does not send an item to whatever now stands at its old store number", () => {
+    // A pin cannot be renamed, so another name at position 2 is another shop.
+    // With the fast-food tag it falls back to the fast-food stop; it is never
+    // filed at Primark just for having been "Store 2" once (2026-10-10).
+    const items = [{ id: 1, storeCategory: "Store 2 - Kimsan Plaza | Fast Food & Restaurant" }];
+    expect(assignItemsToStops(items, STOPS)).toEqual([{ id: 1, pinpointId: 101 }]);
+  });
+
+  it("follows a store by name when re-pinning changes its number", () => {
+    // Re-pinned: Primark is store 1 now, a new shop is store 2.
+    const repinned = [
+      { id: 102, sequence: 1, storeName: "Primark Save More", categoryName: "Supermarket & Grocery" },
+      { id: 103, sequence: 2, storeName: "Rojon pharmacy", categoryName: "Pharmacy" },
+    ];
+    const items = [{ id: 1, storeCategory: "Store 2 - Primark Save More | Supermarket & Grocery" }];
+    expect(assignItemsToStops(items, repinned)).toEqual([{ id: 1, pinpointId: 102 }]);
+  });
+
+  it("reproduces SGO-2B37D6: items filed at a store that was removed are not moved onto its replacement", () => {
+    // Pinned again as Rojon pharmacy, 7 Eleven, Jollibee in place of Kimsan
+    // Plaza. The ballpens used to land at Rojon pharmacy, the new store 1.
+    const now = [
+      { id: 201, sequence: 1, storeName: "Rojon pharmacy", categoryName: "Pharmacy" },
+      { id: 202, sequence: 2, storeName: "7 Eleven", categoryName: "Convenience Store" },
+      { id: 203, sequence: 3, storeName: "Jollibee", categoryName: "Fast Food & Restaurant" },
+    ];
+    const items = [
+      { id: 1, storeCategory: "Store 1 - Kimsan Plaza | Retail & General Merchandise" },
+      { id: 2, storeCategory: "Store 2 - Rojon pharmacy | Pharmacy" },
+      { id: 3, storeCategory: "Store 2 - 7 Eleven | Convenience Store" },
+      { id: 4, storeCategory: "Store 3 - Jollibee | Fast Food & Restaurant" },
+    ];
+    expect(assignItemsToStops(items, now)).toEqual([
+      { id: 2, pinpointId: 201 },
+      { id: 3, pinpointId: 202 },
+      { id: 4, pinpointId: 203 },
+    ]);
+  });
+
+  it("matches a name the editor had to clean for its label", () => {
+    const stops = [{ id: 301, sequence: 1, storeName: "St. Joseph Drug", categoryName: "Pharmacy" }];
+    expect(assignItemsToStops([{ id: 1, storeCategory: "Store 1 - St Joseph Drug | Pharmacy" }], stops)).toEqual([
+      { id: 1, pinpointId: 301 },
+    ]);
   });
 
   it("leaves an item unattached rather than guessing a stop for it", () => {

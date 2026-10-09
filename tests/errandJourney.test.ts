@@ -177,10 +177,17 @@ describe("what a dispatcher may change, and what it may cost the customer", () =
     ).toEqual([{ id: 1, pinpointId: 102 }]);
   });
 
-  it("still finds the stop after the store has been renamed", () => {
+  it("files a store that is no longer pinned by its category, not by its old number", () => {
+    // A pin cannot be renamed: another name at "Store 2" is another shop. The
+    // category half still places this one, at the grocery.
     expect(
       assignItemsToStops([{ id: 1, storeCategory: "Store 2 - whatever it used to be | Supermarket & Grocery" }], STOPS)
     ).toEqual([{ id: 1, pinpointId: 102 }]);
+    // Tagged for a kind no pinned stop is, it waits unattached instead of
+    // being bought at whatever is store 2 now (2026-10-10).
+    expect(
+      assignItemsToStops([{ id: 1, storeCategory: "Store 2 - whatever it used to be | Pharmacy" }], STOPS)
+    ).toEqual([]);
   });
 
   it("leaves an item unfiled rather than guessing when the store number is stale", () => {

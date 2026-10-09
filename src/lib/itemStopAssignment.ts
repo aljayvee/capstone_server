@@ -67,9 +67,8 @@ export function parseStoreCategory(raw: string | null): {
 }
 
 /**
- * "Store 2 - Primark Save More" -> 2. The dispatcher's editor numbers stores by
- * their position in the visit order, so this is the most reliable signal it
- * gives us: it survives the store being renamed.
+ * "Store 2 - Primark Save More" -> 2: where the store stood in the visit order
+ * when the item was filed. Only a tie-break now (matchByStoreLabel).
  */
 function storeOrdinalFrom(label: string): number | null {
   const match = /^store\s*(\d+)\b/i.exec(label.trim());
@@ -79,30 +78,39 @@ function storeOrdinalFrom(label: string): number | null {
   return Number.isInteger(ordinal) && ordinal > 0 ? ordinal : null;
 }
 
+/**
+ * A store name as the dispatcher's editor writes it into a label: its `clean`
+ * swaps . # $ / [ ] for spaces (they are not allowed in Realtime Database
+ * keys). Applied to both sides, so "St. Joseph Drug" matches its label.
+ */
+const storeKey = (value: string | null | undefined): string =>
+  (value ?? "").replace(/[.#$/[\]]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * The stop a "Store N - Name" label means.
+ *
+ * The name decides; the number only picks between two pins with the same name
+ * (two branches of one chain). The number used to decide, on the theory that
+ * it survives a rename, but a pin cannot be renamed: another name at that
+ * position is another shop, pinned after the item was filed. Re-pinning
+ * Rojon pharmacy, 7 Eleven and Jollibee in place of Kimsan Plaza sent the
+ * items filed at "Store 1 - Kimsan Plaza" to Rojon pharmacy (2026-10-10).
+ * A named store that is no longer pinned matches nothing here, and the item
+ * falls back to its category half or stays unattached. A bare "Store 2" has
+ * only its number, and keeps it.
+ *
+ * Mirrors the portal's resolveStoreIndex (useOrderItems.ts) exactly, so the
+ * dispatcher's list and the rider's agree on where an item is bought.
+ */
 function matchByStoreLabel(label: string, stops: AssignableStop[]): AssignableStop | null {
   const ordinal = storeOrdinalFrom(label);
-  if (ordinal !== null) {
-    const bySequence = stops.find((s) => s.sequence === ordinal);
-    if (bySequence) return bySequence;
-  }
+  const name = storeKey(label.replace(/^store\s*\d+\s*(?:[-:]\s*)?/i, ""));
 
-  const wanted = normalise(label);
-  if (!wanted) return null;
+  if (!name) return ordinal !== null ? stops.find((s) => s.sequence === ordinal) ?? null : null;
 
-  const exact = stops.find((s) => normalise(s.storeName) === wanted);
-  if (exact) return exact;
-
-  // The label carries the store name inside it ("Store 2 - Primark Save More"),
-  // so fall back to containment before giving up. Longest name first, so
-  // "Save More Primark" is preferred over a shop merely called "Save".
-  const byName = [...stops]
-    .sort((a, b) => b.storeName.length - a.storeName.length)
-    .find((s) => {
-      const name = normalise(s.storeName);
-      return name.length > 0 && wanted.includes(name);
-    });
-
-  return byName ?? null;
+  const sameName = stops.filter((s) => storeKey(s.storeName) === name);
+  if (sameName.length === 0) return null;
+  return sameName.find((s) => s.sequence === ordinal) ?? sameName[0];
 }
 
 function matchByCategory(categoryName: string, stops: AssignableStop[]): AssignableStop | null {
