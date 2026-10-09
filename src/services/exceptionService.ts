@@ -229,6 +229,39 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
     }
   }
 
+  // ── cancelled after the goods were bought ────────────────────────────────
+  //
+  // The rider spent the company's money, then the errand was cancelled: goods
+  // in hand, nobody billed. No settlement can be filed for a cancelled errand
+  // (settlementService settles deliveries only, and its expected-cash formula
+  // would book the whole bill as the rider's shortfall), so nothing else in the
+  // system notices. What happens to the goods is a person's call.
+  //
+  // The amount is what the receipts say was spent. With none on file it falls
+  // back to the basket, which markItemsPurchased sets from the receipts anyway.
+  if (errand.status === "CANCELLED") {
+    const purchases = errand.proofImages.filter(
+      (p) => !p.supersededAt && (p.kind === "RECEIPT" || p.kind === "NO_RECEIPT")
+    );
+    if (errand.itemsPurchasedAt || purchases.length > 0) {
+      const spent = purchases.reduce((sum, p) => sum + (p.extraction?.confirmedTotal ?? p.declaredTotal ?? 0), 0);
+      const atRisk = spent > 0 ? spent : errand.estimatedCost;
+      const lastPurchase = purchases.reduce<Date | null>(
+        (latest, p) => (!latest || p.capturedAt > latest ? p.capturedAt : latest),
+        null
+      );
+      const receipts = purchases.length === 1 ? "1 receipt" : `${purchases.length} receipts`;
+      push(
+        "CANCELLED_AFTER_PURCHASE",
+        atRisk,
+        `Cancelled after the rider bought ₱${round2(atRisk)} of goods` +
+          (purchases.length > 0 ? ` (${receipts} on file)` : "") +
+          `. Nobody has been billed for them.`,
+        errand.itemsPurchasedAt ?? lastPurchase ?? errand.createdAt
+      );
+    }
+  }
+
   // ── far longer inside a shop than that kind of shop takes ────────────────
   for (const dwell of errand.dwellObservations) {
     if (!dwell.stalled) continue;

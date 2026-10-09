@@ -17,11 +17,25 @@ function parseRiderId(raw: string): number {
   return riderId;
 }
 
-/** A RIDER may only reach their own record. OWNER/DISPATCHER may read any. */
-function assertSelfIfRider(req: AuthenticatedRequest, riderId: number) {
+function isStaffCaller(req: AuthenticatedRequest): boolean {
   const callerRole = String(req.user?.role || "").toUpperCase();
-  if (callerRole === "RIDER" && req.user?.id !== riderId) {
-    throw new ServiceError(403, "Access denied: Riders can only view their own profile.");
+  return callerRole === "OWNER" || callerRole === "DISPATCHER";
+}
+
+function isSelfRider(req: AuthenticatedRequest, riderId: number): boolean {
+  return String(req.user?.role || "").toUpperCase() === "RIDER" && req.user?.id === riderId;
+}
+
+/**
+ * OWNER/DISPATCHER may read any staff record; a RIDER only their own.
+ *
+ * An allowlist. This used to refuse only a RIDER reading someone else, so a
+ * CUSTOMER fell through and could read any staff member's name, phone and
+ * email (2026-10-09). The role matters because customer and staff ids collide.
+ */
+function assertStaffOrSelf(req: AuthenticatedRequest, riderId: number) {
+  if (!isStaffCaller(req) && !isSelfRider(req, riderId)) {
+    throw new ServiceError(403, "Access denied: You do not have permission to view this profile.");
   }
 }
 
@@ -46,7 +60,7 @@ export const listAllRiders = asyncHandler(async (req, res) => {
 
 export const getRiderProfile = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const riderId = parseRiderId(req.params.riderId);
-  assertSelfIfRider(req, riderId);
+  assertStaffOrSelf(req, riderId);
 
   const rider = await userService.getRiderProfile(riderId);
   res.status(200).json({ user: rider, rider });
@@ -55,7 +69,13 @@ export const getRiderProfile = asyncHandler<AuthenticatedRequest>(async (req, re
 // GET /api/riders/:riderId/photo - the avatar bytes, as a base64 data URI
 export const getRiderPhoto = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const riderId = parseRiderId(req.params.riderId);
-  assertSelfIfRider(req, riderId);
+  // Looser than the profile on purpose. Both apps show the dispatcher's face in
+  // chat (each app's DispatcherAvatar reads it here), so a dispatcher's or
+  // owner's photo is for any signed-in user. A rider's photo stays with staff
+  // and the rider.
+  if (!isStaffCaller(req) && !isSelfRider(req, riderId) && !(await userService.isStaffMember(riderId))) {
+    throw new ServiceError(403, "Access denied: You do not have permission to view this photo.");
+  }
   const photo = await userService.getRiderPhoto(riderId);
   res.status(200).json(photo);
 });

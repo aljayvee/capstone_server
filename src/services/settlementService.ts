@@ -45,6 +45,11 @@ export async function submitSettlement(
   // an ASSIGNED or IN_TRANSIT errand locked in an expected amount that later
   // receipts would still have changed. The rider app PATCHes DELIVERED first
   // and only then settles (useRiderMission's advance step), so it never trips this.
+  //
+  // A CANCELLED errand stays refused even when the goods were bought: the
+  // expected figure below is the customer's bill, and on an errand nobody will
+  // pay for it would book the whole bill as the rider's shortfall. That case is
+  // raised as CANCELLED_AFTER_PURCHASE in the exception queue instead.
   if (errand.status !== "DELIVERED" && errand.status !== "COMPLETED") {
     throw new ServiceError(409, "This errand can only be settled after it has been delivered.");
   }

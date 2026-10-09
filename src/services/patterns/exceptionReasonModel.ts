@@ -502,6 +502,10 @@ const QUESTION: Record<ExceptionKind, (c: ReasonContext) => string> = {
     `The receipt came to ${peso(c.amountAtRisk)} more than the customer agreed to, and nobody has arranged the difference yet.`,
   UNPAID_BALANCE: (c) =>
     `The errand was delivered on the downpayment plan, but the ${peso(c.amountAtRisk)} balance is not recorded as collected.`,
+  // Never asked in practice: suggestExceptionReason answers kinds outside
+  // EXCEPTION_KIND_ORDER itself, before any model or second opinion runs.
+  CANCELLED_AFTER_PURCHASE: (c) =>
+    `The errand was cancelled after the rider had already bought ${peso(c.amountAtRisk)} of goods.`,
 };
 
 const PLAN: Record<ReasonContext["plan"], string> = {

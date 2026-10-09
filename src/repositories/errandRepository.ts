@@ -61,6 +61,9 @@ const RECONCILIATION_EVIDENCE_SELECT = {
   estimatedCost: true,
   status: true,
   riderId: true,
+  // Set once the rider has bought the goods. With status CANCELLED it is the
+  // company's money spent on an order nobody will pay for (CANCELLED_AFTER_PURCHASE).
+  itemsPurchasedAt: true,
   // The downpayment plan's two failure modes: goods held for an overage
   // nobody has arranged, and a delivery that happened without the balance
   // being collected. Both are money the business fronted and has not got
@@ -234,6 +237,38 @@ export const errandRepository = {
       },
       { isolationLevel: "Serializable" }
     );
+  },
+
+  // An offer turned into a commitment, only if it is still this rider's open
+  // offer at the moment of the write. acceptErrand used to read the status and
+  // then write IN_TRANSIT unconditionally, so a cancellation landing between the
+  // two was overwritten and the errand came back to life (2026-10-09).
+  // Returns the number of rows changed: 1, or 0 when the offer had moved.
+  async acceptOffer(errandId: string, riderId: number, acceptedAt: Date): Promise<number> {
+    const { count } = await prisma.errand.updateMany({
+      where: { id: errandId, riderId, status: "ASSIGNED" },
+      data: { status: "IN_TRANSIT", acceptedAt },
+    });
+    return count;
+  },
+
+  // An open offer handed back (declined, or expired), on the same terms: only
+  // if it is still this rider's unanswered offer. Otherwise a decline or the
+  // expiry job racing an accept would pull an errand the rider had just taken.
+  async releaseOffer(errandId: string, riderId: number): Promise<number> {
+    const { count } = await prisma.errand.updateMany({
+      where: { id: errandId, riderId, status: "ASSIGNED" },
+      data: { riderId: null, status: "PENDING" },
+    });
+    return count;
+  },
+
+  // Offers nobody answered before `cutoff` (see errandService.expireStaleOffers).
+  findOffersAssignedBefore(cutoff: Date) {
+    return prisma.errand.findMany({
+      where: { status: "ASSIGNED", riderId: { not: null }, assignedAt: { lt: cutoff } },
+      select: { id: true, riderId: true, assignedAt: true },
+    });
   },
 
   // How many errands this ONE rider is already carrying, counting only those they

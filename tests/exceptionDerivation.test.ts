@@ -448,3 +448,55 @@ describe("a mode that captures no payment at all", () => {
     expect(kinds(exceptionsFor(cod))).not.toContain("UNPAID_BALANCE");
   });
 });
+
+describe("cancelled after the goods were bought", () => {
+  const receipt = (over: Record<string, any> = {}) => ({
+    id: 1, kind: "RECEIPT", pinpointId: 1, verified: true, declaredTotal: null, supersededAt: null,
+    capturedAt: T("2026-08-25T01:30:00Z"),
+    extraction: { extractedTotal: 176, confirmedTotal: 176 },
+    ...over,
+  });
+
+  it("raises it for the receipts' total, which no settlement can now reconcile", () => {
+    const found = exceptionsFor(
+      errand({ status: "CANCELLED", itemsPurchasedAt: T("2026-08-25T01:40:00Z"), proofImages: [receipt()] })
+    );
+    const raised = found.find((e) => e.kind === "CANCELLED_AFTER_PURCHASE");
+    expect(raised).toMatchObject({ amountAtRisk: 176, occurredAt: T("2026-08-25T01:40:00Z") });
+    expect(raised?.detail).toContain("1 receipt on file");
+  });
+
+  it("raises it from the receipts alone when the purchase was never marked", () => {
+    const found = exceptionsFor(errand({ status: "CANCELLED", itemsPurchasedAt: null, proofImages: [receipt()] }));
+    expect(kinds(found)).toContain("CANCELLED_AFTER_PURCHASE");
+  });
+
+  it("falls back to the basket when the purchase was marked with no receipt on file", () => {
+    const found = exceptionsFor(errand({ status: "CANCELLED", itemsPurchasedAt: T("2026-08-25T01:40:00Z") }));
+    expect(found.find((e) => e.kind === "CANCELLED_AFTER_PURCHASE")?.amountAtRisk).toBe(176);
+  });
+
+  it("ignores a replaced receipt photo", () => {
+    const found = exceptionsFor(
+      errand({
+        status: "CANCELLED",
+        itemsPurchasedAt: T("2026-08-25T01:40:00Z"),
+        proofImages: [receipt(), receipt({ id: 2, supersededAt: T("2026-08-25T01:35:00Z") })],
+      })
+    );
+    expect(found.find((e) => e.kind === "CANCELLED_AFTER_PURCHASE")?.amountAtRisk).toBe(176);
+  });
+
+  it("says nothing about an errand cancelled before anything was bought", () => {
+    expect(kinds(exceptionsFor(errand({ status: "CANCELLED", itemsPurchasedAt: null })))).not.toContain(
+      "CANCELLED_AFTER_PURCHASE"
+    );
+  });
+
+  it("says nothing about a delivered errand, whose goods were paid for", () => {
+    const found = exceptionsFor(
+      errand({ status: "DELIVERED", itemsPurchasedAt: T("2026-08-25T01:40:00Z"), proofImages: [receipt()] })
+    );
+    expect(kinds(found)).not.toContain("CANCELLED_AFTER_PURCHASE");
+  });
+});

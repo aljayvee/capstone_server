@@ -14,6 +14,9 @@ export const EXCEPTION_KINDS = [
   "WRONG_BRANCH",
   "MISSING_RECEIPT",
   "STALLED_STOP",
+  // Has to be clearable, or it would sit in the queue for good once someone
+  // decided what to do with the goods.
+  "CANCELLED_AFTER_PURCHASE",
 ] as const;
 
 export const resolveExceptionSchema = z.object({

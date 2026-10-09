@@ -18,8 +18,10 @@ const router = Router();
 // GET /api/riders - Full fleet roster, all statuses (Dispatcher/Owner monitoring views)
 router.get("/", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, listAllRiders);
 
-// GET /api/riders/online - Fetch active online riders
-router.get("/online", authenticateToken, readLimiter, listOnlineRiders);
+// GET /api/riders/online - Fetch active online riders. Staff only: it is the
+// fleet's names, phones and live load, and any signed-in customer could read it
+// (2026-10-09). Nothing outside the staff tools calls it.
+router.get("/online", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, listOnlineRiders);
 
 // GET /api/riders/profile/:riderId - Strict IDOR-protected rider profile lookup
 router.get("/profile/:riderId", authenticateToken, readLimiter, getRiderProfile);

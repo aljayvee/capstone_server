@@ -223,6 +223,12 @@ export async function getRiderProfile(riderId: number) {
   return { ...withFullName(sanitize(user)), photoUpdatedAt: photo?.updatedAt ?? null };
 }
 
+/** True for an OWNER or DISPATCHER account: the people customers talk to. */
+export async function isStaffMember(userId: number): Promise<boolean> {
+  const user = await userRepository.findById(userId);
+  return user?.role === "OWNER" || user?.role === "DISPATCHER";
+}
+
 export async function getRiderPhoto(riderId: number) {
   const photo = await riderPhotoRepository.findByUserId(riderId);
   if (!photo) {

@@ -526,6 +526,7 @@ const KIND_LABEL: Record<string, string> = {
   WRONG_BRANCH: "Wrong branch",
   MISSING_RECEIPT: "No receipt at a stop",
   STALLED_STOP: "Long stop",
+  CANCELLED_AFTER_PURCHASE: "Cancelled after purchase",
 };
 
 async function exceptionsSpec(request: ReportRequest) {

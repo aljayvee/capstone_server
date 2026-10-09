@@ -2,6 +2,8 @@ import { errandRepository } from "../repositories/errandRepository.js";
 import { ServiceError } from "./ServiceError.js";
 import { exceptionsFor } from "./exceptionService.js";
 import {
+  CONFIDENCE_THRESHOLD,
+  EXCEPTION_KIND_ORDER,
   REASON_CODES,
   adviceRequest,
   isModelCompatible,
@@ -185,6 +187,23 @@ export async function suggestExceptionReason(
   // Refusing is the honest failure; the dispatcher can still write the reason.
   if (!isModelCompatible(EXCEPTION_REASON_MODEL)) {
     throw new ServiceError(503, "Reason suggestions are unavailable until the model is retrained.");
+  }
+
+  // A kind the network was never trained on has no input for it, and every
+  // reason is masked off for it, so asking would return noise. Say nothing,
+  // which is what an unconfident suggestion already means to the dispatcher.
+  if (!EXCEPTION_KIND_ORDER.includes(kind)) {
+    return {
+      confident: false,
+      confidence: 0,
+      threshold: CONFIDENCE_THRESHOLD,
+      reasonCode: null,
+      suggestion: null,
+      modelVersion: EXCEPTION_REASON_MODEL.version,
+      source: "model",
+      localConfidence: 0,
+      secondOpinion: null,
+    };
   }
 
   const errand = await errandRepository.findWithReconciliationEvidenceById(errandId);

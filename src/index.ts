@@ -20,6 +20,7 @@ import { scheduleNightlyBackupJob } from "./jobs/nightlyBackup.js";
 import { scheduleRiderShiftJobs } from "./jobs/riderShiftJobs.js";
 import { scheduleCategoryRetrainingJob } from "./jobs/categoryRetraining.js";
 import { scheduleRiderWatchReconcileJob } from "./jobs/riderWatchReconcile.js";
+import { scheduleOfferExpiryJob } from "./jobs/offerExpiry.js";
 import { threatInterceptor } from "./middleware/threatInterceptor.js";
 import { sysAdminThreatService } from "./services/sysAdminThreatService.js";
 import apiRoutes from "./routes/index.js";
@@ -158,6 +159,7 @@ scheduleNightlyBackupJob();
 scheduleRiderShiftJobs();
 scheduleCategoryRetrainingJob();
 scheduleRiderWatchReconcileJob();
+scheduleOfferExpiryJob();
 
 // Start HTTP Server (which includes Express and Socket.IO)
 httpServer.listen(Number(PORT), "0.0.0.0", () => {

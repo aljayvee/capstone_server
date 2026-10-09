@@ -1443,7 +1443,12 @@ export async function assignRider(
 // Rider declines or times out (45s): un-assigns the rider, updates customer tracking
 // with smooth status ("Finding the best rider for your delivery..."), and silently
 // re-routes to the next nearest eligible rider.
-export async function declineErrand(errandId: string, riderId: number, reason?: string) {
+export async function declineErrand(
+  errandId: string,
+  riderId: number,
+  reason?: string,
+  options: { reassign?: boolean } = {}
+) {
   const errand = await errandRepository.findStatusAndRiderById(errandId);
   if (!errand) {
     throw new ServiceError(404, "Errand not found");
@@ -1455,10 +1460,17 @@ export async function declineErrand(errandId: string, riderId: number, reason?: 
 
   assertValidTransition(errand.status as unknown as ErrandStatusValue, "PENDING");
 
-  const updatedErrand = await errandRepository.update(errandId, {
-    riderId: null,
-    status: "PENDING",
-  });
+  // Conditional, like acceptErrand: only an offer still open and still this
+  // rider's is handed back. A decline (or the expiry job) racing an accept used
+  // to win, and pulled an errand the rider had just taken.
+  const released = await errandRepository.releaseOffer(errandId, riderId);
+  if (released === 0) {
+    throw new ServiceError(409, "This offer is no longer open. It was accepted, cancelled or has already expired.");
+  }
+  const updatedErrand = await errandRepository.findById(errandId);
+  if (!updatedErrand) {
+    throw new ServiceError(404, "Errand not found");
+  }
 
   const errandWithNames = attachErrandNames(updatedErrand);
   publishToErrand("order:updated", errandWithNames);
@@ -1468,18 +1480,64 @@ export async function declineErrand(errandId: string, riderId: number, reason?: 
     statusText: "Finding the best rider for your delivery...",
   });
 
-  // Attempt silent auto-reassignment to next nearest eligible rider
-  try {
-    const reassigned = await assignRider(errandId, undefined, [riderId]);
-    return reassigned;
-  } catch (_reRouteErr) {
-    // Alert dispatcher only if all eligible riders decline or are out of radius
-    publishToErrand("errand:all_riders_declined", errandWithNames, {
-      errandId,
-      reason: reason || "All eligible riders declined or timed out",
-    });
-    return errandWithNames;
+  // Attempt silent auto-reassignment to next nearest eligible rider, unless the
+  // caller wants a person to decide (an expired offer too old to send on).
+  if (options.reassign !== false) {
+    try {
+      const reassigned = await assignRider(errandId, undefined, [riderId]);
+      return reassigned;
+    } catch (_reRouteErr) {
+      // Falls through to the dispatcher alert below.
+    }
   }
+  // Alert dispatcher only if all eligible riders decline or are out of radius
+  publishToErrand("errand:all_riders_declined", errandWithNames, {
+    errandId,
+    reason: reason || "All eligible riders declined or timed out",
+  });
+  return errandWithNames;
+}
+
+/**
+ * How long an offer may go unanswered before the server takes it back.
+ *
+ * The rider app counts 45 seconds from assignedAt (NewTaskCard) and declines on
+ * its own when it is open. This catches the rest: a locked phone, a closed app,
+ * a dead battery. The errand used to stay ASSIGNED to that rider indefinitely,
+ * nobody else could take it, and the customer waited (2026-10-09). The 15
+ * seconds past the app's countdown absorb latency and clock drift, so the app,
+ * not the server, normally has the last word.
+ */
+export const OFFER_EXPIRY_MS = 60_000;
+
+/**
+ * Past this, an expired offer goes back to the dispatcher instead of straight
+ * on to the next rider. An offer that old was made before a server outage or
+ * before this job existed, and the customer may well have given up; sending a
+ * rider out on it should be a person's decision.
+ */
+export const OFFER_REASSIGN_WINDOW_MS = 30 * 60_000;
+
+/** Takes back every offer older than OFFER_EXPIRY_MS. Run by jobs/offerExpiry.ts. */
+export async function expireStaleOffers(now = new Date()): Promise<number> {
+  const stale = await errandRepository.findOffersAssignedBefore(new Date(now.getTime() - OFFER_EXPIRY_MS));
+  let expired = 0;
+  for (const offer of stale) {
+    if (offer.riderId === null) continue;
+    const ageMs = now.getTime() - (offer.assignedAt?.getTime() ?? 0);
+    try {
+      await declineErrand(offer.id, offer.riderId, "Offer expired with no answer from the rider", {
+        reassign: ageMs <= OFFER_REASSIGN_WINDOW_MS,
+      });
+      expired += 1;
+    } catch (error) {
+      // 409: the rider accepted or declined in the same instant. Their answer stands.
+      if (!(error instanceof ServiceError && error.status === 409)) {
+        logger.error(`Could not expire the offer on errand ${offer.id}:`, error);
+      }
+    }
+  }
+  return expired;
 }
 
 export async function confirmOrder(errandId: string, customerId: number) {
@@ -1626,9 +1684,11 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
 // Dispatcher corrects the working copy of the customer's requested items
 // (PabiliDetail) after creation — fixing a typo'd item name, a quantity the
 // customer clarified over chat, or moving an item to the store it is actually
-// sold at. Deliberately does NOT call recalculateFee: storeCount records the
-// customer's own category selection and is unrelated to item edits. The
-// customer's original ask stays untouched in PabiliItemRequest for audit.
+// sold at. Re-prices afterwards (2026-10-09): storeCount is unrelated to item
+// edits, but the handling fee is not, because its gate counts item units
+// (totalItemUnits(pabiliDetails) in priceForStops). The comment here used to
+// say no fee depended on items, and the quote card then showed the old fee.
+// The customer's original ask stays untouched in PabiliItemRequest for audit.
 export async function updateItems(errandId: string, items: PabiliDetailInput[]) {
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) {
@@ -1667,6 +1727,11 @@ export async function updateItems(errandId: string, items: PabiliDetailInput[]) 
   if (filed > 0) {
     logger.info(`Errand ${errandId}: re-filed ${filed} edited item(s) under their store stops.`);
   }
+
+  // Before the re-read below, so the errand returned (and the quote card the
+  // dispatcher builds from it) carries the new fee. A fare the customer has
+  // already agreed to stays as agreed: recalculateFee holds stamped figures.
+  await recalculateFee(errandId);
 
   const updatedErrand = await errandRepository.findById(errandId);
   const errandWithNames = attachErrandNames(updatedErrand!);
@@ -2061,10 +2126,23 @@ export async function acceptErrand(errandId: string, riderId: number, occurredAt
     );
   }
 
-  const updatedErrand = await errandRepository.update(errandId, {
-    status: "IN_TRANSIT",
-    acceptedAt: clampOccurredAt(occurredAt),
-  });
+  // Conditional on the offer still being open, so a cancellation or an expiry
+  // that lands after the read above is not overwritten (see acceptOffer).
+  const accepted = await errandRepository.acceptOffer(errandId, riderId, clampOccurredAt(occurredAt));
+  const updatedErrand = await errandRepository.findById(errandId);
+  if (!updatedErrand) {
+    throw new ServiceError(404, "Errand not found");
+  }
+  if (accepted === 0) {
+    // A retry of an accept that already went through (its response lost on a
+    // weak signal) is still a success: same rider, already IN_TRANSIT. The
+    // original acceptedAt stands. Anything else means the offer moved.
+    const alreadyMine = updatedErrand.riderId === riderId && String(updatedErrand.status) === "IN_TRANSIT";
+    if (!alreadyMine) {
+      throw new ServiceError(409, "This errand is no longer assigned to you. It was cancelled or offered to another rider.");
+    }
+    return attachErrandNames(updatedErrand);
+  }
 
   const errandWithNames = attachErrandNames(updatedErrand);
   publishToErrand("order:updated", errandWithNames);
@@ -2263,6 +2341,9 @@ export async function notifyDispatcherChatMessage(
   const errand = await errandRepository.findById(errandId);
   if (!errand) {
     throw new ServiceError(404, "Errand not found");
+  }
+  if (errand.customerId !== customerId) {
+    throw new ServiceError(403, "You can only send messages about your own errand.");
   }
 
   // 3-second cooldown per errand to avoid spamming dispatchers on rapid messages

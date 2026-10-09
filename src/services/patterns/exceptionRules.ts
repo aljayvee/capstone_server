@@ -30,7 +30,15 @@ export type ExceptionKind =
    */
   | "OVERAGE_PENDING"
   /** Delivered on the downpayment plan without the balance being collected. */
-  | "UNPAID_BALANCE";
+  | "UNPAID_BALANCE"
+  /**
+   * Cancelled after the rider had already bought the goods. The company's money
+   * is spent, nobody is billed, and no settlement can be filed for a cancelled
+   * errand, so until this kind (2026-10-09) nothing anywhere said so.
+   * Deliberately absent from exceptionReasonModel's EXCEPTION_KIND_ORDER: the
+   * trained network has no input for it, so it gets no suggested reason.
+   */
+  | "CANCELLED_AFTER_PURCHASE";
 
 /**
  * Below this, a money exception is noise.
@@ -68,6 +76,7 @@ const MONEY_KINDS: ReadonlySet<ExceptionKind> = new Set<ExceptionKind>([
   // balance carries the delivery fee at minimum.
   "OVERAGE_PENDING",
   "UNPAID_BALANCE",
+  "CANCELLED_AFTER_PURCHASE",
 ]);
 
 export function isMoneyException(kind: ExceptionKind): boolean {

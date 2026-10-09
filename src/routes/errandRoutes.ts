@@ -471,10 +471,13 @@ router.post(
   notifyChatMessage
 );
 
-// POST /api/errands/:id/customer-chat-notify - Customer triggers notification to dispatcher for incoming chat message
+// POST /api/errands/:id/customer-chat-notify - Customer triggers notification to dispatcher for incoming chat message.
+// CUSTOMER only, and only on their own errand (errandService.notifyDispatcherChatMessage):
+// any signed-in account could push arbitrary text to any errand's dispatcher (2026-10-09).
 router.post(
   "/:id/customer-chat-notify",
   authenticateToken,
+  requireRole(["CUSTOMER"]),
   userApiLimiter,
   notifyCustomerChat
 );
