@@ -40,3 +40,15 @@ Training_Data_*/
 
 # Google Places request counts (lib/places/placesBudget.ts), kept on the server
 /var/
+
+# State the running server writes for itself, which exists only on the VPS.
+# Nightly database dumps (jobs/nightlyBackup.ts) hold every customer's
+# personal data; a `git add -A` on the VPS must never be able to publish them.
+/backups/
+/config/app-releases.json
+/config/maintenance.json
+# Release APKs served from public/downloads (appReleaseService.ts), 100+ MB
+# each, over GitHub's file size limit.
+/public/downloads/
+.env.bak
+*.stale_bak
