@@ -1,42 +1,77 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import type { RequestHandler } from "express";
 import { getClientIp } from "../lib/requestContext.js";
 
 const isDev = process.env.NODE_ENV === "development" || !process.env.NODE_ENV;
 
 /**
- * Smart key generator that scopes limits by authenticated user ID when available,
- * falling back to device ID, and then the real client IP (req.ip, resolved through
- * the proxies lib/trustedProxies.ts trusts, so a forged header cannot choose it).
- * This prevents Cloudflare proxy IPs or multiple users on NAT from colliding.
+ * The caller's IP as a rate-limit key: resolved through the proxies that
+ * lib/trustedProxies.ts trusts (so no header can choose it), with IPv6 masked
+ * to a /56 by express-rate-limit's helper (so nobody can step through their
+ * own block of addresses for fresh buckets). The library's default key does
+ * the same, which keeps every IP-keyed limiter on one definition of "an IP".
  */
-const smartKeyGenerator = (req: any): string => {
+export const clientIpKey = (req: any): string => `ip_${ipKeyGenerator(getClientIp(req) || "127.0.0.1")}`;
+
+/**
+ * The signed-in account when there is one, otherwise the IP.
+ *
+ * It used to fall back to the client-sent `x-device-id` before the IP. On a
+ * route nobody has signed in for yet (registration, a public photo, the
+ * traffic report), sending a fresh random id with every request then bought a
+ * fresh bucket every time (2026-10-16). Signed-in routes are unaffected: they
+ * always had an account id to key on.
+ */
+export const smartKeyGenerator = (req: any): string => {
   if (req.user?.id) {
     return `user_${req.user.id}`;
   }
+  return clientIpKey(req);
+};
+
+/**
+ * Sign-in only: per device, so riders and customers who share a mobile
+ * carrier's IP each get their own allowance of typos. On its own this was the
+ * hole (rotate the id, get a new bucket), which is why sign-in also passes
+ * loginIpCeiling below. Falls back to the IP when the client sends no id.
+ */
+export const deviceKeyGenerator = (req: any): string => {
   const deviceId = req.headers?.["x-device-id"];
   if (deviceId && typeof deviceId === "string") {
     return `device_${deviceId.slice(0, 64)}`;
   }
-  const realIp = getClientIp(req);
-  if (realIp) {
-    return `ip_${realIp}`;
-  }
-  // Use express-rate-limit's helper for IPv4/IPv6 normalization if available
-  if (typeof ipKeyGenerator === "function") {
-    return ipKeyGenerator(req);
-  }
-  return req.ip || req.socket?.remoteAddress || "127.0.0.1";
+  return clientIpKey(req);
 };
 
 /**
  * 1. Auth & Login Limiter (Anti-Brute-Force)
  * Protects login endpoints against credential stuffing and dictionary attacks.
  * Only failed attempts count against the limit (skipSuccessfulRequests).
+ *
+ * Two limits, both of which must pass (chosen by the user, 2026-10-16):
+ *   - 10 failures per device (deviceKeyGenerator), so people sharing a carrier
+ *     IP do not spend each other's allowance;
+ *   - 30 failures per IP (loginIpCeiling), so a caller who rotates x-device-id
+ *     to get fresh device buckets still stops at 30.
+ * Mounted as an array; Express runs both in order.
  */
-export const loginLimiter = rateLimit({
+const loginIpCeiling = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 300 : 30,
+  keyGenerator: clientIpKey,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: "Too many failed sign-in attempts from this network. Please try again after 15 minutes.",
+  },
+});
+
+const loginDeviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15-minute sliding window
   max: isDev ? 100 : 10, // 10 failed login attempts in prod
-  keyGenerator: smartKeyGenerator,
+  keyGenerator: deviceKeyGenerator,
   skipSuccessfulRequests: true, // Successful logins never count against the user!
   standardHeaders: true,
   legacyHeaders: false,
@@ -45,6 +80,8 @@ export const loginLimiter = rateLimit({
     error: "Too many failed login attempts. Please try again after 15 minutes.",
   },
 });
+
+export const loginLimiter: RequestHandler[] = [loginIpCeiling, loginDeviceLimiter];
 
 /**
  * 2. General Operational Read Limiter (GET endpoints)
@@ -106,10 +143,10 @@ export const verificationLimiter = rateLimit({
  * leave the endpoint effectively unlimited for precisely the traffic it needs
  * to cap.
  *
- * It does NOT use smartKeyGenerator. That helper falls back to the client-sent
- * `x-device-id` header, which an attacker simply rotates. Password reset is
- * unauthenticated, so IP (express-rate-limit's default key) is the only key
- * here the caller cannot choose for themselves.
+ * It keys on IP (express-rate-limit's default key), the only key here the
+ * caller cannot choose for themselves: password reset is unauthenticated, and
+ * an `x-device-id` header is whatever the caller sends. smartKeyGenerator no
+ * longer falls back to that header either (2026-10-16).
  */
 export const passwordResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
