@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseTransfer } from "../src/lib/ocr/transferParser.js";
 import { validateTransferReceipt } from "../src/services/patterns/transferValidation.js";
 import {
+  hasCorpus,
   loadCorpus,
   ocrTextFor,
   parseSample,
@@ -19,9 +20,12 @@ import {
  */
 
 const DIR = "Training_Data_Gcash";
-const corpus = loadCorpus(DIR);
+// Gitignored (real receipts), so absent in CI: see hasCorpus. The constructed
+// samples further down still run there.
+const HAS_CORPUS = hasCorpus(DIR);
+const corpus = HAS_CORPUS ? loadCorpus(DIR) : [];
 
-describe("the GCash training corpus parses to its ground truth", () => {
+describe.runIf(HAS_CORPUS)("the GCash training corpus parses to its ground truth", () => {
   it.each(corpus.map((s) => [s.screen, s] as const))("%s", (_screen, sample) => {
     const parsed = parseSample(DIR, sample);
 
@@ -51,9 +55,9 @@ describe("the GCash training corpus parses to its ground truth", () => {
 });
 
 describe("a reference and a date sharing one line", () => {
-  const text = ocrTextFor(DIR, corpus[0]);
+  const text = HAS_CORPUS ? ocrTextFor(DIR, corpus[0]) : "";
 
-  it("takes the reference and leaves the timestamp behind", () => {
+  it.runIf(HAS_CORPUS)("takes the reference and leaves the timestamp behind", () => {
     // "Ref No. 3045 023 780733    Sep 14, 2026 9:11 AM" is ONE line. Taking
     // everything after the label and stripping punctuation produced
     // "3045023780733SEP142026911AM" — 27 characters, inside every length bound,
@@ -61,7 +65,7 @@ describe("a reference and a date sharing one line", () => {
     expect(parseTransfer(text).referenceNo).toBe("3045023780733");
   });
 
-  it("still reads the date off that same line", () => {
+  it.runIf(HAS_CORPUS)("still reads the date off that same line", () => {
     // Shearing the date off the reference must not lose it. It is the only
     // date on the receipt, and a receipt with no date is refused outright.
     const d = parseTransfer(text).transactionDate!;
@@ -81,7 +85,7 @@ describe("a reference and a date sharing one line", () => {
   });
 });
 
-describe("the promotional block at the bottom of a GCash receipt", () => {
+describe.runIf(HAS_CORPUS)("the promotional block at the bottom of a GCash receipt", () => {
   it("does not mistake the carbon figure for the amount", () => {
     // "279g (gCO2e)" sits below the total, and the amount fallback is "largest
     // peso figure on the page".

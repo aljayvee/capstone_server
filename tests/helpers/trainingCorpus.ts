@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseTransfer, type ParsedTransfer } from "../../src/lib/ocr/transferParser.js";
 import { parseReceipt, type ParsedReceipt } from "../../src/lib/ocr/receiptParser.js";
 
@@ -41,6 +41,19 @@ export interface TrainingSample {
     totalSent: number | null;
     transactionDate: string;
   };
+}
+
+/**
+ * Whether a corpus folder is on this machine at all.
+ *
+ * The Training_Data_* folders are real receipts (names, phone numbers,
+ * reference numbers) and are gitignored, so a fresh clone and the CI runner
+ * have none of them. Tests that read them skip there instead of failing. Note
+ * vitest still runs the body of a skipped describe, so any read at describe
+ * level has to check this too, not just the describe.
+ */
+export function hasCorpus(dir: string): boolean {
+  return existsSync(`${dir}/manifest.json`);
 }
 
 export function loadCorpus(dir: string): TrainingSample[] {

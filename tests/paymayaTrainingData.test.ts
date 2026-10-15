@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseTransfer } from "../src/lib/ocr/transferParser.js";
 import { validateTransferReceipt } from "../src/services/patterns/transferValidation.js";
 import {
+  hasCorpus,
   loadCorpus,
   parseSample,
   redatedToToday,
@@ -22,13 +23,16 @@ import {
  */
 
 const DIR = "Training_Data_Paymaya";
-const corpus = loadCorpus(DIR);
+// Gitignored (real receipts), so absent in CI: see hasCorpus. Every suite here
+// reads the corpus, so every suite skips without it.
+const HAS_CORPUS = hasCorpus(DIR);
+const corpus = HAS_CORPUS ? loadCorpus(DIR) : [];
 
 function textFor(file: string): string {
-  return readFileSync(`${DIR}/${file}`, "utf8");
+  return HAS_CORPUS ? readFileSync(`${DIR}/${file}`, "utf8") : "";
 }
 
-describe("the Maya training corpus parses to its ground truth", () => {
+describe.runIf(HAS_CORPUS)("the Maya training corpus parses to its ground truth", () => {
   it.each(corpus.map((s) => [s.screen, s] as const))("%s", (_screen, sample) => {
     const parsed = parseSample(DIR, sample);
 
@@ -49,7 +53,7 @@ describe("the Maya training corpus parses to its ground truth", () => {
   });
 });
 
-describe("where a fee can come from at all", () => {
+describe.runIf(HAS_CORPUS)("where a fee can come from at all", () => {
   // Maya to Maya and Maya to the sender's own Savings are free. Only a transfer
   // out to another e-wallet or a bank goes over InstaPay and is charged. A fee
   // appearing anywhere else means the parser has started reading a figure that
@@ -75,7 +79,7 @@ describe("where a fee can come from at all", () => {
   });
 });
 
-describe("one transfer photographed from two different Maya screens", () => {
+describe.runIf(HAS_CORPUS)("one transfer photographed from two different Maya screens", () => {
   // "Sent money to" and "Transferred money" are the same ₱25.00 movement. They
   // disagree on the date format and on the casing and spacing of the reference,
   // and a customer has no idea which screen we want. Both must resolve to the
@@ -99,7 +103,7 @@ describe("one transfer photographed from two different Maya screens", () => {
   });
 });
 
-describe("the InstaPay fee is not money we received", () => {
+describe.runIf(HAS_CORPUS)("the InstaPay fee is not money we received", () => {
   const instapay = textFor("d327fc6d-1d46-4ba8-a5c0-016096a76147.txt");
   const dated = redatedToToday(instapay, "Sep 17, 2026");
 
@@ -151,7 +155,7 @@ describe("the InstaPay fee is not money we received", () => {
   });
 });
 
-describe("a zero fee is treated as a fee of zero, not as no fee", () => {
+describe.runIf(HAS_CORPUS)("a zero fee is treated as a fee of zero, not as no fee", () => {
   it("leaves the amount alone when the receipt prints ₱0.00", () => {
     const parsed = parseTransfer(textFor("f88568c0-1abb-48e9-b03a-8695e1683f0b.txt"));
 

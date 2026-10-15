@@ -13,6 +13,7 @@ const {
   findLatestActiveForCustomer,
   incrementAttempts,
   markConsumed,
+  revokeAllForSubject,
 } = vi.hoisted(() => ({
   findByIdentifier: vi.fn(),
   findById: vi.fn(),
@@ -26,6 +27,7 @@ const {
   findLatestActiveForCustomer: vi.fn(),
   incrementAttempts: vi.fn(),
   markConsumed: vi.fn(),
+  revokeAllForSubject: vi.fn(),
 }));
 
 vi.mock("../src/repositories/customerRepository.js", () => ({
@@ -44,6 +46,10 @@ vi.mock("../src/repositories/emailVerificationRepository.js", () => ({
   emailVerificationRepository: { findLatestActiveForCustomer, incrementAttempts, markConsumed },
 }));
 vi.mock("../src/services/emailVerificationService.js", () => ({ sendPasswordResetCode }));
+// completeReset signs every device out. Unmocked, that is a real updateMany on
+// user_sessions: it fails where there is no database (CI) and, where there is
+// one, revokes the sessions of whichever customer happens to be #42.
+vi.mock("../src/services/sessionService.js", () => ({ revokeAllForSubject }));
 
 import bcrypt from "bcryptjs";
 import * as passwordResetService from "../src/services/passwordResetService.js";
@@ -74,6 +80,7 @@ beforeEach(() => {
   updateCustomer.mockResolvedValue({});
   // No code outstanding unless a test says otherwise.
   findLatestActiveForCustomer.mockResolvedValue(null);
+  revokeAllForSubject.mockResolvedValue(0);
 });
 
 describe("requestReset — enumeration resistance", () => {
@@ -353,6 +360,7 @@ describe("verifyResetCode → completeReset", () => {
     const [id, data] = updateCustomer.mock.calls[0];
     expect(id).toBe(42);
     await expect(bcrypt.compare("brand new pass", data.passwordHash)).resolves.toBe(true);
+    expect(revokeAllForSubject).toHaveBeenCalledWith("CUSTOMER", 42, "PASSWORD_RESET");
     expect(loggedOutcomes()).toContain("COMPLETED");
   });
 

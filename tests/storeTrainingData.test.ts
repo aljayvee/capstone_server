@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseReceipt } from "../src/lib/ocr/receiptParser.js";
 import { existsSync } from "node:fs";
 import {
+  hasCorpus,
   loadStoreCorpus,
   loadExclusions,
   storeTextFor,
@@ -22,9 +23,12 @@ const CORPORA: [string, string][] = [
   ["Jollibee", "Training_Data_Jollibee"],
   ["7-Eleven", "Training_Data_7_Eleven"],
 ];
+// Gitignored (real receipts), so absent in CI: see hasCorpus. The constructed
+// "Total (10) 330.00" lines below still run there.
+const HAS_CORPUS = CORPORA.every(([, dir]) => hasCorpus(dir));
 
-describe.each(CORPORA)("the %s training corpus parses to its ground truth", (_chain, DIR) => {
-  const corpus = loadStoreCorpus(DIR);
+describe.runIf(HAS_CORPUS).each(CORPORA)("the %s training corpus parses to its ground truth", (_chain, DIR) => {
+  const corpus = HAS_CORPUS ? loadStoreCorpus(DIR) : [];
 
   it.each(corpus.map((s) => [s.receipt, s] as const))("%s", (_receipt, sample: StoreSample) => {
     const parsed = parseStoreSample(DIR, sample);
@@ -120,10 +124,12 @@ describe("the item count welded to a 7-Eleven total label", () => {
   });
 });
 
-describe("a 7-Eleven e-load receipt, which is mostly hotline numbers", () => {
+describe.runIf(HAS_CORPUS)("a 7-Eleven e-load receipt, which is mostly hotline numbers", () => {
   const DIR = "Training_Data_7_Eleven";
-  const sample = loadStoreCorpus(DIR).find((s) => s.image.startsWith("711_IMG4"))!;
-  const text = storeTextFor(DIR, sample);
+  const sample = HAS_CORPUS
+    ? loadStoreCorpus(DIR).find((s) => s.image.startsWith("711_IMG4"))
+    : undefined;
+  const text = sample ? storeTextFor(DIR, sample) : "";
 
   it("finds the header date and not an ECPAY hotline", () => {
     // "0919-08-32729", "(02)7613-5951", "0917-72-32729" all sit ABOVE the totals
@@ -138,7 +144,7 @@ describe("a 7-Eleven e-load receipt, which is mostly hotline numbers", () => {
   });
 });
 
-describe("a card receipt that prints CASH 0.00", () => {
+describe.runIf(HAS_CORPUS)("a card receipt that prints CASH 0.00", () => {
   it("distinguishes a printed zero from no cash line at all", () => {
     // 7-Eleven prints "CASH 0.00" on a card sale; Jollibee omits the line
     // entirely. Both are card sales and neither cost nothing, but the parsed
