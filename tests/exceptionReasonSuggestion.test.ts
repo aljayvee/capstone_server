@@ -15,7 +15,7 @@ import {
 import { EXCEPTION_REASON_MODEL } from "../src/services/patterns/exceptionReasonWeights.js";
 
 /**
- * The Conflict Management reason suggestion: the encoder, the 0.75 rule, the
+ * The Conflict Management reason suggestion: the encoder, the 0.65 rule, the
  * shipped model, and the join from an errand row to what the model reads.
  */
 
@@ -98,8 +98,14 @@ function riggedModel(favour: string, bias: number): TrainedReasonModel {
   };
 }
 
-describe("the 0.75 rule", () => {
-  it("suggests nothing below 0.75", () => {
+// Lowered from 0.75 on 2026-09-26 (server AGENT_HANDSHAKE.md, "65% Confidence
+// Threshold"). Pinned here so a change to it is a decision, not a drift.
+describe("the 0.65 rule", () => {
+  it("is 0.65", () => {
+    expect(CONFIDENCE_THRESHOLD).toBe(0.65);
+  });
+
+  it("suggests nothing below 0.65", () => {
     // Five cash reasons, all equal: 0.2 each.
     const s = suggestReason(riggedModel("CASH_NO_EXACT_CHANGE", 0), context({ amountAtRisk: 40, cashDirection: "SHORT" }));
     expect(s.confidence).toBeCloseTo(0.2, 3);
@@ -110,14 +116,22 @@ describe("the 0.75 rule", () => {
   });
 
   it("still says nothing just under the line", () => {
-    // e^b / (e^b + 4) = 0.74
-    const bias = Math.log((0.74 * 4) / 0.26);
+    // e^b / (e^b + 4) = 0.64
+    const bias = Math.log((0.64 * 4) / 0.36);
     const s = suggestReason(riggedModel("CASH_NO_EXACT_CHANGE", bias), context({ amountAtRisk: 40, cashDirection: "SHORT" }));
-    expect(s.confidence).toBeCloseTo(0.74, 3);
+    expect(s.confidence).toBeCloseTo(0.64, 3);
     expect(s.suggestion).toBeNull();
   });
 
-  it("suggests at 0.75 and above, filled with this errand's figures", () => {
+  it("suggests just over the line", () => {
+    const bias = Math.log((0.66 * 4) / 0.34);
+    const s = suggestReason(riggedModel("CASH_NO_EXACT_CHANGE", bias), context({ amountAtRisk: 40, cashDirection: "SHORT" }));
+    expect(s.confidence).toBeCloseTo(0.66, 3);
+    expect(s.confident).toBe(true);
+    expect(s.reasonCode).toBe("CASH_NO_EXACT_CHANGE");
+  });
+
+  it("suggests well above it, filled with this errand's figures", () => {
     const bias = Math.log((0.8 * 4) / 0.2);
     const s = suggestReason(riggedModel("CASH_NO_EXACT_CHANGE", bias), context({ amountAtRisk: 40, cashDirection: "SHORT" }));
     expect(s.confident).toBe(true);

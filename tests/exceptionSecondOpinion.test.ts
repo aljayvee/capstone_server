@@ -16,11 +16,15 @@ vi.mock("../src/repositories/errandRepository.js", () => ({
   errandRepository: { findWithReconciliationEvidenceById: (...args: unknown[]) => mockFindErrand(...args) },
 }));
 
-const { askSecondOpinion, suggestExceptionReason } = await import("../src/services/exceptionReasonService.js");
+const { askSecondOpinion, suggestExceptionReason, toReasonContext } = await import(
+  "../src/services/exceptionReasonService.js"
+);
+const { exceptionsFor } = await import("../src/services/exceptionService.js");
 const {
   CONFIDENCE_THRESHOLD,
   REASONS,
   REASON_CODES,
+  SECOND_OPINION_WEIGHT_LOW_CONFIDENCE,
   SECOND_OPINION_WEIGHT_UNREAD_NOTE,
   adviceRequest,
   maskForKind,
@@ -79,10 +83,16 @@ describe("where the second opinion counts", () => {
     expect(noteUnread(context({ riderNote: "   " }))).toBe(false);
   });
 
-  it("gets the chosen weight there and none anywhere else", () => {
+  // Widened on 2026-09-26 (server AGENT_HANDSHAKE.md, "65% Confidence
+  // Threshold"): any note, or a network under 0.75 on its own, now asks too, at
+  // the lower weight. Only a sure network with no note is left to answer alone.
+  it("weighs an unread note most, any other note or an unsure network less, and nothing else at all", () => {
     expect(secondOpinionWeight(context({ riderNote: "remit ko ugma" }))).toBe(SECOND_OPINION_WEIGHT_UNREAD_NOTE);
-    expect(secondOpinionWeight(context({ riderNote: "wala sukli" }))).toBe(0);
+    expect(secondOpinionWeight(context({ riderNote: "wala sukli" }))).toBe(SECOND_OPINION_WEIGHT_LOW_CONFIDENCE);
+    expect(secondOpinionWeight(context({}), 0.74)).toBe(SECOND_OPINION_WEIGHT_LOW_CONFIDENCE);
+    expect(secondOpinionWeight(context({}), 0.75)).toBe(0);
     expect(secondOpinionWeight(context({}))).toBe(0);
+    expect(SECOND_OPINION_WEIGHT_LOW_CONFIDENCE).toBeLessThan(SECOND_OPINION_WEIGHT_UNREAD_NOTE);
   });
 });
 
@@ -206,11 +216,19 @@ describe("suggesting for a queue row", () => {
     quotedHandlingBasket: null,
   });
 
-  it("does not ask about a note the network already read", async () => {
-    mockFindErrand.mockResolvedValue(errandWithNote("wala sukli si customer"));
+  it("asks about a note the network already read too, at the lower weight", async () => {
+    const row = errandWithNote("wala sukli si customer");
+    mockFindErrand.mockResolvedValue(row);
+    mockAdvise.mockResolvedValue({ available: true, code: "CASH_RIDER_TO_REMIT", confidence: 0.95, model: "gemini-3.8-flash", label: "Gemini 3.8 Flash" });
     const s = await suggestExceptionReason("ERR-9", "CASH_VARIANCE");
-    expect(mockAdvise).not.toHaveBeenCalled();
-    expect(s.source).toBe("model");
+    expect(mockAdvise).toHaveBeenCalledTimes(1);
+    expect(s.source).toBe("model+gemini");
+
+    // Pooled at the lower weight, not the one an unread note earns.
+    const c = toReasonContext(row as any, exceptionsFor(row as any)[0]);
+    const at = (w: number) => suggestReason(EXCEPTION_REASON_MODEL, c, opinion("CASH_RIDER_TO_REMIT"), w).confidence;
+    expect(s.confidence).toBe(at(SECOND_OPINION_WEIGHT_LOW_CONFIDENCE));
+    expect(s.confidence).not.toBe(at(SECOND_OPINION_WEIGHT_UNREAD_NOTE));
   });
 
   it("asks about a note it could not read, and pools the answer", async () => {

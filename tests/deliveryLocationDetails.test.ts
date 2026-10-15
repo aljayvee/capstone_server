@@ -32,7 +32,7 @@ vi.mock("../src/lib/category/categoryServiceClient.js", () => ({
   warmItemCategories: vi.fn(),
 }));
 vi.mock("../src/lib/eventPublisher.js", () => ({
-  eventPublisher: { emit: vi.fn() },
+  eventPublisher: { emit: vi.fn(), emitToErrandParties: vi.fn(), emitToCustomer: vi.fn() },
 }));
 vi.mock("../src/lib/serviceArea.js", () => ({
   isServiceAreaConfigured: () => false,

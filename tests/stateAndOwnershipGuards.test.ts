@@ -66,6 +66,7 @@ beforeEach(() => {
     deliveryFee: 70,
     groceryFee: null,
     estimatedCost: 1430,
+    paymentEnabledAt: new Date("2026-10-15T01:00:00.000Z"),
   });
   findSettlement.mockResolvedValue(null);
   findRating.mockResolvedValue(null);
@@ -80,6 +81,23 @@ describe("confirmOrder", () => {
   it("stamps the quote for the errand's own customer", async () => {
     await confirmOrder("ERR-1", 5);
     expect(errandRepository.update).toHaveBeenCalledWith("ERR-1", { quotedDeliveryFee: 70 });
+  });
+
+  // 2026-10-15: Approve leads straight into choosing how to pay, in a dialog
+  // the customer cannot dismiss, and the choice is refused until payment is open.
+  it("opens the payment choice when the dispatcher's opening never landed", async () => {
+    errand.paymentEnabledAt = null;
+    await confirmOrder("ERR-1", 5);
+    expect(errandRepository.update).toHaveBeenCalledWith("ERR-1", {
+      quotedDeliveryFee: 70,
+      paymentEnabledAt: expect.any(Date),
+    });
+  });
+
+  it("keeps the first opening rather than stamping a new one", async () => {
+    await confirmOrder("ERR-1", 5);
+    const [, data] = vi.mocked(errandRepository.update).mock.calls[0] as [string, object];
+    expect(data).not.toHaveProperty("paymentEnabledAt");
   });
 });
 

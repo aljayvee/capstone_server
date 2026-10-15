@@ -277,6 +277,90 @@ describe("once someone has cleared it", () => {
     expect(cash?.resolvedAt).not.toBeNull();
     expect(unverified?.resolvedAt).toBeNull();
   });
+
+  // A review names an errand and a kind, nothing finer. It covers what the
+  // reviewer could have seen, never what was raised after it.
+  describe("only what existed when it was written", () => {
+    const review = (kind: string, at: string) => ({
+      kind, reason: "Checked with the rider.", amountAtRisk: 0,
+      resolvedAt: T(at), reviewer: { firstName: "Ana", lastName: "Cruz" },
+    });
+    const declared = (id: number, at: string) => ({
+      id, kind: "NO_RECEIPT", pinpointId: null, verified: false, declaredTotal: 70,
+      capturedAt: T(at), extraction: null,
+    });
+
+    it("clears every one of the kind already on the errand", () => {
+      const found = exceptionsFor(errand({
+        proofImages: [declared(1, "2026-09-29T09:00:00Z"), declared(2, "2026-09-29T10:00:00Z")],
+        exceptionReviews: [review("UNVERIFIED_PURCHASE", "2026-09-29T15:00:00Z")],
+      }));
+      expect(found.map((e) => e.resolvedAt)).toEqual([T("2026-09-29T15:00:00Z"), T("2026-09-29T15:00:00Z")]);
+    });
+
+    it("leaves open a purchase declared after the review (errand 726f2cd9)", () => {
+      const found = exceptionsFor(errand({
+        proofImages: [declared(1, "2026-09-29T09:00:00Z"), declared(2, "2026-09-30T21:39:00Z")],
+        exceptionReviews: [review("UNVERIFIED_PURCHASE", "2026-09-29T15:33:00Z")],
+      }));
+      const byTime = (iso: string) => found.find((e) => e.occurredAt.getTime() === T(iso).getTime());
+      expect(byTime("2026-09-29T09:00:00Z")?.resolvedBy).toBe("Ana Cruz");
+      expect(byTime("2026-09-30T21:39:00Z")?.resolvedAt).toBeNull();
+    });
+
+    it("counts a review written in the same instant", () => {
+      const found = exceptionsFor(errand({
+        proofImages: [declared(1, "2026-09-29T09:00:00Z")],
+        exceptionReviews: [review("UNVERIFIED_PURCHASE", "2026-09-29T09:00:00Z")],
+      }));
+      expect(found[0].resolvedAt).not.toBeNull();
+    });
+
+    it("dates a divergence from the rider's confirmation, not the photo", () => {
+      const receipt = (confirmedAt: string) => ({
+        id: 1, kind: "RECEIPT", pinpointId: null, verified: true, declaredTotal: null,
+        capturedAt: T("2026-09-29T09:00:00Z"),
+        extraction: { extractedTotal: 176, confirmedTotal: 900, confirmedAt: T(confirmedAt) },
+      });
+      const reviewed = (confirmedAt: string) =>
+        exceptionsFor(errand({
+          proofImages: [receipt(confirmedAt)],
+          exceptionReviews: [review("RECEIPT_DIVERGENCE", "2026-09-29T12:00:00Z")],
+        }))[0];
+
+      // Photo before the review, the divergent figure confirmed after it.
+      expect(reviewed("2026-09-29T13:00:00Z").resolvedAt).toBeNull();
+      expect(reviewed("2026-09-29T11:00:00Z").resolvedAt).not.toBeNull();
+      // Still shown at the photo's time.
+      expect(reviewed("2026-09-29T13:00:00Z").occurredAt).toEqual(T("2026-09-29T09:00:00Z"));
+    });
+
+    it("dates a long stop from when the server heard of it, not the phone's clock", () => {
+      // The dwell happened before the review but reached the server in an
+      // offline batch afterwards: nobody could have seen it.
+      const found = exceptionsFor(errand({
+        pinpoints: [{ id: 1, storeName: "Save More", mismatchDetectedAt: null, observedPlace: null, items: [] }],
+        dwellObservations: [{
+          pinpointId: 1, dwellSeconds: 3600, stalled: true,
+          departedAt: T("2026-09-29T10:00:00Z"), createdAt: T("2026-09-29T14:00:00Z"),
+        }],
+        exceptionReviews: [review("STALLED_STOP", "2026-09-29T12:00:00Z")],
+      }));
+      expect(found[0].resolvedAt).toBeNull();
+      expect(found[0].occurredAt).toEqual(T("2026-09-29T10:00:00Z"));
+    });
+
+    it("does not let a review of the first overage clear a second escalation", () => {
+      const found = exceptionsFor(errand({
+        status: "IN_TRANSIT",
+        estimatedCost: 1200,
+        quotedHandlingBasket: 1000,
+        overageEscalatedAt: T("2026-09-29T14:00:00Z"),
+        exceptionReviews: [review("OVERAGE_PENDING", "2026-09-29T12:00:00Z")],
+      }));
+      expect(found.find((e) => e.kind === "OVERAGE_PENDING")?.resolvedAt).toBeNull();
+    });
+  });
 });
 
 describe("an errand that went wrong in several ways at once", () => {
