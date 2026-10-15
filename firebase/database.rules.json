@@ -2,38 +2,45 @@
   "rules": {
     ".read": false,
     ".write": false,
-
     "riders": {
       ".read": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')",
-
       "$riderId": {
-        ".read": "auth != null",
+        ".read": "auth != null && (auth.uid === 'rider_' + $riderId || auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER' || root.child('rider_watchers').child($riderId).child(auth.uid).exists())",
         ".write": "auth != null && auth.uid === 'rider_' + $riderId",
-
         "latitude": {
           ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
         },
         "longitude": {
           ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
         },
-        "updatedAt": { ".validate": "newData.isNumber()" },
-        "heading": { ".validate": "newData.isNumber()" },
-        "onDuty": { ".validate": "newData.isBoolean()" },
-        "online": { ".validate": "newData.isBoolean()" },
-        "batteryLevel": { ".validate": "newData.isNumber()" },
-        "activeErrandId": { ".validate": "newData.isString()" },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "heading": {
+          ".validate": "newData.isNumber()"
+        },
+        "onDuty": {
+          ".validate": "newData.isBoolean()"
+        },
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+        "batteryLevel": {
+          ".validate": "newData.isNumber()"
+        },
+        "activeErrandId": {
+          ".validate": "newData.isString()"
+        },
         "status": {
           ".validate": "newData.isString() && newData.val().matches(/^(AVAILABLE|BUSY|DISCONNECTED|OFF_DUTY)$/)"
         }
       }
     },
-
     "locations": {
       "customers": {
         "$customerId": {
           ".read": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER' || auth.uid === 'customer_' + $customerId)",
           ".write": "auth != null && auth.uid === 'customer_' + $customerId",
-
           "latitude": {
             ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
           },
@@ -43,52 +50,98 @@
         }
       }
     },
-
     "chats": {
       "$errandId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
-
+        ".read": "auth != null && (auth.token.role === 'OWNER' || root.child('chat_access').child($errandId).child('customer').val() === auth.uid || root.child('chat_access').child($errandId).child('dispatcher').val() === auth.uid)",
+        ".write": "auth != null && (auth.token.role === 'OWNER' || root.child('chat_access').child($errandId).child('customer').val() === auth.uid || root.child('chat_access').child($errandId).child('dispatcher').val() === auth.uid)",
         "presence": {
-          "customer": { ".write": "auth != null && auth.token.role === 'CUSTOMER'" },
+          "customer": {
+            ".write": "auth != null && root.child('chat_access').child($errandId).child('customer').val() === auth.uid"
+          },
           "dispatcher": {
-            ".write": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')"
+            ".write": "auth != null && (auth.token.role === 'OWNER' || root.child('chat_access').child($errandId).child('dispatcher').val() === auth.uid)"
           }
         },
-
         "typing": {
-          "customer": { ".write": "auth != null && auth.token.role === 'CUSTOMER'" },
+          "customer": {
+            ".write": "auth != null && root.child('chat_access').child($errandId).child('customer').val() === auth.uid"
+          },
           "dispatcher": {
-            ".write": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')"
+            ".write": "auth != null && (auth.token.role === 'OWNER' || root.child('chat_access').child($errandId).child('dispatcher').val() === auth.uid)"
           }
         },
-
         "messages": {
           "$messageId": {
             ".validate": "newData.hasChildren(['timestamp'])",
-            "timestamp": { ".validate": "newData.isNumber()" },
-            "senderId": { ".validate": "newData.isString()" }
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "senderId": {
+              ".validate": "newData.isString()"
+            }
           }
         }
       }
     },
-
     "rider_chats": {
-      "$errandId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
-
+      "$riderId": {
+        ".read": "auth != null && (auth.uid === 'rider_' + $riderId || auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')",
+        ".write": "auth != null && (auth.uid === 'rider_' + $riderId || auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')",
         "dispatcherMeta": {
           ".write": "auth != null && (auth.token.role === 'OWNER' || auth.token.role === 'DISPATCHER')"
         },
-
         "messages": {
           "$messageId": {
             ".validate": "newData.hasChildren(['timestamp'])",
-            "timestamp": { ".validate": "newData.isNumber()" },
-            "senderId": { ".validate": "newData.isString()" }
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "senderId": {
+              ".validate": "newData.isString()"
+            }
           }
         }
+      }
+    },
+    "rider_threads": {
+      "$riderId": {
+        ".read": "auth != null && (auth.uid === 'rider_' + $riderId || auth.token.role === 'OWNER')",
+        "$staffUid": {
+          ".read": "auth != null && $staffUid.beginsWith('staff_') && (auth.uid === 'rider_' + $riderId || auth.uid === $staffUid)",
+          ".write": "auth != null && $staffUid.beginsWith('staff_') && (auth.uid === 'rider_' + $riderId || auth.uid === $staffUid)",
+          "messages": {
+            "$messageId": {
+              ".validate": "newData.hasChildren(['timestamp'])",
+              "timestamp": {
+                ".validate": "newData.isNumber()"
+              },
+              "senderId": {
+                ".validate": "newData.isString()"
+              }
+            }
+          }
+        }
+      }
+    },
+    "rider_inbox": {
+      "$riderId": {
+        ".read": "auth != null && (auth.uid === 'rider_' + $riderId || auth.token.role === 'OWNER')",
+        "$staffUid": {
+          ".write": "auth != null && $staffUid.beginsWith('staff_') && (auth.uid === 'rider_' + $riderId || auth.uid === $staffUid)"
+        }
+      }
+    },
+    "dispatcher_inbox": {
+      "$staffUid": {
+        ".read": "auth != null && (auth.uid === $staffUid || auth.token.role === 'OWNER')",
+        "$riderId": {
+          ".write": "auth != null && $staffUid.beginsWith('staff_') && (auth.uid === 'rider_' + $riderId || auth.uid === $staffUid)"
+        }
+      }
+    },
+    "config": {
+      "riderChatMode": {
+        ".read": "auth != null"
       }
     }
   }

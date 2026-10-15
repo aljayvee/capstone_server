@@ -9,6 +9,7 @@ vi.mock("../src/lib/prisma.js", () => ({ prisma: {} }));
 vi.mock("../src/middleware/rateLimiters.js", () => ({
   readLimiter: function readLimiterStub(_req: unknown, _res: unknown, next: () => void) { next(); },
   userApiLimiter: function userApiLimiterStub(_req: unknown, _res: unknown, next: () => void) { next(); },
+  establishmentSearchLimiter: function establishmentSearchLimiterStub(_req: unknown, _res: unknown, next: () => void) { next(); },
 }));
 
 import placeRoutes from "../src/routes/placeRoutes.js";
@@ -42,6 +43,16 @@ const WRITES: [string, string][] = [
   // Not a write, but staff-only in the same way: role-guarded, so it carries
   // the same one extra handler.
   ["post", "/location-check"],
+  // The customer's store search: role-guarded (customers and staff), with its
+  // own limiter because every call is a billed Google request.
+  ["get", "/establishments"],
+  // The owner's search of Google Maps for stores to register, and its photo writes (2026-10-13).
+  ["get", "/google"],
+  ["get", "/google/:googlePlaceId"],
+  ["get", "/duplicates"],
+  ["put", "/:id/photo"],
+  ["post", "/restore"],
+  ["delete", "/:id/photo"],
 ];
 
 // Index of a path in the router's declaration order.
@@ -74,16 +85,22 @@ describe("place routes authorization", () => {
   // failure looks like a routing-order bug from the client side — it presents as
   // "the catalogue has no place with id 'reverse'" — so the ordering is pinned
   // here rather than left to a comment.
-  it.each([["categories"], ["reverse"]])("declares /%s before the /:id catch-all", (literal) => {
+  it.each([["categories"], ["reverse"], ["establishments"], ["establishments/popular"], ["google"], ["duplicates"]])("declares /%s before the /:id catch-all", (literal) => {
     expect(positionOf("get", `/${literal}`)).toBeLessThan(positionOf("get", "/:id"));
   });
 
-  it("registers every route behind authentication", () => {
-    const routed = stack().filter((entry) => entry.route);
-    expect(routed).toHaveLength(8);
+  it("registers every route behind authentication but the storefront photo", () => {
+    const routed = stack().filter((entry) => entry.route && !(entry.route.path === "/:id/photo" && entry.route.methods.get));
+    expect(routed).toHaveLength(16);
     for (const entry of routed) {
       expect(entry.route!.stack.map((h) => h.name)).toContain("authenticateToken");
     }
+  });
+
+  it("serves the storefront photo with no sign-in, since the app's image loader sends none, and nothing else", () => {
+    // Reads only: the photo's writes are owner-only above.
+    expect(chainFor("get", "/:id/photo")).not.toContain("authenticateToken");
+    expect(chainFor("get", "/:id/photo")).toHaveLength(2);
   });
 
   it("mounts nothing at router level that could be mistaken for a guard", () => {

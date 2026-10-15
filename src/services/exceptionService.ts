@@ -41,8 +41,25 @@ type ReviewRow = {
   reviewer: { firstName: string; lastName: string } | null;
 };
 
-function latestReview(reviews: ReviewRow[], kind: ExceptionKind): ReviewRow | null {
-  const forKind = reviews.filter((r) => r.kind === kind);
+/**
+ * The newest review that could have been about this occurrence.
+ *
+ * A review names an errand and a kind, nothing finer (ExceptionReview has no
+ * proof or stop id, and the schema is locked), so it covers every occurrence of
+ * that kind the reviewer could have seen: those the server already knew of when
+ * it was written. One raised afterwards stays open. Until 2026-10-15 a review
+ * also cleared everything of its kind raised later, so a third receiptless
+ * purchase declared the day after the first two were cleared never showed
+ * anywhere (errand 726f2cd9 in production, ₱70, declared 2026-09-30).
+ *
+ * `raisedAt` is the server's time wherever one exists, never later than the
+ * moment the occurrence became visible. WRONG_BRANCH has only the rider's GPS
+ * time: a fast phone clock (the tracking validators allow 5 minutes) can leave
+ * one open after a review written in that window, which shows a row twice
+ * rather than hiding one.
+ */
+function latestReview(reviews: ReviewRow[], kind: ExceptionKind, raisedAt: Date): ReviewRow | null {
+  const forKind = reviews.filter((r) => r.kind === kind && r.resolvedAt >= raisedAt);
   if (forKind.length === 0) return null;
   return forKind.reduce((newest, r) => (r.resolvedAt > newest.resolvedAt ? r : newest));
 }
@@ -80,10 +97,18 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
   const found: ErrandException[] = [];
   const riderName = nameOf(errand.rider);
 
-  const push = (kind: ExceptionKind, amountAtRisk: number, detail: string, occurredAt: Date) => {
+  // `raisedAt`: when the server first knew of it, for matching reviews only.
+  // `occurredAt` stays what the queue shows and ranks by.
+  const push = (
+    kind: ExceptionKind,
+    amountAtRisk: number,
+    detail: string,
+    occurredAt: Date,
+    raisedAt: Date = occurredAt
+  ) => {
     if (!isMaterial(kind, amountAtRisk)) return;
 
-    const review = latestReview(errand.exceptionReviews as ReviewRow[], kind);
+    const review = latestReview(errand.exceptionReviews as ReviewRow[], kind, raisedAt);
     found.push({
       errandId: errand.id,
       kind,
@@ -122,7 +147,10 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
         "RECEIPT_DIVERGENCE",
         confirmed - extracted,
         `Rider confirmed ₱${round2(confirmed)} on a receipt that scanned as ₱${round2(extracted)}.`,
-        proof.capturedAt
+        proof.capturedAt,
+        // Divergent from the rider's confirmation, which can come well after
+        // the photo, not from the photo itself.
+        proof.extraction?.confirmedAt ?? proof.capturedAt
       );
     }
 
@@ -271,7 +299,10 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
       0,
       `${Math.round(dwell.dwellSeconds / 60)} min inside ${stop?.storeName ?? "a stop"} — ` +
         `well past what this kind of shop usually takes.`,
-      dwell.departedAt
+      dwell.departedAt,
+      // departedAt is the phone's GPS time, and an offline batch uploads late;
+      // the row's own insert time is when the server learned of the dwell.
+      dwell.createdAt ?? dwell.departedAt
     );
   }
 

@@ -78,6 +78,7 @@ model User {
   profilePhoto            RiderProfilePhoto?
   presence                RiderPresence?
   knownDevices            UserKnownDevice[]
+  feedbacksRead           CustomerFeedback[]       @relation("FeedbackReadBy")
 
   @@map("users")
 }
@@ -181,6 +182,7 @@ model CustomerAccount {
   accountModificationLogs AccountModificationLog[]
   passwordResetAttempts   PasswordResetAttempt[]
   proofImages             ErrandProofImage[]
+  feedbacks               CustomerFeedback[]
 
   @@map("customer_accounts")
 }
@@ -1198,6 +1200,59 @@ model Rating {
   @@map("ratings")
 }
 
+enum FeedbackCategory {
+  BUG_REPORT
+  FEATURE_REQUEST
+  DELIVERY_EXPERIENCE
+  APP_USABILITY
+  OTHER
+}
+
+enum FeedbackStatus {
+  NEW
+  IN_REVIEW
+  ACKNOWLEDGED
+  RESOLVED
+  ARCHIVED
+}
+
+// 14a. Customer Feedback Table (Direct communication channel to developers & management)
+model CustomerFeedback {
+  id              Int              @id @default(autoincrement())
+  refCode         String           @unique @db.VarChar(32)
+  customerId      Int?
+  customer        CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  category        FeedbackCategory @default(OTHER)
+  rating          Int              @default(5)
+  subject         String           @db.VarChar(120)
+  message         String           @db.Text
+  contactEmail    String?          @db.VarChar(120)
+  contactPhone    String?          @db.VarChar(30)
+
+  // Diagnostic telemetry for developers
+  appVersion      String?          @db.VarChar(30)
+  platform        String?          @db.VarChar(20)
+  deviceModel     String?          @db.VarChar(100)
+  osVersion       String?          @db.VarChar(50)
+
+  // Management & read verification
+  status          FeedbackStatus   @default(NEW)
+  readAt          DateTime?
+  readByUserId    Int?
+  readByUser      User?            @relation("FeedbackReadBy", fields: [readByUserId], references: [id], onDelete: SetNull)
+  developerNotes  String?          @db.Text
+  resolvedAt      DateTime?
+
+  emailDispatched Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("customer_feedbacks")
+}
+
 // 14b. Email Verification Codes Table (3NF: one row per code issued —
 // re-sends create a NEW row rather than overwriting, so failed/expired
 // attempts stay in the trail rather than being silently lost)
@@ -1597,6 +1652,25 @@ model VerifiedPlace {
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
+  // The Google Maps place this store is (2026-10-13): every Location Store is
+  // found on Google Maps and confirmed there, never a guessed pin. Place ids are
+  // the one thing Google's terms let us keep indefinitely. Null only for rows
+  // registered before then, which the owner portal asks to link.
+  googlePlaceId  String?             @unique @db.VarChar(255)
+  // A real Tacurong store Google Maps does not list (2026-10-13): the owner
+  // pinned it on the map themselves, inside the city and beside a road
+  // (placeService.checkOwnerPin). False for a Google Maps place, and for an
+  // unlinked row from before 2026-10-13, whose pin nobody has confirmed.
+  ownerPinned    Boolean             @default(false)
+  // The owner's weekly hours, { days: [{ day, closed, open, close }] } with day
+  // 0 = Sunday (lib/places/storeHours.ts). Null: no schedule set, so the open
+  // or closed state is estimated from the kind of shop.
+  openingHours   Json?
+  // When the owner's storefront photo last changed; null when there is none.
+  // The photo itself is in verified_place_photo, so lists never load it.
+  photoUpdatedAt DateTime?
+  photo          VerifiedPlacePhoto?
+
   // Two relations to the same model, so both must be named: the place a
   // dispatcher pinned, and the place a rider was actually observed at.
   pinpoints         ErrandPinpoint[]   @relation("PinnedPlace")
@@ -1608,6 +1682,20 @@ model VerifiedPlace {
   @@index([categoryId])
   @@index([barangay])
   @@map("verified_places")
+}
+
+// A Location Store's storefront photo (2026-10-13), uploaded by the owner. Ours
+// to keep, unlike Google's photos, and served without a sign-in so the customer
+// app's image loader can show it (GET /api/places/:id/photo).
+model VerifiedPlacePhoto {
+  placeId   String        @id @db.VarChar(36)
+  place     VerifiedPlace @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  imageData Bytes         @db.MediumBlob
+  mimeType  String        @db.VarChar(50)
+  fileSize  Int
+  updatedAt DateTime      @updatedAt
+
+  @@map("verified_place_photo")
 }
 
 // 17. Errand Track Points (rider breadcrumb, 3NF: one row per accepted GPS fix)

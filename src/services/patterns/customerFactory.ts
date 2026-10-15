@@ -86,9 +86,15 @@ type CustomerWithInformation = {
 // mirrors the flat `User` row shape so authService/customerService don't need two
 // different response contracts for staff vs. customer accounts.
 export function flattenCustomerAccount<T extends CustomerWithInformation>(customer: T) {
-  const { information, profilePhoto, passwordHash: _passwordHash, ...rest } = customer;
+  const { information, profilePhoto, passwordHash, ...rest } = customer;
   return {
     ...rest,
+    // How the account was created, for the app's Home reminders: a Google
+    // sign-up has no password (authService creates it with passwordHash null),
+    // while a manual account keeps its password even after Google is linked to
+    // it, so googleId alone cannot tell the two apart. The hash itself never
+    // leaves this function.
+    signUpMethod: (passwordHash ? "password" : "google") as "password" | "google",
     firstName: information?.firstName ?? "",
     middleName: information?.middleName ?? "",
     lastName: information?.lastName ?? "",

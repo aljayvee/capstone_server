@@ -51,8 +51,9 @@ router.get(
   searchEstablishmentsHandler
 );
 
-// GET /api/places/establishments/popular?lat=&lng=&photos=1 - the customer app's
-// Home "Popular Stores": Google's most popular shops nearby, best rated first.
+// GET /api/places/establishments/popular?lat=&lng=&photos=1&offset=&limit=&sort=
+// - the customer app's Home "Popular Stores": Google's most popular shops
+// nearby, best rated first, paged up to 20 for the Popular Stores screen.
 // The same limiter as the store search: each call is a billed Google request.
 router.get(
   "/establishments/popular",
@@ -61,6 +62,28 @@ router.get(
   establishmentSearchLimiter,
   popularEstablishmentsHandler
 );
+
+// GET /api/places/google?q= | ?categoryId= - the owner portal's search of
+// Google Maps for stores to register (2026-10-13); each result says whether it
+// is registered already. Billed Google requests, so the store search's limiter.
+router.get("/google", authenticateToken, requireRole(["OWNER"]), establishmentSearchLimiter, (req, res) =>
+  placeController.googleSearch(req, res)
+);
+
+// GET /api/places/google/:googlePlaceId - one Google Maps place to fill the form.
+router.get("/google/:googlePlaceId", authenticateToken, requireRole(["OWNER"]), establishmentSearchLimiter, (req, res) =>
+  placeController.googleDetails(req, res)
+);
+
+// GET /api/places/duplicates - active Location Stores that look registered twice.
+router.get("/duplicates", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, (req, res) =>
+  placeController.duplicates(req, res)
+);
+
+// GET /api/places/:id/photo - the owner's storefront photo. No sign-in on
+// purpose: the customer app's image loader sends no Authorization header
+// (store cards show it), and a storefront is no secret.
+router.get("/:id/photo", readLimiter, (req, res) => placeController.getPhoto(req, res));
 
 // GET /api/places/:id - single place detail
 router.get("/:id", authenticateToken, readLimiter, (req, res) => placeController.getById(req, res));
@@ -77,6 +100,12 @@ router.post(
   checkStoreLocationHandler
 );
 
+// POST /api/places/restore - bring several retired stores back (Owner only).
+// Each unlinked one is linked to Google Maps on the way when Google has it.
+router.post("/restore", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+  placeController.restore(req, res)
+);
+
 // POST /api/places - create a verified place (Owner only)
 router.post("/", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
   placeController.create(req, res)
@@ -85,6 +114,16 @@ router.post("/", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req
 // PUT /api/places/:id - update a verified place (Owner only)
 router.put("/:id", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
   placeController.update(req, res)
+);
+
+// PUT /api/places/:id/photo - set the storefront photo (Owner only)
+router.put("/:id/photo", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+  placeController.uploadPhoto(req, res)
+);
+
+// DELETE /api/places/:id/photo - remove the storefront photo (Owner only)
+router.delete("/:id/photo", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+  placeController.deletePhoto(req, res)
 );
 
 // DELETE /api/places/:id - remove a verified place (Owner only)

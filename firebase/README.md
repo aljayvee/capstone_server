@@ -55,27 +55,56 @@ Two custom claims ride along: `role` and `appUserId`.
   lets a customer watch the rider carrying their errand.
 - **`locations/customers/$customerId`** — writable only by that customer, readable
   by that customer and by staff.
-- **`chats/$errandId`, `rider_chats/$errandId`** — authentication required. The
-  role-named subtrees are pinned to the matching role, so a customer cannot write
-  the dispatcher's presence or typing indicator and vice versa.
+- **`chats/$errandId`** (customer and dispatcher). Readable and writable by OWNER, and
+  by the two uids in `chat_access/$errandId`: the errand's customer and the dispatcher
+  who claimed it (since 2026-10-07). The server writes that node through the Admin SDK
+  (`src/lib/chatAccess.ts`): on errand creation, on claim, and on release. Clients cannot
+  read or write it. `npm run chat-access:backfill` rewrites it for every errand from
+  MariaDB, and must run before these rules are published anywhere new.
+- **`rider_chats/$riderId`** (the old shared rider thread). The rider and staff only;
+  customers could read it until 2026-10-07.
+- **`rider_threads/$riderId/$staffUid`**, **`rider_inbox/$riderId/$staffUid`**,
+  **`dispatcher_inbox/$staffUid/$riderId`**. One private conversation per dispatcher and
+  rider, readable by those two (owners read all). The inboxes hold one summary row per
+  conversation so neither side downloads every message to draw its list.
+- **`config/riderChatMode`**: `shared` (or missing) or `threads`. Read by the web portal
+  and the rider app; written only with the Admin SDK.
 
 Coordinate fields are range-validated, so a malformed write cannot put a rider in
 the ocean. Validation is deliberately light elsewhere: a `.validate` rule that is
-too strict fails writes in production the same way a missing rule does, and this
-ruleset is a first tightening rather than a final one.
+too strict fails writes in production the same way a missing rule does.
 
-## Known gap, deliberately left open
+## Why chat access is a server-written list (2026-10-07)
 
-Chat access is gated on authentication plus knowledge of the errand id. Errand ids
-are UUIDs, so they cannot be enumerated, but a signed-in user who obtains one can
-read that conversation. Closing this properly needs a server-written
-`participants` node under each chat, populated when the errand is created and when
-a rider is assigned, with the rules checking membership against it.
+Chat used to be gated on authentication plus knowledge of the errand id, on the
+reasoning that UUIDs cannot be guessed. They did not need guessing: the API broadcast
+every `order:new`/`order:updated` event, errand included, to every connected app, and
+the customer app opened the chat of every errand it heard about. Customers received
+each other's dispatcher messages as notifications. The broadcasts are now scoped to
+each errand's people, and the rules no longer trust knowledge of an id.
 
-That is a backend change to errand creation and assignment rather than a rules
-change, so it is recorded here rather than half-done. The current state is still a
-large improvement on the alternative it replaces: an unauthenticated read of every
-conversation in the system.
+## Moving rider chat to private threads
+
+Rider apps from before 2026-10-07 know only `rider_chats/$riderId`. The switch is one
+value, so both apps move at once:
+
+1. Ship the rider app that reads `config/riderChatMode`, and wait until every rider has it.
+2. Set `config/riderChatMode` to `threads` (Admin SDK or the console).
+3. Tighten `rider_chats/$riderId` to the rider and OWNER only: it then holds history that
+   several dispatchers wrote, which no single dispatcher owns.
+
+## Who may read a rider's position (2026-10-07)
+
+`riders/$riderId` as a whole collection is staff only. One rider's node is readable by
+that rider, staff, and the customers listed in `rider_watchers/$riderId/<customerUid>`:
+those whose errand the rider is working now (ASSIGNED or IN_TRANSIT). Until this date
+any signed-in user could read any rider.
+
+`src/lib/riderWatch.ts` writes the list. It rebuilds the whole node from MariaDB about
+two seconds after any errand change and once a minute (`jobs/riderWatchReconcile.ts`),
+so an errand finished by any path drops out on its own. A new assignment is also
+granted before its socket event goes out, so the customer's map is not refused when
+it opens. The customer app retries a refused listen a few times as well.
 
 ## Applying
 

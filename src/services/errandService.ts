@@ -131,6 +131,10 @@ function withPersonName<T extends NamedPerson>(person: T) {
   return { ...person, name: `${person.firstName} ${person.lastName}`.trim() };
 }
 
+function personFullName(person: NamedPerson): string | null {
+  return person ? `${person.firstName} ${person.lastName}`.trim() || null : null;
+}
+
 // Flattens the CustomerAccount.information relation (split across two tables) back
 // into a flat { firstName, lastName, phone, phoneVerified, phoneVerifiedAt, name } shape,
 // so the HTTP response contract the web dashboard already consumes is preserved and enhanced.
@@ -212,9 +216,26 @@ export function attachErrandNames<
   // which every caller would then have to satisfy.
   const priced = errand as unknown as Partial<PricedErrand>;
   const stops = (errand as unknown as { pinpoints?: PinpointWithCategory[] }).pinpoints;
+  const confirmedMode = (errand as unknown as { paymentSelection?: { paymentMode?: { name?: string } } | null })
+    .paymentSelection?.paymentMode?.name;
 
   return {
     ...errand,
+    // Flat copies of the rider's and dispatcher's names and the confirmed
+    // payment mode (2026-10-10). The customer app's errand details screen and
+    // chat pop-up read only these, the shape its errand list
+    // (/customers/:id/transactions) sends, so a pull-to-refresh onto this
+    // response showed an assigned rider as "Assigning" and a chosen GCash as
+    // "Pending Selection". Installed apps need a new build to read the
+    // relations instead; this fixes them now. Each is set only when its source
+    // is in the payload, so a slim projection never claims "nobody", and
+    // paymentMethod only once confirmed, so a socket update merged into the
+    // app's list cannot blank the method the list already had.
+    ...("rider" in errand ? { riderName: personFullName(errand.rider) } : {}),
+    ...(Array.isArray(errand.dispatchLogs)
+      ? { dispatcherName: personFullName(errand.dispatchLogs[0]?.dispatcher) }
+      : {}),
+    ...(confirmedMode ? { paymentMethod: confirmedMode } : {}),
     customer: withCustomerName(errand.customer),
     rider: withPersonName(errand.rider),
     // Each stop's own arrival radius, flattened from its category so every
@@ -1577,6 +1598,14 @@ export async function confirmOrder(errandId: string, customerId: number) {
   if (errand.groceryFee !== null) {
     stamp.quotedHandlingBasket = errand.estimatedCost;
     stamp.quotedHandlingFee = errand.groceryFee;
+  }
+  // Approving opens the payment choice (2026-10-15): the customer's app goes
+  // from Approve straight into choosing how to pay, in a dialog they cannot
+  // dismiss. The dispatcher's screen opens payment when it sends the list, but
+  // if that call failed the choice would be refused here with no way out, so
+  // approval opens it too. Never re-stamped: the first opening is the record.
+  if (!errand.paymentEnabledAt) {
+    stamp.paymentEnabledAt = new Date();
   }
   const confirmed = await errandRepository.update(errandId, stamp);
 

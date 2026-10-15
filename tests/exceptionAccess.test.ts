@@ -25,6 +25,8 @@ vi.mock("../src/middleware/rateLimiters.js", () => {
     verificationLimiter: pass,
     passwordResetLimiter: pass,
     trackingLimiter: pass,
+    itemTidyLimiter: pass,
+    itemStoreCheckLimiter: pass,
   };
 });
 

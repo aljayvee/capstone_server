@@ -21,6 +21,9 @@ export interface AppReleaseInfo {
   downloadUrl: string;
   updatedAt: string;
   whatsNew: string[];
+  features?: string[];
+  fixes?: string[];
+  logs?: string[];
   sha256?: string;
 }
 
@@ -74,6 +77,20 @@ const DEFAULT_RELEASES: AppReleasesConfig = {
       "View itemized store receipts photographed before delivery handover",
       "Chat directly with your assigned rider without sharing private phone numbers",
     ],
+    features: [
+      "Create on-demand Pabili errands for food, market produce, or medicine",
+      "Watch your rider move in real time on the Tacurong road map",
+      "View itemized store receipts photographed before delivery handover",
+      "Chat directly with your assigned rider without sharing private phone numbers",
+    ],
+    fixes: [
+      "Optimized location permission timing on Android 14",
+      "Enhanced real-time connection resilience during network drops",
+    ],
+    logs: [
+      "Expo SDK 57 runtime stabilization",
+      "In-memory session token refresh optimization",
+    ],
   },
   rider: {
     target: "rider",
@@ -91,6 +108,20 @@ const DEFAULT_RELEASES: AppReleasesConfig = {
       "Road-network turn-by-turn routing with daylight high-contrast HUD",
       "Quick camera capture for receipts and proof of delivery handover",
       "Clear errand history, completed trip ledger, and earnings tracker",
+    ],
+    features: [
+      "Instant dispatch alerts with store locations and item shopping lists",
+      "Road-network turn-by-turn routing with daylight high-contrast HUD",
+      "Quick camera capture for receipts and proof of delivery handover",
+      "Clear errand history, completed trip ledger, and earnings tracker",
+    ],
+    fixes: [
+      "Eliminated foreground background location task refresh loops in dev mode",
+      "Fixed turn-by-turn HUD vertical stacking overlap",
+    ],
+    logs: [
+      "3D third-person chase cam tilt calibration",
+      "Road-network centerline snapping precision boost",
     ],
   },
 };
@@ -180,6 +211,9 @@ export interface UpdateReleaseInput {
   minAndroid?: string;
   fileSize?: string;
   whatsNew?: string[];
+  features?: string[];
+  fixes?: string[];
+  logs?: string[];
 }
 
 export async function updateReleaseDetails(
@@ -200,10 +234,31 @@ export async function updateReleaseDetails(
   if (input.fileSize !== undefined && input.fileSize.trim()) {
     current.fileSize = input.fileSize.trim();
   }
-  if (Array.isArray(input.whatsNew)) {
+  if (Array.isArray(input.features)) {
+    current.features = input.features
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (Array.isArray(input.fixes)) {
+    current.fixes = input.fixes
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (Array.isArray(input.logs)) {
+    current.logs = input.logs
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (Array.isArray(input.whatsNew) && input.whatsNew.length > 0) {
     current.whatsNew = input.whatsNew
       .map((item) => (typeof item === "string" ? item.trim() : ""))
       .filter(Boolean);
+  } else if (current.features && current.features.length > 0) {
+    // Synthesize whatsNew from features and fixes if whatsNew is empty or omitted
+    current.whatsNew = [
+      ...current.features,
+      ...(current.fixes || []).map((f) => `Fix: ${f}`),
+    ];
   }
 
   current.updatedAt = new Date().toISOString();

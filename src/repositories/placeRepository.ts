@@ -1,6 +1,8 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { haversineDistanceKm, type GeoPoint } from "../lib/geo.js";
 import { PlaceCreateInput, PlaceUpdateInput, PlaceSearchFilters, IVerifiedPlace } from "../types/place.js";
+import { isPabiliCategoryName } from "../lib/blockedCategoryNames.js";
 
 // One degree of latitude is ~111.32 km everywhere. Longitude degrees shrink with
 // latitude, but Tacurong sits at ~6.7°N where cos(lat) is 0.993 — so using the
@@ -20,7 +22,35 @@ export interface IPlaceRepository {
   update(id: string, data: PlaceUpdateInput): Promise<IVerifiedPlace>;
   delete(id: string): Promise<IVerifiedPlace>;
   getCategories(): Promise<{ id: number; name: string; description: string | null }[]>;
+  /** Every row, retired too, with what the duplicate check needs (lib/places/placeDuplicates.ts). */
+  findAllForDuplicates(): Promise<DirectoryDuplicateRow[]>;
+  /** The rows among `ids` or `googlePlaceIds` that carry an owner photo or hours, for the customer lists. */
+  findOwnerExtras(ids: string[], googlePlaceIds: string[]): Promise<OwnerExtrasRow[]>;
+  getPhoto(id: string): Promise<{ imageData: Uint8Array; mimeType: string; updatedAt: Date } | null>;
+  setPhoto(id: string, photo: { imageData: Buffer; mimeType: string; fileSize: number }): Promise<Date>;
+  deletePhoto(id: string): Promise<void>;
 }
+
+export interface DirectoryDuplicateRow {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  googlePlaceId: string | null;
+  isActive: boolean;
+  category: { id: number; name: string } | null;
+}
+
+export interface OwnerExtrasRow {
+  id: string;
+  googlePlaceId: string | null;
+  openingHours: unknown;
+  photoUpdatedAt: Date | null;
+  isActive: boolean;
+}
+
+/** Prisma's way to write SQL NULL to a Json column; a plain null is refused. */
+const jsonOrNull = (value: unknown) => (value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue));
 
 export class PrismaPlaceRepository implements IPlaceRepository {
   async findAll(filters: PlaceSearchFilters = {}): Promise<IVerifiedPlace[]> {
@@ -145,6 +175,9 @@ export class PrismaPlaceRepository implements IPlaceRepository {
         longitude: data.longitude,
         keywords: data.keywords ?? null,
         isActive: data.isActive ?? true,
+        googlePlaceId: data.googlePlaceId ?? null,
+        ownerPinned: data.ownerPinned ?? false,
+        ...(data.openingHours ? { openingHours: data.openingHours as unknown as Prisma.InputJsonValue } : {}),
       },
       include: {
         category: {
@@ -170,6 +203,9 @@ export class PrismaPlaceRepository implements IPlaceRepository {
         ...(data.longitude !== undefined && { longitude: data.longitude }),
         ...(data.keywords !== undefined && { keywords: data.keywords }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.googlePlaceId !== undefined && { googlePlaceId: data.googlePlaceId }),
+        ...(data.ownerPinned !== undefined && { ownerPinned: data.ownerPinned }),
+        ...(data.openingHours !== undefined && { openingHours: jsonOrNull(data.openingHours) }),
       },
       include: {
         category: {
@@ -199,11 +235,67 @@ export class PrismaPlaceRepository implements IPlaceRepository {
   }
 
   async getCategories() {
-    return prisma.merchantCategory.findMany({
+    const rows = await prisma.merchantCategory.findMany({
       where: { status: "Active" },
       select: { id: true, name: true, description: true },
       orderBy: { name: "asc" },
     });
+    return rows.filter((c) => isPabiliCategoryName(c.name));
+  }
+
+  async findAllForDuplicates(): Promise<DirectoryDuplicateRow[]> {
+    return prisma.verifiedPlace.findMany({
+      select: {
+        id: true,
+        name: true,
+        latitude: true,
+        longitude: true,
+        googlePlaceId: true,
+        isActive: true,
+        category: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async findOwnerExtras(ids: string[], googlePlaceIds: string[]): Promise<OwnerExtrasRow[]> {
+    if (ids.length === 0 && googlePlaceIds.length === 0) return [];
+    return prisma.verifiedPlace.findMany({
+      where: {
+        OR: [
+          ...(ids.length ? [{ id: { in: ids } }] : []),
+          ...(googlePlaceIds.length ? [{ googlePlaceId: { in: googlePlaceIds } }] : []),
+        ],
+      },
+      select: { id: true, googlePlaceId: true, openingHours: true, photoUpdatedAt: true, isActive: true },
+    });
+  }
+
+  async getPhoto(id: string) {
+    return prisma.verifiedPlacePhoto.findUnique({
+      where: { placeId: id },
+      select: { imageData: true, mimeType: true, updatedAt: true },
+    });
+  }
+
+  async setPhoto(id: string, photo: { imageData: Buffer; mimeType: string; fileSize: number }): Promise<Date> {
+    const at = new Date();
+    await prisma.$transaction([
+      prisma.verifiedPlacePhoto.upsert({
+        where: { placeId: id },
+        create: { placeId: id, ...photo },
+        update: photo,
+      }),
+      prisma.verifiedPlace.update({ where: { id }, data: { photoUpdatedAt: at } }),
+    ]);
+    return at;
+  }
+
+  async deletePhoto(id: string): Promise<void> {
+    await prisma.$transaction([
+      prisma.verifiedPlacePhoto.deleteMany({ where: { placeId: id } }),
+      prisma.verifiedPlace.update({ where: { id }, data: { photoUpdatedAt: null } }),
+    ]);
   }
 }
 

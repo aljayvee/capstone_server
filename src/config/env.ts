@@ -180,6 +180,9 @@ export const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY || "";
 // Blank, or a key without that API, leaves the picker with the owner's Location
 // Stores alone: the search answers `google: "unavailable"` instead of failing.
 export const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || "";
+// The brands "Find stores" recommends first (lib/places/featuredBrands.ts):
+// "Brand|other name;Brand". Blank keeps the built-in list.
+export const FEATURED_STORE_BRANDS = process.env.FEATURED_STORE_BRANDS || "";
 export const ROUTING_PROVIDER_ORDER = (process.env.ROUTING_PROVIDER_ORDER || "osrm,google,haversine")
   .split(",")
   .map((name) => name.trim().toLowerCase())
@@ -267,3 +270,8 @@ export const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUN
 // (lib/chatAccess.ts). The same public URL the three clients ship with.
 export const FIREBASE_DATABASE_URL =
   process.env.FIREBASE_DATABASE_URL || "https://capstonedata-3589c-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+// Developer Feedback Recipient (receives real-time customer review & bug alerts)
+export const DEVELOPER_FEEDBACK_EMAIL =
+  process.env.DEVELOPER_FEEDBACK_EMAIL || "aljayveeversola@gmail.com";
+

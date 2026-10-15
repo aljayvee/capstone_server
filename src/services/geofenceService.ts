@@ -4,6 +4,7 @@ import { logger } from "../lib/logger.js";
 import { dwellObservationRepository } from "../repositories/dwellObservationRepository.js";
 import { pinpointRepository } from "../repositories/pinpointRepository.js";
 import { placeRepository } from "../repositories/placeRepository.js";
+import { storeAutoCorrectionService } from "./storeAutoCorrectionService.js";
 
 // How close counts as "at the store". Wide enough to survive ordinary urban GPS
 // error and a rider parking round the back.
@@ -144,6 +145,11 @@ export async function applyGeofenceTransitions(
       arrivedAt = firstInside.recordedAt;
       await pinpointRepository.markArrived(stop.id, arrivedAt);
       transitions.push({ pinpointId: stop.id, kind: "arrived", at: arrivedAt });
+      void storeAutoCorrectionService.autoCorrectStoreCoordinates({
+        errandId,
+        stop,
+        arrivalPoint: firstInside,
+      });
     }
 
     // Departure: the first fix after arrival that this stop no longer owns —

@@ -65,7 +65,7 @@ vi.mock("../src/services/patterns/handlingEvidence.js", () => ({
 vi.mock("../src/services/storeLocationGuard.js", () => ({ checkStoreLocation }));
 vi.mock("../src/services/notificationService.js", () => ({ notifyFeeUpdated: vi.fn(async () => undefined) }));
 vi.mock("../src/lib/eventPublisher.js", () => ({
-  eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToRole: vi.fn(), emitToRider: vi.fn() },
+  eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToErrandParties: vi.fn(), emitToRole: vi.fn(), emitToRider: vi.fn(), emitToCustomer: vi.fn() },
 }));
 vi.mock("../src/lib/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -143,6 +143,7 @@ describe("quotePinpoints", () => {
     expect(customerTransactionRepository.updateAmountByErrandId).not.toHaveBeenCalled();
     expect(notificationService.notifyFeeUpdated).not.toHaveBeenCalled();
     expect(eventPublisher.emit).not.toHaveBeenCalled();
+    expect(eventPublisher.emitToErrandParties).not.toHaveBeenCalled();
   });
 
   it("refuses a stop the router cannot reach, as saving does", async () => {

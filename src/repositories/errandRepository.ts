@@ -109,10 +109,12 @@ const RECONCILIATION_EVIDENCE_SELECT = {
       // A replaced payment screenshot is the same payment uploaded twice, so a
       // reason suggestion must not count it as a second one.
       supersededAt: true,
-      extraction: { select: { extractedTotal: true, confirmedTotal: true } },
+      // confirmedAt and the dwell's createdAt are server times: exceptionService
+      // matches a review only to what the server knew of when it was written.
+      extraction: { select: { extractedTotal: true, confirmedTotal: true, confirmedAt: true } },
     },
   },
-  dwellObservations: { select: { pinpointId: true, dwellSeconds: true, stalled: true, departedAt: true } },
+  dwellObservations: { select: { pinpointId: true, dwellSeconds: true, stalled: true, departedAt: true, createdAt: true } },
   exceptionReviews: {
     select: {
       kind: true,

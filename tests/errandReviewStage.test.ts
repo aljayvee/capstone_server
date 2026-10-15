@@ -13,7 +13,7 @@ vi.mock("../src/repositories/errandRepository.js", () => ({
   },
 }));
 vi.mock("../src/lib/eventPublisher.js", () => ({
-  eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToRole: vi.fn(), emitToRider: vi.fn() },
+  eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToErrandParties: vi.fn(), emitToRole: vi.fn(), emitToRider: vi.fn(), emitToCustomer: vi.fn() },
 }));
 
 import { errandRepository, dispatchLogRepository } from "../src/repositories/errandRepository.js";

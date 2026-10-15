@@ -13,7 +13,9 @@ export const listMerchantCategories = asyncHandler(async (req, res) => {
   // offer a retired type; the owner portal passes ?includeInactive=true to
   // manage them.
   const includeInactive = req.query.includeInactive === "true";
-  const categories = await merchantCategoryService.listMerchantCategories(includeInactive);
+  const user = (req as any).user;
+  const customerId = user && user.role === "CUSTOMER" && typeof user.id === "number" ? user.id : null;
+  const categories = await merchantCategoryService.listMerchantCategories(includeInactive, customerId);
   res.json(categories);
 });
 

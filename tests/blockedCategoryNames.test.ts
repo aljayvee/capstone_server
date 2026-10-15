@@ -58,6 +58,44 @@ describe("blocked category names", () => {
     expect(match!.term).toBe("bayad center");
     expect(match!.language).toBeTruthy();
   });
+
+  it.each([
+    "Logistics",
+    "Logicstics",
+    "Courier Services",
+    "Tacurong Express Cargo",
+    "Express",
+    "J&T Express",
+    "LBC Express",
+    "Police Outpost",
+    "Police Station",
+    "Police Stations",
+    "Government Offices",
+    "Government Office",
+    "Tacurong City Hall",
+    "Network",
+    "Cable Network",
+    "Internet Cafe",
+    "Computer Shop",
+    "Pisonet",
+    "Nightclub",
+    "Night Club",
+    "KTV Bar",
+    "Salons",
+    "Beauty Salon",
+    "Hair Salon Tacurong",
+    "Barbershop",
+    "Carwash",
+    "Car Wash Center",
+    "Auto Detailing",
+    "Schools",
+    "Tacurong National High School",
+    "Banks",
+    "Motor Trades",
+    "Auto Parts",
+  ])("blocks non-Pabili service category %s", (name) => {
+    expect(blocked(name)).toBe(true);
+  });
 });
 
 describe("names that must NOT be blocked", () => {

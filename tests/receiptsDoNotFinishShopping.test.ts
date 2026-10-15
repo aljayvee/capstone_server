@@ -29,7 +29,7 @@ vi.mock("../src/repositories/rateConfigRepository.js", () => ({
 }));
 
 vi.mock("../src/lib/eventPublisher.js", () => ({
-  eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToRole: vi.fn(), emitToRider: vi.fn() },
+  eventPublisher: { emit: vi.fn(), emitToErrand: vi.fn(), emitToErrandParties: vi.fn(), emitToRole: vi.fn(), emitToRider: vi.fn(), emitToCustomer: vi.fn() },
 }));
 
 vi.mock("../src/services/errandPaymentService.js", () => ({

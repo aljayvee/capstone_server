@@ -37,3 +37,6 @@ firebase-service-account*.json
 Training_Data_*/
 /Innacurate ETA and route line issues when zoom in/
 *.stackdump
+
+# Google Places request counts (lib/places/placesBudget.ts), kept on the server
+/var/

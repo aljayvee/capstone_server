@@ -60,9 +60,9 @@ async function main() {
     { name: "GCash / PayMaya", status: "Active" },
     { name: "Bank Transfer", status: "Active" },
 
-    // No gateway, and no Facebook Page path either — there is no way to actually
-    // pay by card, so offering it would strand whoever picked it.
-    { name: "Debit/Credit Card", status: "Inactive" },
+    // Debit/Credit Card was seeded here as Inactive. Removed 2026-10-15, with
+    // its row (migration 20261015120000_remove_card_payment_mode): there is
+    // no way to pay by card, and the app lists every row this table holds.
   ];
   for (const mode of paymentModes) {
     await prisma.paymentMode.upsert({

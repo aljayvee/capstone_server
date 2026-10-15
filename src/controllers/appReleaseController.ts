@@ -59,12 +59,15 @@ export async function updateReleaseDetailsHandler(req: Request, res: Response): 
       return;
     }
 
-    const { version, minAndroid, fileSize, whatsNew } = req.body;
+    const { version, minAndroid, fileSize, whatsNew, features, fixes, logs } = req.body;
     const updated = await updateReleaseDetails(target as AppTarget, {
       version,
       minAndroid,
       fileSize,
       whatsNew,
+      features,
+      fixes,
+      logs,
     });
 
     res.json({

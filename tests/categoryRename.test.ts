@@ -25,7 +25,13 @@ const { prisma, repo, trigger, placeRepo } = vi.hoisted(() => {
     },
     repo: { findById: vi.fn(), update: vi.fn() },
     trigger: vi.fn(),
-    placeRepo: { create: vi.fn(async (x: any) => ({ id: "p1", ...x })), findById: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    placeRepo: {
+      create: vi.fn(async (x: any) => ({ id: "p1", ...x })),
+      findById: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      findAllForDuplicates: vi.fn(async () => []),
+    },
   };
 });
 
@@ -35,6 +41,11 @@ vi.mock("../src/lib/eventPublisher.js", () => ({ eventPublisher: { publish: vi.f
 vi.mock("../src/repositories/merchantCategoryRepository.js", () => ({ merchantCategoryRepository: repo }));
 vi.mock("../src/services/categoryRetrainingService.js", () => ({ triggerCategoryAutoLearning: trigger }));
 vi.mock("../src/repositories/placeRepository.js", () => ({ placeRepository: placeRepo }));
+// Every Location Store is a Google Maps place (2026-10-13): Honesty Bakeshop is one, at its own pin.
+vi.mock("../src/lib/places/googlePlaceConfirm.js", () => ({
+  PlaceConfirmError: class extends Error {},
+  confirmGooglePlace: vi.fn(async () => ({ name: "Honesty Bakeshop", latitude: 6.687803, longitude: 124.678492 })),
+}));
 
 import { renameFiledCategory, updateMerchantCategory } from "../src/services/merchantCategoryService.js";
 import { PlaceService } from "../src/services/placeService.js";
@@ -89,7 +100,12 @@ describe("verified places", () => {
     const service = new PlaceService(placeRepo as any);
     placeRepo.findById.mockResolvedValue({ id: "p1" });
     // Honesty Bakeshop, inside Tacurong: the service refuses places outside it.
-    await service.createPlace({ name: "Honesty Bakeshop", latitude: 6.687803, longitude: 124.678492 } as any);
+    await service.createPlace({
+      name: "Honesty Bakeshop",
+      latitude: 6.687803,
+      longitude: 124.678492,
+      googlePlaceId: "ChIJhonesty01",
+    } as any);
     await service.updatePlace("p1", { name: "Honesty Bakeshop Tacurong" } as any);
     await service.deletePlace("p1");
     expect(trigger.mock.calls.map((c) => c[0].reason)).toEqual([

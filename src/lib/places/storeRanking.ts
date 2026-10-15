@@ -98,15 +98,19 @@ export interface RankingInput {
   popularOrders: number;
   /** nameMatchScore against the search, or 0 for the list shown before typing. */
   nameMatch: number;
+  /** True when the store has verified off-road physical coordinates from verified_places. */
+  isVerified?: boolean;
 }
 
 export function recommendationScore(input: RankingInput): number {
-  return (
+  const base =
     RANKING_WEIGHTS.proximity * proximityScore(input.distanceMeters) +
     RANKING_WEIGHTS.personal * affinityScore(input.personalOrders, PERSONAL_SATURATION) +
     RANKING_WEIGHTS.popularity * affinityScore(input.popularOrders, POPULARITY_SATURATION) +
-    RANKING_WEIGHTS.nameMatch * input.nameMatch
-  );
+    RANKING_WEIGHTS.nameMatch * input.nameMatch;
+
+  // Verified catalogue stores with curated off-road coordinates get a +0.15 confidence boost
+  return input.isVerified ? base + 0.15 : base;
 }
 
 /**
@@ -177,4 +181,34 @@ export function bestRatedPerGroup<T extends { rating: number | null; ratingCount
     winners.set(group, row);
   }
   return rankByRating([...winners.values()]).slice(0, limit);
+}
+
+/** The Popular Stores screen's sort settings (2026-10-10). */
+export const POPULAR_SORTS = ["recommended", "rating", "distance", "reviews"] as const;
+export type PopularSort = (typeof POPULAR_SORTS)[number];
+
+/**
+ * The popular stores in the order the customer chose. The set never changes
+ * with the sort, only its order, so paging through one sort shows the same
+ * stores as another.
+ *   recommended: as given (the best of each category first, the rest best rated);
+ *   rating: best rated first (rankByRating);
+ *   distance: nearest first, unknown distances last;
+ *   reviews: most ratings first, then the higher rating.
+ * Ties keep the order given.
+ */
+export function orderPopular<
+  T extends { rating: number | null; ratingCount: number | null; distanceMeters: number | null },
+>(rows: T[], sort: PopularSort): T[] {
+  if (sort === "rating") return rankByRating(rows);
+  if (sort === "recommended") return [...rows];
+  const far = (row: T) => (row.distanceMeters === null ? Number.POSITIVE_INFINITY : row.distanceMeters);
+  const compare =
+    sort === "distance"
+      ? (a: T, b: T) => (far(a) === far(b) ? 0 : far(a) < far(b) ? -1 : 1)
+      : (a: T, b: T) => (b.ratingCount ?? 0) - (a.ratingCount ?? 0) || (b.rating ?? 0) - (a.rating ?? 0);
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => compare(a.row, b.row) || a.index - b.index)
+    .map(({ row }) => row);
 }

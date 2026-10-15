@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ExceptionKind } from "../services/patterns/exceptionRules.js";
 
 /**
  * Kinds a reviewer may clear.
@@ -14,10 +15,25 @@ export const EXCEPTION_KINDS = [
   "WRONG_BRANCH",
   "MISSING_RECEIPT",
   "STALLED_STOP",
+  // Both left out until 2026-10-15, so "Resolve" on either row answered 400.
+  // A written reason is the only way left to clear them: since the downpayment
+  // was retired on 2026-10-08 nothing raises or clears an overage, and the
+  // portal has no screen that records a balance paid after delivery. The
+  // reason model was trained with reasons for both (OVERAGE_*, BALANCE_*).
+  "OVERAGE_PENDING",
+  "UNPAID_BALANCE",
   // Has to be clearable, or it would sit in the queue for good once someone
   // decided what to do with the goods.
   "CANCELLED_AFTER_PURCHASE",
 ] as const;
+
+/**
+ * Fails to compile when exceptionRules gains a kind the list above lacks. The
+ * queue offers "Resolve" on every row, so a kind missing here is a button that
+ * can only ever fail.
+ */
+type MustBeNever<T extends never> = T;
+export type EveryKindIsClearable = MustBeNever<Exclude<ExceptionKind, (typeof EXCEPTION_KINDS)[number]>>;
 
 export const resolveExceptionSchema = z.object({
   kind: z.enum(EXCEPTION_KINDS),
@@ -38,11 +54,11 @@ export const resolveExceptionSchema = z.object({
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;
 
 /**
- * Asking for a suggested reason. Wider than EXCEPTION_KINDS: a suggestion
- * records nothing, so every kind the queue can show may ask for one.
+ * Asking for a suggested reason. Every kind the queue can show may ask for
+ * one, which is now the same list as the kinds that can be cleared.
  */
 export const reasonSuggestionQuerySchema = z.object({
-  kind: z.enum([...EXCEPTION_KINDS, "OVERAGE_PENDING", "UNPAID_BALANCE"]),
+  kind: z.enum(EXCEPTION_KINDS),
   // Which row, when an errand has two exceptions of one kind.
   occurredAt: z.coerce.date().optional(),
 });

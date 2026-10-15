@@ -17,6 +17,7 @@ import placeRoutes from "./placeRoutes.js";
 import sysAdminRoutes from "./sysAdminRoutes.js";
 import categoryInferenceRoutes from "./categoryInferenceRoutes.js";
 import catalogRoutes from "./catalogRoutes.js";
+import feedbackRoutes from "./feedbackRoutes.js";
 
 const router = Router();
 
@@ -38,5 +39,6 @@ router.use("/routing", routingRoutes);
 router.use("/places", placeRoutes);
 router.use("/category-inference", categoryInferenceRoutes);
 router.use("/catalog", catalogRoutes);
+router.use("/feedback", feedbackRoutes);
 
 export default router;
