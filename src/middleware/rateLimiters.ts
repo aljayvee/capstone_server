@@ -53,35 +53,92 @@ export const deviceKeyGenerator = (req: any): string => {
  *     IP do not spend each other's allowance;
  *   - 30 failures per IP (loginIpCeiling), so a caller who rotates x-device-id
  *     to get fresh device buckets still stops at 30.
- * Mounted as an array; Express runs both in order.
+ * Mounted as an array; Express runs both in order, then reportLoginAllowance.
  */
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+// Each sign-in limiter records its count on the request under its own name.
+// Under the library's default (`req.rateLimit`) the device limiter, which runs
+// second, would overwrite the network's count, and reportLoginAllowance needs both.
+const LOGIN_IP_INFO = "loginIpLimit";
+const LOGIN_DEVICE_INFO = "loginDeviceLimit";
+
+type LimitInfo = { limit: number; remaining: number; resetTime?: Date };
+
+const secondsUntilReset = (info?: LimitInfo): number =>
+  info?.resetTime
+    ? Math.max(1, Math.ceil((info.resetTime.getTime() - Date.now()) / 1000))
+    : LOGIN_WINDOW_MS / 1000;
+
+/**
+ * The 429 body. The real wait goes in `details.retryAfterSeconds` (and the
+ * minutes in `error`) because the portal is on another origin: it cannot read
+ * Retry-After unless CORS exposes it, so it used to count down a flat 15
+ * minutes however little of the window was left. `code` says which limit it
+ * was, so the screen can explain a network-wide stop.
+ */
+const loginLimitBody = (code: string, what: string, property: string) => (req: any) => {
+  const retryAfterSeconds = secondsUntilReset(req[property]);
+  const minutes = Math.ceil(retryAfterSeconds / 60);
+  return {
+    status: 429,
+    code,
+    error: `${what} Please try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+    details: { retryAfterSeconds },
+  };
+};
+
 const loginIpCeiling = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: LOGIN_WINDOW_MS,
   max: isDev ? 300 : 30,
   keyGenerator: clientIpKey,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    status: 429,
-    error: "Too many failed sign-in attempts from this network. Please try again after 15 minutes.",
-  },
+  requestPropertyName: LOGIN_IP_INFO,
+  message: loginLimitBody(
+    "LOGIN_NETWORK_LIMIT",
+    "Too many failed sign-in attempts from this network.",
+    LOGIN_IP_INFO
+  ),
 });
 
 const loginDeviceLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15-minute sliding window
+  windowMs: LOGIN_WINDOW_MS, // 15-minute fixed window per key
   max: isDev ? 100 : 10, // 10 failed login attempts in prod
   keyGenerator: deviceKeyGenerator,
   skipSuccessfulRequests: true, // Successful logins never count against the user!
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    status: 429,
-    error: "Too many failed login attempts. Please try again after 15 minutes.",
-  },
+  requestPropertyName: LOGIN_DEVICE_INFO,
+  message: loginLimitBody("LOGIN_DEVICE_LIMIT", "Too many failed login attempts.", LOGIN_DEVICE_INFO),
 });
 
-export const loginLimiter: RequestHandler[] = [loginIpCeiling, loginDeviceLimiter];
+/**
+ * Tells a sign-in client how many failures it has left before the tighter of
+ * the two limits stops it, and when that count resets, so the screen can warn
+ * before the lock instead of only after it. The standard RateLimit-* headers
+ * cannot say this: both limiters set them, and the second overwrites the
+ * first. Nothing here is secret; any non-browser client already reads those.
+ * The portal reads these cross-origin, so index.ts lists them in exposedHeaders.
+ */
+export const reportLoginAllowance: RequestHandler = (req, res, next) => {
+  // Device first, so a tie is reported as the device's own limit.
+  const counts = [
+    { scope: "device", info: (req as any)[LOGIN_DEVICE_INFO] as LimitInfo | undefined },
+    { scope: "network", info: (req as any)[LOGIN_IP_INFO] as LimitInfo | undefined },
+  ].filter((c): c is { scope: string; info: LimitInfo } => !!c.info);
+
+  if (counts.length > 0) {
+    const tightest = counts.reduce((a, b) => (b.info.remaining < a.info.remaining ? b : a));
+    res.setHeader("X-Login-Attempts-Remaining", String(tightest.info.remaining));
+    res.setHeader("X-Login-Attempts-Reset", String(secondsUntilReset(tightest.info)));
+    res.setHeader("X-Login-Attempts-Scope", tightest.scope);
+  }
+  next();
+};
+
+export const loginLimiter: RequestHandler[] = [loginIpCeiling, loginDeviceLimiter, reportLoginAllowance];
 
 /**
  * 2. General Operational Read Limiter (GET endpoints)

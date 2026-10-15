@@ -60,6 +60,12 @@ app.use(
       "X-Total-Chunks",
       "X-Chunk-Size",
       "X-Total-Size",
+      // Rate limits: the portal's sign-in screen counts down the real wait and
+      // warns before the lock (middleware/rateLimiters.ts, reportLoginAllowance)
+      "Retry-After",
+      "X-Login-Attempts-Remaining",
+      "X-Login-Attempts-Reset",
+      "X-Login-Attempts-Scope",
     ],
   })
 );
