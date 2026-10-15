@@ -1,0 +1,52 @@
+# Checks every push to main and every pull request: Prisma client, typecheck,
+# then the vitest suite. It uses no secrets and no database. The tests mock
+# Prisma and Firebase, and the Training_Data_* receipt corpora (gitignored,
+# real personal data) skip when they are absent.
+#
+# Deploying is deliberately not here yet. /var/www/server runs uncommitted
+# work that GitHub does not have, so a deploy job would replace it with older
+# code. When one is added: build on the VPS, and never run
+# `prisma db push --accept-data-loss` or `prisma migrate deploy` from CI
+# (see the deployment entry in AGENT_HANDSHAKE.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Placeholders, not secrets: src/config/env.ts refuses to load without
+      # them. There is no .env in CI, so nothing overrides these.
+      JWT_SECRET: ci-placeholder-not-a-secret
+      JWT_REFRESH_SECRET: ci-placeholder-refresh-not-a-secret
+      # Production runs on Manila time; the runner's clock is UTC.
+      TZ: Asia/Manila
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # The VPS runs Node 20.
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - run: npx tsc --noEmit
+
+      - run: npm test
