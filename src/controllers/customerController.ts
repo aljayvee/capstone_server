@@ -19,6 +19,7 @@ import * as emailVerificationService from "../services/emailVerificationService.
 import { customerRepository } from "../repositories/customerRepository.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { ServiceError } from "../services/ServiceError.js";
+import { getClientIp } from "../lib/requestContext.js";
 
 function assertSelfOrOwner(req: AuthenticatedRequest, targetId: number) {
   const callerRole = String(req.user?.role || "").toUpperCase();
@@ -49,7 +50,7 @@ export const updateCustomerProfile = asyncHandler<AuthenticatedRequest>(async (r
   assertSelfOrOwner(req, customerId);
 
   const input = parseOrThrow(customerProfileUpdateSchema, req.body);
-  const ipAddress = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip;
+  const ipAddress = getClientIp(req) || undefined;
   const userAgent = req.headers["user-agent"] || undefined;
   const deviceId = (req.headers["x-device-id"] as string) || undefined;
 
@@ -69,7 +70,7 @@ export const uploadCustomerPhoto = asyncHandler<AuthenticatedRequest>(async (req
   assertSelfOrOwner(req, customerId);
 
   const input = parseOrThrow(customerPhotoUploadSchema, req.body);
-  const ipAddress = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip;
+  const ipAddress = getClientIp(req) || undefined;
   const userAgent = req.headers["user-agent"] || undefined;
   const deviceId = (req.headers["x-device-id"] as string) || undefined;
 
@@ -88,7 +89,7 @@ export const deleteCustomerPhoto = asyncHandler<AuthenticatedRequest>(async (req
   }
   assertSelfOrOwner(req, customerId);
 
-  const ipAddress = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip;
+  const ipAddress = getClientIp(req) || undefined;
   const userAgent = req.headers["user-agent"] || undefined;
   const deviceId = (req.headers["x-device-id"] as string) || undefined;
 

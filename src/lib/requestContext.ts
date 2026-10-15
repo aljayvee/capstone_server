@@ -1,20 +1,22 @@
 import type { Request } from "express";
 
-// Where a request actually came from, for the login-alert email.
+// Where a request actually came from.
 //
-// Everything here is DISPLAY data. None of it is used for authorization, which
-// is what makes it safe to trust proxy-supplied headers at all — a spoofed
-// user-agent produces a misleading email, not an escalation.
+// The user agent and device hints below are DISPLAY data: a spoofed one makes a
+// misleading email, not an escalation. The IP is not: rate limiters, the
+// password-reset throttle and the threat interceptor's whitelist and bans all
+// key on it, so it must never come from a header the client controls.
 
 const MAX_USER_AGENT_LENGTH = 300;
 
-// `app.set("trust proxy", 1)` (index.ts) already makes req.ip correct for one
-// proxy hop. Cloudflare Tunnel additionally sets CF-Connecting-IP, which is the
-// only header that survives an arbitrary X-Forwarded-For chain — preferred here
-// solely because the tunnel is the single ingress in this deployment.
+// req.ip alone. index.ts trusts only nginx and Cloudflare's ranges
+// (lib/trustedProxies.ts), so Express has already walked past them to the real
+// client. CF-Connecting-IP used to win here, on the belief that a Cloudflare
+// Tunnel was the only way in. There is no tunnel: the origin answers on 443
+// directly, so anyone skipping Cloudflare could set that header to any address
+// (2026-10-16). Through Cloudflare, req.ip and CF-Connecting-IP agree anyway.
 export function getClientIp(req: Request): string | null {
-  const cfIp = req.headers["cf-connecting-ip"];
-  const raw = (Array.isArray(cfIp) ? cfIp[0] : cfIp) || req.ip || null;
+  const raw = req.ip || req.socket?.remoteAddress || null;
   if (!raw) return null;
 
   // Node reports IPv4 connections over a dual-stack socket as ::ffff:127.0.0.1.

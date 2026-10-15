@@ -24,12 +24,16 @@ import { scheduleOfferExpiryJob } from "./jobs/offerExpiry.js";
 import { threatInterceptor } from "./middleware/threatInterceptor.js";
 import { sysAdminThreatService } from "./services/sysAdminThreatService.js";
 import apiRoutes from "./routes/index.js";
+import { TRUSTED_PROXIES } from "./lib/trustedProxies.js";
 
 const app = express();
 
-// Behind a multi-hop reverse proxy (Cloudflare Anycast -> Nginx -> Express),
-// trust proxy must trust the upstream chain so req.ip reflects the real client.
-app.set("trust proxy", true);
+// Behind Cloudflare -> nginx -> Express. Trust exactly those hops, by address,
+// so req.ip is the real client and never an address the client wrote into
+// X-Forwarded-For. See lib/trustedProxies.ts for why it is not `true` (any
+// caller could pick their IP) or a hop count (the origin is also reachable
+// without Cloudflare).
+app.set("trust proxy", TRUSTED_PROXIES);
 
 app.use(helmet());
 

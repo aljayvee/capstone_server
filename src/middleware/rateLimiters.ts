@@ -5,7 +5,8 @@ const isDev = process.env.NODE_ENV === "development" || !process.env.NODE_ENV;
 
 /**
  * Smart key generator that scopes limits by authenticated user ID when available,
- * falling back to device ID, and then real client IP (respecting Cloudflare CF-Connecting-IP).
+ * falling back to device ID, and then the real client IP (req.ip, resolved through
+ * the proxies lib/trustedProxies.ts trusts, so a forged header cannot choose it).
  * This prevents Cloudflare proxy IPs or multiple users on NAT from colliding.
  */
 const smartKeyGenerator = (req: any): string => {

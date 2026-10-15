@@ -10,6 +10,7 @@
 import { Request, Response, NextFunction } from "express";
 import { sysAdminThreatService } from "../services/sysAdminThreatService.js";
 import { logger } from "../lib/logger.js";
+import { getClientIp as resolveClientIp } from "../lib/requestContext.js";
 
 const MALICIOUS_PATH_PATTERNS = [
   /^\/(\.env|\.git|\.aws|\.DS_Store|wp-admin|wp-login|phpmyadmin|adminer|config\.json|docker-compose\.yml|id_rsa)/i,
@@ -19,19 +20,15 @@ const MALICIOUS_PATH_PATTERNS = [
 ];
 
 /**
- * Extracts and normalizes the client IP address.
+ * The client IP, from the one place that resolves it (lib/requestContext.ts).
+ *
+ * This used to take the left-most X-Forwarded-For entry, which is whatever the
+ * client typed. Through Cloudflare that let a caller claim a whitelisted IP to
+ * skip the blacklist, dodge their own ban, or send a scanner path under someone
+ * else's IP and get THAT address banned permanently (2026-10-16).
  */
 export function getClientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  let ip = "";
-  if (typeof forwarded === "string") {
-    ip = forwarded.split(",")[0].trim();
-  } else if (Array.isArray(forwarded) && forwarded.length > 0) {
-    ip = forwarded[0].trim();
-  } else {
-    ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
-  }
-  return ip.replace(/^::ffff:/, "").trim();
+  return resolveClientIp(req) || "127.0.0.1";
 }
 
 export const threatInterceptor = (req: Request, res: Response, next: NextFunction): void => {
