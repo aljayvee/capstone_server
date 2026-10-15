@@ -346,3 +346,61 @@ describe("complete", () => {
     expect(userUpdate).not.toHaveBeenCalled();
   });
 });
+
+describe("rider app audience", () => {
+  const RIDER_CTX = { ...CTX, deviceHint: "Samsung Galaxy A04" };
+
+  it("finds riders, and only riders", async () => {
+    userFindFirst.mockResolvedValueOnce(RIDER);
+    const found = await staffReset.findAccount(RIDER.email, undefined, RIDER_CTX, "RIDER_APP");
+    expect(found.fullName).toBe("Maria Santos");
+
+    userFindFirst.mockResolvedValueOnce(MARIA);
+    await expect(staffReset.findAccount(MARIA.email, undefined, RIDER_CTX, "RIDER_APP")).rejects.toMatchObject({
+      status: 404,
+      message: "We couldn't find a rider account with that email address or mobile number.",
+    });
+  });
+
+  it("names the handset in the code email", async () => {
+    userFindFirst.mockResolvedValueOnce(RIDER);
+    const { resetSessionToken } = await staffReset.findAccount(RIDER.email, undefined, RIDER_CTX, "RIDER_APP");
+    userFindUnique.mockResolvedValue(RIDER);
+
+    await staffReset.sendCode(resetSessionToken, "EMAIL", RIDER_CTX, "RIDER_APP");
+
+    expect(sendEmail.mock.calls[0][2]).toContain("Sugo Rider App (Samsung Galaxy A04)");
+  });
+
+  it("refuses a portal session token on the rider routes, and the other way round", async () => {
+    const portalToken = await sessionFor(MARIA);
+    await expect(staffReset.sendCode(portalToken, "EMAIL", RIDER_CTX, "RIDER_APP")).rejects.toMatchObject({
+      status: 400,
+    });
+
+    userFindFirst.mockResolvedValueOnce(RIDER);
+    const { resetSessionToken: riderToken } = await staffReset.findAccount(RIDER.email, undefined, RIDER_CTX, "RIDER_APP");
+    userFindUnique.mockResolvedValue(RIDER);
+    await expect(staffReset.sendCode(riderToken, "EMAIL", CTX)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("refuses a rider reset token on the portal's complete", async () => {
+    userFindFirst.mockResolvedValueOnce(RIDER);
+    const { resetSessionToken } = await staffReset.findAccount(RIDER.email, undefined, RIDER_CTX, "RIDER_APP");
+    userFindUnique.mockResolvedValue(RIDER);
+    findLatestActiveForUser.mockResolvedValueOnce({
+      id: 601,
+      codeHash: await bcrypt.hash("123456", 4),
+      expiresAt: new Date(Date.now() + 60_000),
+      attempts: 0,
+    });
+    const { resetToken } = await staffReset.verify(resetSessionToken, { code: "123456" }, RIDER_CTX, "RIDER_APP");
+
+    await expect(staffReset.complete(resetToken, "N3w!Passw0rd", CTX)).rejects.toMatchObject({ status: 400 });
+    expect(userUpdate).not.toHaveBeenCalled();
+
+    const result = await staffReset.complete(resetToken, "N3w!Passw0rd", RIDER_CTX, "RIDER_APP");
+    expect(result.userId).toBe(8);
+    expect(revokeAllForSubject).toHaveBeenCalledWith("USER", 8, "PASSWORD_RESET");
+  });
+});

@@ -18,6 +18,10 @@ import {
   sendStaffResetCode,
   verifyStaffReset,
   completeStaffReset,
+  findRiderAccount,
+  sendRiderResetCode,
+  verifyRiderReset,
+  completeRiderReset,
 } from "../controllers/staffPasswordResetController.js";
 import { authenticateToken } from "../middleware/auth.js";
 import {
@@ -48,6 +52,12 @@ router.post("/auth/password-reset/find", passwordResetLimiter, findStaffAccount)
 router.post("/auth/password-reset/send-code", passwordResetLimiter, sendStaffResetCode);
 router.post("/auth/password-reset/verify", verificationLimiter, verifyStaffReset);
 router.post("/auth/password-reset/complete", verificationLimiter, completeStaffReset);
+// The rider app's twin of the above: RIDER accounts only, and its tokens are
+// refused by the portal routes (and the other way round).
+router.post("/riders/password-reset/find", passwordResetLimiter, findRiderAccount);
+router.post("/riders/password-reset/send-code", passwordResetLimiter, sendRiderResetCode);
+router.post("/riders/password-reset/verify", verificationLimiter, verifyRiderReset);
+router.post("/riders/password-reset/complete", verificationLimiter, completeRiderReset);
 
 router.post("/auth/refresh", refresh);
 router.post("/auth/logout", authenticateToken, logout);

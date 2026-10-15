@@ -34,8 +34,11 @@ import { JWT_PASSWORD_RESET_SECRET, PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS } fr
 // lookup, hit or miss, is written to password_reset_attempts with the IP, and
 // isIpThrottled shuts an IP out after a handful of misses or distinct names.
 //
-// Only accounts that can sign in to the portal (OWNER, DISPATCHER) are found.
-// Riders and customers get the same answer as an address nobody uses.
+// Each surface finds only the accounts that can sign in there: the web portal
+// OWNER and DISPATCHER (/auth/password-reset), the rider app RIDER
+// (/riders/password-reset, added 2026-10-16). Everyone else gets the same
+// answer as an address nobody uses, and the `aud` claim stops a token minted
+// for one surface from being spent on the other's routes.
 //
 // A code is only ever sent to a channel the account has VERIFIED, and the
 // account's phone number never leaves the server: for SMS the person types
@@ -43,7 +46,11 @@ import { JWT_PASSWORD_RESET_SECRET, PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS } fr
 // account. Showing a stranger the full name is the agreed cost; handing them
 // the number as well is not.
 
-const PORTAL_ROLES = ["OWNER", "DISPATCHER"] as const;
+export type ResetAudience = "WEB_PORTAL" | "RIDER_APP";
+const ROLES_FOR: Record<ResetAudience, readonly string[]> = {
+  WEB_PORTAL: ["OWNER", "DISPATCHER"],
+  RIDER_APP: ["RIDER"],
+};
 const SESSION_PURPOSE = "STAFF_PASSWORD_RESET_SESSION";
 const RESET_PURPOSE = "STAFF_PASSWORD_RESET";
 const SESSION_EXPIRES_IN_SECONDS = 15 * 60;
@@ -54,8 +61,8 @@ const CODE_EXPIRY_MINUTES = 15;
 const MAX_CODE_ATTEMPTS = 5;
 export const STAFF_RESET_RESEND_COOLDOWN_SECONDS = 60;
 
-const NOT_FOUND_MESSAGE =
-  "We couldn't find a portal account with that email address or mobile number.";
+const notFoundMessage = (audience: ResetAudience) =>
+  `We couldn't find a ${audience === "RIDER_APP" ? "rider" : "portal"} account with that email address or mobile number.`;
 const SESSION_EXPIRED_MESSAGE = "Your password reset session expired. Please start again.";
 
 export type ResetChannel = "EMAIL" | "SMS";
@@ -63,6 +70,8 @@ export type ResetChannel = "EMAIL" | "SMS";
 export interface RequestContext {
   ipAddress: string | null;
   userAgent: string | null;
+  // The rider app's handset model, for "Requested from" in the emails.
+  deviceHint?: string | null;
 }
 
 export interface FoundAccount {
@@ -82,6 +91,7 @@ interface SessionClaims {
   id: number;
   purpose: typeof SESSION_PURPOSE;
   cs: string;
+  aud: ResetAudience;
 }
 
 interface ResetClaims {
@@ -89,6 +99,7 @@ interface ResetClaims {
   purpose: typeof RESET_PURPOSE;
   cs: string;
   via: ResetChannel;
+  aud: ResetAudience;
 }
 
 type StaffRow = NonNullable<Awaited<ReturnType<typeof prisma.user.findUnique>>>;
@@ -146,8 +157,12 @@ function credentialStamp(user: StaffRow): string {
     .slice(0, 32);
 }
 
-function isPortalAccount(user: StaffRow | null): user is StaffRow {
-  return Boolean(user) && (PORTAL_ROLES as readonly string[]).includes(String(user!.role)) && user!.status === "Active";
+function isEligible(user: StaffRow | null, audience: ResetAudience): user is StaffRow {
+  return Boolean(user) && ROLES_FOR[audience].includes(String(user!.role)) && user!.status === "Active";
+}
+
+function describeRequester(ctx: RequestContext, audience: ResetAudience): string {
+  return describeDevice({ ...ctx, deviceHint: ctx.deviceHint ?? null, channel: audience });
 }
 
 function emailOffered(user: StaffRow): boolean {
@@ -166,15 +181,15 @@ async function phoneOffered(user: StaffRow): Promise<boolean> {
   return !others.some((other) => lastTenDigits(other.phone) === target);
 }
 
-async function lookUp(identifier: string): Promise<StaffRow | null> {
+async function lookUp(identifier: string, audience: ResetAudience): Promise<StaffRow | null> {
   if (looksLikeEmail(identifier)) {
     const user = await prisma.user.findFirst({ where: { email: normalizeEmail(identifier) } });
-    return isPortalAccount(user) ? user : null;
+    return isEligible(user, audience) ? user : null;
   }
 
   const target = lastTenDigits(identifier);
   const candidates = await prisma.user.findMany({
-    where: { role: { in: [...PORTAL_ROLES] }, status: "Active" },
+    where: { role: { in: ROLES_FOR[audience] as any }, status: "Active" },
   });
   const matches = candidates.filter((user) => lastTenDigits(user.phone) === target);
   if (matches.length > 1) {
@@ -186,25 +201,25 @@ async function lookUp(identifier: string): Promise<StaffRow | null> {
   return matches[0] ?? null;
 }
 
-function signSession(user: StaffRow): string {
-  const claims: SessionClaims = { id: user.id, purpose: SESSION_PURPOSE, cs: credentialStamp(user) };
+function signSession(user: StaffRow, audience: ResetAudience): string {
+  const claims: SessionClaims = { id: user.id, purpose: SESSION_PURPOSE, cs: credentialStamp(user), aud: audience };
   return jwt.sign(claims, JWT_PASSWORD_RESET_SECRET, { expiresIn: SESSION_EXPIRES_IN_SECONDS });
 }
 
 // Everything about the caller comes from a fresh read, never from the token:
 // the token only names the account and the state it was issued against.
-async function openSession(resetSessionToken: string): Promise<StaffRow> {
+async function openSession(resetSessionToken: string, audience: ResetAudience): Promise<StaffRow> {
   let claims: SessionClaims;
   try {
     claims = jwt.verify(resetSessionToken, JWT_PASSWORD_RESET_SECRET) as SessionClaims;
   } catch {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }
-  if (claims.purpose !== SESSION_PURPOSE || !claims.id) {
+  if (claims.purpose !== SESSION_PURPOSE || !claims.id || claims.aud !== audience) {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }
   const user = await prisma.user.findUnique({ where: { id: claims.id } });
-  if (!isPortalAccount(user) || credentialStamp(user) !== claims.cs) {
+  if (!isEligible(user, audience) || credentialStamp(user) !== claims.cs) {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }
   return user;
@@ -214,7 +229,8 @@ async function openSession(resetSessionToken: string): Promise<StaffRow> {
 export async function findAccount(
   identifier: string,
   honeypot: string | undefined,
-  ctx: RequestContext
+  ctx: RequestContext,
+  audience: ResetAudience = "WEB_PORTAL"
 ): Promise<FoundAccount> {
   const clean = identifier.trim();
 
@@ -223,7 +239,7 @@ export async function findAccount(
   if (honeypot && honeypot.trim().length > 0) {
     logger.warn(`[STAFF PASSWORD RESET] Honeypot tripped from ${ctx.ipAddress || "unknown IP"}`);
     audit("HONEYPOT", clean, ctx);
-    throw new ServiceError(404, NOT_FOUND_MESSAGE);
+    throw new ServiceError(404, notFoundMessage(audience));
   }
 
   if (await isIpThrottled(ctx.ipAddress)) {
@@ -240,19 +256,19 @@ export async function findAccount(
 
   let user: StaffRow | null;
   try {
-    user = await lookUp(clean);
+    user = await lookUp(clean, audience);
   } catch (err) {
     audit("UNKNOWN_ACCOUNT", clean, ctx);
     throw err;
   }
   if (!user) {
     audit("UNKNOWN_ACCOUNT", clean, ctx);
-    throw new ServiceError(404, NOT_FOUND_MESSAGE);
+    throw new ServiceError(404, notFoundMessage(audience));
   }
 
   audit("ACCOUNT_FOUND", accountKey(user), ctx);
   return {
-    resetSessionToken: signSession(user),
+    resetSessionToken: signSession(user, audience),
     fullName: fullNameOf(user),
     maskedEmail: emailOffered(user) ? maskEmail(user.email) : null,
     maskedPhone: (await phoneOffered(user)) ? maskPhone(user.phone) : null,
@@ -264,9 +280,9 @@ function generateCode(): string {
   return crypto.randomInt(0, 10 ** CODE_LENGTH).toString().padStart(CODE_LENGTH, "0");
 }
 
-function buildCodeEmail(code: string, user: StaffRow, ctx: RequestContext) {
+function buildCodeEmail(code: string, user: StaffRow, ctx: RequestContext, audience: ResetAudience) {
   const name = fullNameOf(user);
-  const device = describeDevice({ ...ctx, deviceHint: null, channel: "WEB_PORTAL" });
+  const device = describeRequester(ctx, audience);
   const text =
     `Hi ${name},\n\n` +
     `Someone asked to reset the password for your Sugo Express account (${user.username}).\n\n` +
@@ -300,9 +316,9 @@ function buildCodeEmail(code: string, user: StaffRow, ctx: RequestContext) {
 
 // The reminder that goes out when the code travels by SMS instead: the mailbox
 // would otherwise never hear that a reset is under way.
-function buildWarningEmail(user: StaffRow, maskedPhone: string, ctx: RequestContext) {
+function buildWarningEmail(user: StaffRow, maskedPhone: string, ctx: RequestContext, audience: ResetAudience) {
   const name = fullNameOf(user);
-  const device = describeDevice({ ...ctx, deviceHint: null, channel: "WEB_PORTAL" });
+  const device = describeRequester(ctx, audience);
   const text =
     `Hi ${name},\n\n` +
     `A password reset was started for your Sugo Express account (${user.username}). ` +
@@ -337,9 +353,10 @@ function buildWarningEmail(user: StaffRow, maskedPhone: string, ctx: RequestCont
 export async function sendCode(
   resetSessionToken: string,
   channel: ResetChannel,
-  ctx: RequestContext
+  ctx: RequestContext,
+  audience: ResetAudience = "WEB_PORTAL"
 ): Promise<SendCodeResult> {
-  const user = await openSession(resetSessionToken);
+  const user = await openSession(resetSessionToken, audience);
 
   if (channel === "SMS") {
     if (!(await phoneOffered(user))) {
@@ -348,7 +365,7 @@ export async function sendCode(
     const maskedPhone = maskPhone(user.phone);
     if ((user.email || "").trim()) {
       // Never awaited: the warning must not be the reason someone cannot reset.
-      const { subject, text, html } = buildWarningEmail(user, maskedPhone, ctx);
+      const { subject, text, html } = buildWarningEmail(user, maskedPhone, ctx, audience);
       void sendEmail(user.email, subject, text, html).catch((err) =>
         logger.error("[STAFF PASSWORD RESET] Warning email failed:", err)
       );
@@ -384,7 +401,7 @@ export async function sendCode(
   });
 
   // Awaited, unlike the warning: without this mail there is no way forward.
-  const { subject, text, html } = buildCodeEmail(code, user, ctx);
+  const { subject, text, html } = buildCodeEmail(code, user, ctx, audience);
   const delivered = await sendEmail(user.email, subject, text, html);
   if (!delivered) {
     await emailVerificationRepository.markConsumed(record.id);
@@ -407,9 +424,10 @@ export async function sendCode(
 export async function verify(
   resetSessionToken: string,
   proof: { code?: string; firebaseIdToken?: string },
-  ctx: RequestContext
+  ctx: RequestContext,
+  audience: ResetAudience = "WEB_PORTAL"
 ): Promise<{ resetToken: string; expiresInSeconds: number }> {
-  const user = await openSession(resetSessionToken);
+  const user = await openSession(resetSessionToken, audience);
   let via: ResetChannel;
 
   if (proof.firebaseIdToken) {
@@ -450,7 +468,7 @@ export async function verify(
   }
 
   audit("CODE_VERIFIED", accountKey(user), ctx);
-  const claims: ResetClaims = { id: user.id, purpose: RESET_PURPOSE, cs: credentialStamp(user), via };
+  const claims: ResetClaims = { id: user.id, purpose: RESET_PURPOSE, cs: credentialStamp(user), via, aud: audience };
   return {
     resetToken: jwt.sign(claims, JWT_PASSWORD_RESET_SECRET, { expiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS }),
     expiresInSeconds: PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS,
@@ -461,7 +479,8 @@ export async function verify(
 export async function complete(
   resetToken: string,
   newPassword: string,
-  ctx: RequestContext
+  ctx: RequestContext,
+  audience: ResetAudience = "WEB_PORTAL"
 ): Promise<{ userId: number; revokedSessions: number }> {
   let claims: ResetClaims;
   try {
@@ -471,12 +490,12 @@ export async function complete(
   }
   // The secret is shared with the customer flow and with step 1's session
   // token; the purpose claim is what keeps either of those from landing here.
-  if (claims.purpose !== RESET_PURPOSE || !claims.id) {
+  if (claims.purpose !== RESET_PURPOSE || !claims.id || claims.aud !== audience) {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }
 
   const user = await prisma.user.findUnique({ where: { id: claims.id } });
-  if (!isPortalAccount(user)) {
+  if (!isEligible(user, audience)) {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }
   if (credentialStamp(user) !== claims.cs) {
