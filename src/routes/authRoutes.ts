@@ -13,8 +13,19 @@ import {
   getLoginLogs,
 } from "../controllers/authController.js";
 import { issueFirebaseToken } from "../controllers/firebaseAuthController.js";
+import {
+  findStaffAccount,
+  sendStaffResetCode,
+  verifyStaffReset,
+  completeStaffReset,
+} from "../controllers/staffPasswordResetController.js";
 import { authenticateToken } from "../middleware/auth.js";
-import { loginLimiter, verificationLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
+import {
+  loginLimiter,
+  verificationLimiter,
+  userApiLimiter,
+  passwordResetLimiter,
+} from "../middleware/rateLimiters.js";
 
 const router = Router();
 
@@ -28,6 +39,15 @@ router.post("/riders/login", loginLimiter, riderLogin);
 router.post("/auth/complete-profile", verificationLimiter, completeLoginProfile);
 router.post("/auth/verify-login-otp", verificationLimiter, verifyLoginOtp);
 router.post("/auth/resend-login-otp", verificationLimiter, resendLoginOtp);
+
+// Staff web-portal "forgot password" (staffPasswordResetService). The lookup
+// and the code send are the abusable steps (one names accounts, the other sends
+// mail), so they share passwordResetLimiter with the customer reset. Checking a
+// code and setting the password are on verificationLimiter, like the sign-in OTP.
+router.post("/auth/password-reset/find", passwordResetLimiter, findStaffAccount);
+router.post("/auth/password-reset/send-code", passwordResetLimiter, sendStaffResetCode);
+router.post("/auth/password-reset/verify", verificationLimiter, verifyStaffReset);
+router.post("/auth/password-reset/complete", verificationLimiter, completeStaffReset);
 
 router.post("/auth/refresh", refresh);
 router.post("/auth/logout", authenticateToken, logout);

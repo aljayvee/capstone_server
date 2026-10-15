@@ -16,6 +16,17 @@ import { roleLabel } from "../lib/roleLabels.js";
 
 export type LoginChannel = "WEB_PORTAL" | "RIDER_APP";
 
+// account_modification_logs rows written around a staff password reset. The
+// reset writes `resetValue`; the first sign-in after it writes
+// `firstSignInValue` once its email has gone out. A reset with no later
+// first-sign-in row is what makes the next sign-in announce itself, whatever
+// the device. Kept in the schema's existing audit table so no column is added.
+export const PASSWORD_RESET_AUDIT = {
+  field: "password",
+  resetValue: "RESET",
+  firstSignInValue: "FIRST_SIGN_IN_AFTER_RESET",
+} as const;
+
 export interface LoginContext {
   ipAddress: string | null;
   userAgent: string | null;
@@ -255,14 +266,43 @@ export async function checkAndRegisterDevice(
   }
 }
 
+/**
+ * When the account's password was reset and nobody has signed in with the new
+ * one yet, the time of that reset. Otherwise null.
+ */
+export async function findUnannouncedPasswordReset(userId: number): Promise<Date | null> {
+  const reset = await prisma.accountModificationLog.findFirst({
+    where: { userId, fieldModified: PASSWORD_RESET_AUDIT.field, newValue: PASSWORD_RESET_AUDIT.resetValue },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (!reset) return null;
+
+  const announced = await prisma.accountModificationLog.findFirst({
+    where: {
+      userId,
+      fieldModified: PASSWORD_RESET_AUDIT.field,
+      newValue: PASSWORD_RESET_AUDIT.firstSignInValue,
+      createdAt: { gte: reset.createdAt },
+    },
+    select: { id: true },
+  });
+  return announced ? null : reset.createdAt;
+}
+
 export async function sendLoginAlert(user: LoginAlertUser, ctx: LoginContext): Promise<void> {
   try {
     const email = (user.email || "").trim();
     if (!email) return;
 
+    // The first sign-in after a password reset is always announced, even from
+    // a recognised device: it is the moment someone who took over the account
+    // by resetting it would sign in.
+    const resetAt = await findUnannouncedPasswordReset(user.id);
+
     // Check device recognition: suppress alert if device is already recognized
     const { isNew } = await checkAndRegisterDevice(user.id, ctx);
-    if (!isNew) {
+    if (!isNew && !resetAt) {
       logger.info(
         `[LoginNotification] Suppressed sign-in alert for user ${user.username} (recognized device: ${describeDevice(ctx)})`
       );
@@ -275,17 +315,24 @@ export async function sendLoginAlert(user: LoginAlertUser, ctx: LoginContext): P
     const when = formatManilaTime(at);
     const ip = ctx.ipAddress || "Unknown";
     const surface = ctx.channel === "RIDER_APP" ? "Sugo Rider App" : "Sugo Express Web Portal";
+    const usedNewPassword = Boolean(resetAt);
+    const opening = usedNewPassword
+      ? "Your new Sugo Express password was just used to sign in."
+      : "Your Sugo Express account was just used to sign in.";
 
     const text =
       `Hi ${fullName},\n\n` +
-      `Your Sugo Express account was just used to sign in.\n\n` +
+      `${opening}\n\n` +
       `Account:  ${user.username} (${roleLabel(user.role)})\n` +
       `Signed in to: ${surface}\n` +
       `Device:   ${device}\n` +
       `Time:     ${when}\n` +
-      `IP address: ${ip}\n\n` +
-      `Timestamp (ISO 8601): ${at.toISOString()}\n\n` +
-      `If this was you, no action is needed. If it was not, contact your system administrator immediately.`;
+      `IP address: ${ip}\n` +
+      (usedNewPassword ? `Password reset: ${formatManilaTime(resetAt!)}\n` : "") +
+      `\nTimestamp (ISO 8601): ${at.toISOString()}\n\n` +
+      (usedNewPassword
+        ? `If this was you, no action is needed. If it was not, someone else has your new password. Contact your system administrator immediately to lock the account.`
+        : `If this was you, no action is needed. If it was not, contact your system administrator immediately.`);
 
     const bodyHtml = `
       ${renderDetailRows([
@@ -295,24 +342,48 @@ export async function sendLoginAlert(user: LoginAlertUser, ctx: LoginContext): P
         { label: "Device", value: device },
         { label: "Time", value: when },
         { label: "IP address", value: ip },
+        ...(usedNewPassword ? [{ label: "Password reset", value: formatManilaTime(resetAt!) }] : []),
       ])}
       ${renderSecurityAdvisory(
         "Security Alert",
-        "If you do not recognize this activity, your credentials may be compromised. Please notify your system administrator immediately to lock and secure your account."
+        usedNewPassword
+          ? "If you did not reset your password and sign in, someone else has your new password. Notify your system administrator immediately to lock and secure your account."
+          : "If you do not recognize this activity, your credentials may be compromised. Please notify your system administrator immediately to lock and secure your account."
       )}
     `;
 
     const html = renderEmailShell({
-      title: "New Sign-In Detected",
-      subtitle: "Your Sugo Express account was just used to sign in.",
+      title: usedNewPassword ? "Signed In With Your New Password" : "New Sign-In Detected",
+      subtitle: opening,
       bodyHtml,
       footerNote:
         "If this was you, no action is needed. If you do not recognise this sign-in, contact your system administrator immediately.",
       categoryBadge: "SECURITY AUDIT",
-      preheader: `New sign-in to your Sugo Express account from ${device}.`,
+      preheader: usedNewPassword
+        ? `Your new password was used to sign in from ${device}.`
+        : `New sign-in to your Sugo Express account from ${device}.`,
     });
 
-    await sendEmail(email, "New sign-in to your Sugo Express account", text, html);
+    const subject = usedNewPassword
+      ? "Your new password was just used to sign in"
+      : "New sign-in to your Sugo Express account";
+    const delivered = await sendEmail(email, subject, text, html);
+
+    // Recorded only once the email is out, so a mail failure leaves the reset
+    // unannounced and the next sign-in tries again.
+    if (usedNewPassword && delivered) {
+      await prisma.accountModificationLog.create({
+        data: {
+          role: user.role,
+          userId: user.id,
+          fieldModified: PASSWORD_RESET_AUDIT.field,
+          newValue: PASSWORD_RESET_AUDIT.firstSignInValue,
+          ipAddress: ctx.ipAddress?.slice(0, 64) ?? null,
+          userAgent: ctx.userAgent?.slice(0, 300) ?? null,
+          verifiedVia: "PASSWORD",
+        },
+      });
+    }
   } catch (err) {
     // A database or mail error must never turn a successful login into a 500.
     logger.error("Failed to build or send login alert email:", err);

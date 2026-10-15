@@ -113,3 +113,48 @@ export const verifyResetPhoneSchema = z.object({
 });
 export type VerifyResetPhoneInput = z.infer<typeof verifyResetPhoneSchema>;
 
+
+// --- Staff (web portal) password reset ---
+//
+// Stricter than strongPassword in userValidators on purpose: the reset screen
+// was specified with upper case, lower case, a number and a special character.
+// Whitespace is refused outright, as everywhere else staff passwords are set.
+export const staffResetPassword = z
+  .string()
+  .min(8, "Password must be at least 8 characters long.")
+  .max(128, "Password must be at most 128 characters long.")
+  .refine((v) => !/\s/.test(v), "Password cannot contain spaces or tabs.")
+  .refine((v) => /[A-Z]/.test(v), "Password must contain an uppercase letter.")
+  .refine((v) => /[a-z]/.test(v), "Password must contain a lowercase letter.")
+  .refine((v) => /\d/.test(v), "Password must contain a number.")
+  .refine((v) => /[^A-Za-z0-9]/.test(v), "Password must contain a special character.");
+
+export const staffResetFindSchema = z.object({
+  identifier: nonEmptyTrimmed("Email or mobile number"),
+  // Honeypot, as in forgotPasswordSchema.
+  website: z.string().optional(),
+});
+export type StaffResetFindInput = z.infer<typeof staffResetFindSchema>;
+
+export const staffResetSendCodeSchema = z.object({
+  resetSessionToken: nonEmptyTrimmed("Reset session"),
+  channel: z.enum(["EMAIL", "SMS"]),
+});
+export type StaffResetSendCodeInput = z.infer<typeof staffResetSendCodeSchema>;
+
+export const staffResetVerifySchema = z
+  .object({
+    resetSessionToken: nonEmptyTrimmed("Reset session"),
+    code: z.string().trim().regex(/^\d{6}$/, "Reset code must be 6 digits.").optional(),
+    firebaseIdToken: z.string().trim().min(1, "Firebase token cannot be empty.").optional(),
+  })
+  .refine((data) => Boolean(data.code) !== Boolean(data.firebaseIdToken), {
+    message: "Send either the 6-digit email code or a Firebase phone token.",
+  });
+export type StaffResetVerifyInput = z.infer<typeof staffResetVerifySchema>;
+
+export const staffResetCompleteSchema = z.object({
+  resetToken: nonEmptyTrimmed("Reset session"),
+  password: staffResetPassword,
+});
+export type StaffResetCompleteInput = z.infer<typeof staffResetCompleteSchema>;

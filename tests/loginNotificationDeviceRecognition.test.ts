@@ -6,6 +6,8 @@ const {
   userKnownDeviceUpdate,
   userSessionFindFirst,
   accountLoginLogFindFirst,
+  accountModificationLogFindFirst,
+  accountModificationLogCreate,
   sendEmailMock,
 } = vi.hoisted(() => ({
   userKnownDeviceFindUnique: vi.fn(),
@@ -13,6 +15,8 @@ const {
   userKnownDeviceUpdate: vi.fn(),
   userSessionFindFirst: vi.fn(),
   accountLoginLogFindFirst: vi.fn(),
+  accountModificationLogFindFirst: vi.fn(),
+  accountModificationLogCreate: vi.fn(),
   sendEmailMock: vi.fn(),
 }));
 
@@ -29,6 +33,10 @@ vi.mock("../src/lib/prisma.js", () => ({
     accountLoginLog: {
       findFirst: accountLoginLogFindFirst,
     },
+    accountModificationLog: {
+      findFirst: accountModificationLogFindFirst,
+      create: accountModificationLogCreate,
+    },
   },
 }));
 
@@ -40,6 +48,8 @@ import {
   resolveEffectiveDeviceId,
   checkAndRegisterDevice,
   sendLoginAlert,
+  findUnannouncedPasswordReset,
+  PASSWORD_RESET_AUDIT,
   type LoginContext,
   type LoginAlertUser,
 } from "../src/services/loginNotificationService.js";
@@ -66,6 +76,9 @@ describe("Device Recognition & Login Notification Suppression", () => {
     userKnownDeviceUpdate.mockResolvedValue({ id: 1 });
     userSessionFindFirst.mockResolvedValue(null);
     accountLoginLogFindFirst.mockResolvedValue(null);
+    // No password reset on record unless a test says otherwise.
+    accountModificationLogFindFirst.mockResolvedValue(null);
+    accountModificationLogCreate.mockResolvedValue({ id: 1 });
     sendEmailMock.mockResolvedValue(true);
   });
 
@@ -473,5 +486,99 @@ describe("Device Recognition & Login Notification Suppression", () => {
       expect(sendEmailMock).not.toHaveBeenCalled();
       expect(userKnownDeviceFindUnique).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("First sign-in after a staff password reset", () => {
+  const user: LoginAlertUser = {
+    id: 42,
+    firstName: "Maria",
+    lastName: "Santos",
+    username: "dispatcher_maria",
+    email: "maria.santos@sugo-express.org",
+    role: "DISPATCHER",
+  };
+  const ctx: LoginContext = {
+    deviceId: "known-laptop-chrome",
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ipAddress: "124.106.12.34",
+    deviceHint: null,
+    channel: "WEB_PORTAL",
+  };
+  const resetAt = new Date("2026-10-16T02:00:00Z");
+
+  // A reset row on record, and no first-sign-in row after it.
+  const resetPending = () => {
+    accountModificationLogFindFirst.mockImplementation(async ({ where }: any) =>
+      where.newValue === PASSWORD_RESET_AUDIT.resetValue ? { createdAt: resetAt } : null
+    );
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The device is recognised: without a reset this sign-in would be silent.
+    userKnownDeviceFindUnique.mockResolvedValue({ id: 77, userId: 42, deviceId: "known-laptop-chrome" });
+    userKnownDeviceUpdate.mockResolvedValue({ id: 77 });
+    accountModificationLogFindFirst.mockResolvedValue(null);
+    accountModificationLogCreate.mockResolvedValue({ id: 1 });
+    sendEmailMock.mockResolvedValue(true);
+  });
+
+  it("announces the sign-in even from a recognised device, with device and IP", async () => {
+    resetPending();
+
+    await sendLoginAlert(user, ctx);
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const [to, subject, text, html] = sendEmailMock.mock.calls[0];
+    expect(to).toBe("maria.santos@sugo-express.org");
+    expect(subject).toBe("Your new password was just used to sign in");
+    expect(text).toContain("Chrome on Windows 10/11");
+    expect(text).toContain("124.106.12.34");
+    expect(text).toContain("Password reset:");
+    expect(html).toContain("Signed In With Your New Password");
+  });
+
+  it("records the announcement so the next sign-in is quiet again", async () => {
+    resetPending();
+
+    await sendLoginAlert(user, ctx);
+
+    expect(accountModificationLogCreate).toHaveBeenCalledTimes(1);
+    const { data } = accountModificationLogCreate.mock.calls[0][0];
+    expect(data).toMatchObject({
+      userId: 42,
+      fieldModified: PASSWORD_RESET_AUDIT.field,
+      newValue: PASSWORD_RESET_AUDIT.firstSignInValue,
+      ipAddress: "124.106.12.34",
+    });
+  });
+
+  it("leaves the reset unannounced when the email fails, so the next sign-in retries", async () => {
+    resetPending();
+    sendEmailMock.mockResolvedValue(false);
+
+    await sendLoginAlert(user, ctx);
+
+    expect(accountModificationLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet on a recognised device once the reset has been announced", async () => {
+    accountModificationLogFindFirst.mockImplementation(async ({ where }: any) =>
+      where.newValue === PASSWORD_RESET_AUDIT.resetValue ? { createdAt: resetAt } : { id: 9 }
+    );
+
+    await sendLoginAlert(user, ctx);
+
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("findUnannouncedPasswordReset only looks for announcements at or after the reset", async () => {
+    resetPending();
+
+    await expect(findUnannouncedPasswordReset(42)).resolves.toEqual(resetAt);
+    const announcementQuery = accountModificationLogFindFirst.mock.calls[1][0];
+    expect(announcementQuery.where.createdAt).toEqual({ gte: resetAt });
   });
 });
