@@ -24,6 +24,7 @@ import { getClientIp, getDeviceHint, getDeviceId, getUserAgent, parseDeviceInfo 
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import * as riderPresenceService from "../services/riderPresenceService.js";
 import * as sessionService from "../services/sessionService.js";
+import * as errandService from "../services/errandService.js";
 import { notifySessionRevoked } from "../lib/socket.js";
 import { pushTokenOwnerFor, releasePushToken } from "../services/pushTokenOwnership.js";
 import { logger } from "../lib/logger.js";
@@ -418,6 +419,15 @@ export const logout = asyncHandler<AuthenticatedRequest>(async (req, res) => {
     // out used to take rider 9 off duty and close their shift (2026-10-07).
     if (String(req.user.role || "").toUpperCase() === "RIDER") {
       void riderPresenceService.closeLoginSession(req.user.id);
+    }
+    // Dispatchers only: automatically release claimed but unverified/unassigned orders
+    // back to AVAILABLE status for the next on-duty dispatcher on shift handover.
+    if (String(req.user.role || "").toUpperCase() === "DISPATCHER") {
+      try {
+        await errandService.releaseAllUnverifiedForDispatcher(req.user.id);
+      } catch (err) {
+        logger.warn("Could not release unverified orders on dispatcher logout:", err);
+      }
     }
     // This account's alerts stop reaching the phone it signed out of.
     void releasePushToken(pushTokenOwnerFor(req.user.role, req.user.id)).catch((err) =>

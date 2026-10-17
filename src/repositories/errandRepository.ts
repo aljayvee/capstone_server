@@ -567,4 +567,15 @@ export const dispatchLogRepository = {
       where: { errandId, dispatcherId, verifiedAt: null },
     });
   },
+
+  /**
+   * Finds all unverified dispatch logs for a given dispatcher.
+   * Used on shift handover / logout to return claimed-but-unverified orders to the queue.
+   */
+  findUnverifiedByDispatcherId(dispatcherId: number) {
+    return prisma.dispatchLog.findMany({
+      where: { dispatcherId, verifiedAt: null },
+      include: { errand: true },
+    });
+  },
 };

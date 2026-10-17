@@ -51,6 +51,7 @@ import {
   requestHalfPayment,
 } from "../controllers/errandPaymentController.js";
 import { uploadPaymentProof, getPaymentProof } from "../controllers/paymentProofController.js";
+import { getDispatcherDashboardSummary } from "../controllers/dispatcherDashboardController.js";
 
 const router = Router();
 
@@ -110,6 +111,15 @@ router.get(
   requireRole(["OWNER", "DISPATCHER"]),
   readLimiter,
   suggestExceptionReason
+);
+
+// GET /api/errands/dispatcher-dashboard-summary - Real-time operational pulse and bottleneck radar
+router.get(
+  "/dispatcher-dashboard-summary",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  readLimiter,
+  getDispatcherDashboardSummary
 );
 
 // GET /api/errands - Fetch all errands (Owner/Dispatcher view)

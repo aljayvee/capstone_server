@@ -5,10 +5,10 @@
 ---
 
 ## 📡 Tunnel State
-* **Active Mission**: Firebase Phone Auth & Production SMS Verification
+* **Active Mission**: Dispatcher Portal Dashboard Aggregation & Shift Handover Auto-Release
 * **Current Driver**: Antigravity 2.0 (Gemini 3.8 Flash High)
 * **Target Workspace**: `Capstone_Server/server` (Port 5000 API Backend)
-* **Last Updated**: 2026-10-05
+* **Last Updated**: 2026-10-17
 
 ---
 
@@ -18,6 +18,331 @@
 * `[LOCKED]` `Rate Limiting & Server Validation Invariant` (Rate limiter -> Zod/Express validator -> Database execution)
 * `[LOCKED]` `BOLA/IDOR Dispatcher Authorization` (`verifyDispatcherAccess` on all mutating routes)
 * `[LOCKED]` `Rotating Refresh Token Architecture` (SHA-256 session hash in `user_sessions`, 10s grace window)
+
+---
+
+## 2026-10-17 - Dispatcher Portal Dashboard Aggregation & Shift Handover Auto-Release (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [COMPLETED & VERIFIED - `npx tsc --noEmit` passed with 0 errors; Vitest test suite `tests/dispatcherDashboard.test.ts` passed with 3/3 tests].
+* **Feature & Implementation Specification**:
+  - **Shift Handover Auto-Release (Decision 1)**:
+    - Added `releaseAllUnverifiedForDispatcher(dispatcherId)` in `src/services/errandService.ts` and `findUnverifiedByDispatcherId` in `src/repositories/errandRepository.ts`.
+    - Automatically finds unverified claimed orders (`status: "PENDING"`, `riderId: null`), deletes unverified dispatch logs, resets chat dispatcher to null, reverts status to `"AVAILABLE"`, and broadcasts `order:updated` and `order:new` via Socket.io.
+    - Synchronously awaited in `logout` handler in `src/controllers/authController.ts` for users with `DISPATCHER` role before destroying sessions and clearing cookies.
+  - **Dispatcher Dashboard Aggregation Endpoint (Decision 3)**:
+    - Added `GET /api/errands/dispatcher-dashboard-summary` controller `src/controllers/dispatcherDashboardController.ts`.
+    - Protected by `authenticateToken`, `requireRole(["OWNER", "DISPATCHER"])`, and `readLimiter`.
+    - Aggregates `unclaimedCount`, `urgentUnclaimedCount` (>3m), `activeInMotionCount` (excluding pending review), `deliveredTodayCount`, `helpDeskCount`, 5-phase delivery pipeline, deduplicated attention items (stalled dwells, stale unclaimed, overage disputes, post-purchase cancellations), top 5 merchants today, top decline reasons, and verified shift performance metrics.
+* **Files Modified**:
+  - `src/controllers/authController.ts`
+  - `src/controllers/dispatcherDashboardController.ts`
+  - `src/repositories/errandRepository.ts`
+  - `src/routes/errandRoutes.ts`
+  - `src/services/errandService.ts`
+  - `tests/dispatcherDashboard.test.ts`
+  - `AGENT_HANDSHAKE.md`
+* **Verification Ledger**:
+  - `npx tsc --noEmit`: 0 errors.
+  - `npx vitest run tests/dispatcherDashboard.test.ts`: 3 passed (100%).
+
+---
+
+## 2026-10-16 - 500-Record High-Fidelity Database Seeder Scaling & Non-Destructive VPS Deployment (`prisma/seed.ts`) (Antigravity 2.0, Gemini 3.8 Flash)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & VERIFIED - `npx tsc --noEmit` passed with 0 errors, `npx tsx prisma/seed.ts` executed in ~7s on VPS MariaDB with 100% NON-DESTRUCTIVE ACCOUNT PRESERVATION].
+* **Feature & Implementation Specification**:
+  - **Non-Destructive VPS Seeding Invariant**:
+    - Pre-existing accounts on the production VPS (`109.123.239.182`) were strictly checked before creation.
+    - Existing staff accounts (12 users including `owner`, `aldhen`, `caramel`, `hatdog`, `hakdog`, `harthpalaras`, `qa_dispatcher`, `mamamo`, `pororo`, `burgerkasakin`, `aldhen_03`, `jayvee`) retained their original email addresses, profile information, and password hashes 100% intact.
+    - Existing customer accounts (9 customers including `jayvee`, `dhen15`, `hatdog`, `nicks`, `mebs`, `versolaarnalyn47`, `havinnovebusiness`, `halliemullerr`, `kupal`) were preserved without modifying passwords or saved delivery locations.
+    - Pre-existing production errands (52 errands) were completely untouched because deterministic cleanup is strictly scoped to `where: { errandId: { in: allErrandIds } }`.
+  - **High-Velocity Bulk Scaling to 500 Records**:
+    - **Errand Lifecycle Distribution (Exactly 500 Errands Seeded + 52 Existing = 552 Total on VPS)**:
+      - `400 COMPLETED`: Distributed across the past 60 days with realistic peak delivery hours (lunch & dinner rush), multi-store stops, accurate item totals, delivery fees, tips, reconciled cash settlements, commissions, and customer ratings.
+      - `30 IN_TRANSIT`: Real-time active errands created in the past 30–75 minutes, with live breadcrumb track points (`errand_track_points`) and purchased item statuses.
+      - `25 ASSIGNED`: Live errands assigned to riders heading to stores in the past 10–30 minutes.
+      - `25 PENDING`: Fresh customer requests waiting in the dispatch review queue (past 2–25 minutes).
+      - `20 CANCELLED`: Errand cancellations with realistic dispatcher decline reasons logged in `errand_decline_reasons`.
+    - **Customer Persona Scaling (60 Accounts Seeded + 9 Existing = 69 Total on VPS)**:
+      - 60 unique customer accounts with complete profile records (`customer_information`), phone numbers (`0919...`), birthdates, and 60+ geocoded delivery locations across 12 authentic Tacurong City barangays (`Poblacion`, `New Isabela`, `Griño`, `San Emmanuel`, `Buenaflor`, `Calean`, `Carmen`, `EJC Montilla`, `Kalandagan`, `Rajah Muda`, `San Pablo`, `Baras`).
+    - **Itemized Pabili Catalog (1,072 Items Seeded + 129 Existing = 1,201 Total on VPS)**:
+      - Itemized `pabili_details_tbl` and `pabili_item_requests_tbl` populated with authentic store goods, unit prices, notes, sizes, and linked `pinpointId` foreign keys across 18 verified Tacurong establishments spanning all 6 active merchant categories (`Fast Food`, `Pharmacy`, `Supermarket`, `Retail`, `Bakery`, `Cafe`).
+    - **Financial & Operational Parity (500 Transactions Seeded + 52 Existing = 552 Total on VPS)**:
+      - 500 `customer_transactions` matching errand totals and payment methods (COD, GCash / PayMaya, Bank Transfer).
+      - 400 `settlement_records` (384 reconciled, 16 short variance with notes for Exception Queue audit).
+      - 400 `rider_commissions` computed with standard 80/20 split and tips preserved 100% for riders.
+      - 300 verified customer `ratings` (3 to 5 stars) with authentic Filipino & English reviews.
+      - 457 `dwell_observations` for ETA machine learning percentiles.
+  - **High-Performance Chunked `createMany` Architecture**:
+    - Single batched pre-cleanup deletes previous errand slots in ~15 queries instead of 8,000+ individual round-trips.
+    - Sliced batch insertion (`chunkedCreateMany` with chunks of 250–300 rows) executes all 500 errands and thousands of relational records in under 7 seconds without MySQL parameter limits or memory spikes.
+* **Files Modified**:
+  - `prisma/seed.ts` (added defensive account checks to preserve existing staff, customers, and delivery locations)
+  - `AGENT_HANDSHAKE.md`
+* **Verification Ledger**:
+  - `npx tsc --noEmit` (local & VPS): 0 TypeScript compiler errors.
+  - Production VPS Execution (`npx tsx prisma/seed.ts`): Exited with code 0 in 7.8s.
+  - Live VPS Database Counts (`SELECT count(*) FROM ...`):
+    - Errands: **552** (52 pre-existing + 500 seeded)
+    - Customer Transactions: **552**
+    - Pabili Items (`pabili_details_tbl`): **1,201**
+    - Store Pinpoints (`errand_pinpoints_tbl`): **645**
+    - Cash Settlements (`settlement_records`): **424**
+    - Rider Commissions (`rider_commissions`): **425**
+    - Customer Ratings (`ratings`): **315**
+    - Customer Accounts (`customer_accounts`): **69** (9 original + 60 seeded)
+    - Staff Users (`users`): **19** (12 original + 7 seeded)
+    - PM2 `capstone-backend` (`PID 65735`): Online, HTTP 200 OK on `/api/health`.
+  - Account integrity empirical comparison: 100% hash parity verified across all 12 original staff accounts and 9 original customer accounts.
+
+---
+
+## 2026-10-15 - Exception queue: overage/unpaid rows clearable, stale reason-model tests, push error audit (Claude, Opus 5.5)
+* **Status**: [Server and web portal DEPLOYED by Claude 2026-10-15 ~05:17 +08. NOT committed. See web `AGENT_HANDSHAKE.md`, same date.]
+* **Deploy record.** Targeted: only `src/validators/exceptionValidators.ts`, `src/services/exceptionService.ts`, `src/repositories/errandRepository.ts`. Before upload, prod's three files hashed equal to local HEAD (`\r` stripped), so the shipped copies are prod plus exactly these edits; nothing in prod `src` or `prisma` was newer than `dist/index.js`. VPS `tsc --noEmit` 0 errors, `npm run build`, `pm2 restart capstone-backend`; health 200 local and edge; anonymous `POST /errands/x/exceptions/resolve` 401. Backup (prior 3 files + prior `dist`): `/root/deploy-backups/server-20261015-051529-exception-review-scope`. After restart, the live derivation over every reviewed errand: 29 cleared, 1 open (726f2cd9, as counted beforehand). The `ERR_ERL_KEY_GEN_IPV6` trace in the pm2 error log is old (1,170 lines from line 1, `middleware/sysAdminSecurity.ts`), not from this deploy.
+* **No `[LOCKED]` contract touched.** No schema, route or limiter change.
+* **Resolve 400 on two kinds.** `validators/exceptionValidators.ts`: `EXCEPTION_KINDS` now includes `OVERAGE_PENDING` and `UNPAID_BALANCE` (the queue showed "Resolve" on both; zod refused them). Chosen over "clear only through their own flows" because those flows are gone: nothing raises or clears an overage since the downpayment was retired 2026-10-08 (`checkReceiptOverage` never escalates, `assertGoodsReleasable` always passes), and the portal has no screen for `POST /payments/top-up` or `/payments/balance`. The reason model already carries OVERAGE_* and BALANCE_* reasons. `reasonSuggestionQuerySchema` now uses the same list. New compile-time guard `EveryKindIsClearable` fails `tsc` if `ExceptionKind` gains a kind the list lacks. New `tests/exceptionClearable.test.ts` (10): every kind `exceptionsFor` raises passes the resolve schema.
+* **Stale tests, code kept.** `exceptionReasonSuggestion` ("0.75 rule") and `exceptionSecondOpinion` (2 tests) asserted the rules from before the 2026-09-26 handoff below (threshold 0.75 to 0.65; second opinion for any note or a network under 0.75). Tests rewritten to the documented rules and the threshold pinned at 0.65. `exceptionAccess` already loaded: another session's uncommitted mock edit added `itemTidyLimiter` / `itemStoreCheckLimiter`; left as is. `vitest run tests/exception`: 6 files, 110 pass.
+* **A review covers only what existed when it was written.** `exceptionService.latestReview` matched (errandId, kind) only, so a reason also cleared every same-kind occurrence raised later. Now `push(..., occurredAt, raisedAt)` and a review counts only if `resolvedAt >= raisedAt`. `raisedAt` is the server's time where one exists: RECEIPT_DIVERGENCE uses `extraction.confirmedAt` (divergent from the rider's confirmation, not the photo), STALLED_STOP the dwell row's `createdAt` (departedAt is phone GPS and offline batches arrive late); all others their `occurredAt` (proof `capturedAt`, `settledAt`, `overageEscalatedAt` are server times; MISSING_RECEIPT and UNPAID_BALANCE use errand `createdAt`, so any review still covers them). `RECONCILIATION_EVIDENCE_SELECT` gains those two fields; `occurredAt` (display, ranking) is unchanged. Known limit: WRONG_BRANCH has only GPS time, so a phone clock running fast (validators allow 5 min) can leave one open after a review written in that window, never the reverse. **Production impact, counted read-only before the change:** 21 reviews on 15 errands cover 30 occurrences; 1 reopens: errand 726f2cd9, UNVERIFIED_PURCHASE ₱70 declared 2026-09-30 21:39 UTC, a day after the only review (09-29 15:33), errand created 09-23 so outside the 14-day queue (owner report only). It is the defect itself. Tests: `exceptionDerivation` +6; `vitest run tests/exception` 116 pass, `untrainedExceptionKind` 2 pass, `tsc` 0 errors.
+* **Push "FCM server key / InvalidCredentials" (prod).** Historical, not current: 83 lines in the pm2 error log, the last next to errand 16b2e28e (2026-09-29/30), none in the ~7,250 lines since. Every stored token is now native FCM (2 riders, 7 customers, 0 Expo tokens), sent direct by `lib/pushNotifications.ts`. FCM dry run (validate only, nothing delivered): 7 valid, customers 6 and 8 `registration-token-not-registered`. Downloadable APKs postdate the 09-24 switch (rider 10-03 and 10-08, customer 10-13). Uploading an FCM V1 key to the Expo projects is only needed if a pre-09-24 install is still in use.
+
+---
+
+## 2026-10-12 - Merchant Category Hierarchy Prioritization & User Order Scoring (`merchantCategoryService.ts`, `merchantCategoryController.ts`) (Antigravity 2.0, Gemini 3.8 Flash)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & Reloaded - `npx tsc --noEmit` clean with 0 errors, Vitest test suites passed 100% (143/143 tests across `categoryPrioritization.test.ts`, `blockedCategoryNames.test.ts`, `establishments.test.ts`)].
+* **Feature & Interaction Specification**:
+  - **Cold-Start Staple Weights & Platform Volume**:
+    - Fast Food (100), Pharmacy (95), Supermarket & Grocery (90), Bakery & Pastry (85), Cafe (80), Convenience (75), Restaurant (70), Retail & General Merchandise (65), Others (50).
+    - Platform orders (+10 pts per errand), verified catalogue places (+5 pts per place).
+    - For new accounts, the top 4 recommended are stably ranked as Fast Food, Pharmacy, Supermarket, and Bakery with `isRecommended: true`.
+  - **Dynamic Customer Personal Order Vaulting**:
+    - Extracts `customerId` from JWT payload in `merchantCategoryController.ts`.
+    - Tallies personal orders for non-cancelled errands in `merchantCategoryService.ts`.
+    - Adds +500 points per customer order, vaulting categories the customer frequently orders from to the top of the list.
+    - Stamps `orderedBefore: personalOrders > 0`, `orderCount: personalOrders`, and `isRecommended: index < 4`.
+* **Files Modified**:
+  - `src/services/merchantCategoryService.ts`
+  - `src/controllers/merchantCategoryController.ts`
+  - `tests/categoryPrioritization.test.ts`
+* **Verification Ledger**:
+  - `npx tsc --noEmit`: 0 TypeScript compiler errors.
+  - `npx vitest run tests/categoryPrioritization.test.ts tests/blockedCategoryNames.test.ts tests/establishments.test.ts`: 143/143 passed (100%).
+  - VPS Build & PM2 Reload: Succeeded on `109.123.239.182`.
+
+---
+
+## 2026-10-12 - Google Places Storefront Photo Fallback Restoration (Antigravity 2.0, Gemini 3.8 Flash)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & Verified Live - local & remote `npx tsc --noEmit` passed with 0 errors, `npm run build` succeeded, PM2 `capstone-backend` restarted (PID 3839684 online), Vitest test suites passed 100% (168/168 tests across `establishments.test.ts`, `storeRanking.test.ts`, `storeAutoCorrection.test.ts`, and `blockedCategoryNames.test.ts`)].
+* **Feature & Interaction Specification**:
+  - **Storefront Photo Graceful Fallback (`googlePlacesClient.ts`)**:
+    - Previously, `firstPhoto(photos)` used `photos.find(isLandscapeStorefrontPhoto) ?? null`. For stores whose only photos on Google Maps were portrait (`width/height < 1.15`) or square (1:1), this rejected the photo and left `photo: null`.
+    - Updated `firstPhoto(photos)`: scans for landscape storefront photos first, but gracefully falls back to Google's primary photo (`photos[0]`) when no landscape photo is available.
+    - Verified live on VPS: stores like *Coffee Bear Cafe* (portrait `3472x4624`), *Decent Cup Coffee Shop*, and *Fur in Stitches* (square `500x500`) now successfully resolve their Google storefront photos and image URLs via `resolvePhotoUri`.
+* **Files Modified**:
+  - `src/lib/places/googlePlacesClient.ts`
+  - `tests/establishments.test.ts`
+* **Verification Ledger**:
+  - `npx vitest run tests/establishments.test.ts tests/storeRanking.test.ts tests/storeAutoCorrection.test.ts tests/blockedCategoryNames.test.ts`: 168/168 passed (100%).
+  - Local & Remote `npx tsc --noEmit`: 0 errors.
+  - Remote deployment: PM2 `capstone-backend` PID 3839684 online, health check 200 OK.
+
+---
+
+## 2026-10-12 - Precision Store Location Filtering (Option 1), Catalogue Badging & Recommendation Boost (Option 3), and Self-Healing Rider Auto-Correction Engine (Option 4) (Antigravity 2.0, Gemini 3.8 Flash)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & Verified Live - local & remote `npx tsc --noEmit` passed with 0 errors, `npm run build` succeeded, PM2 `capstone-backend` restarted (PID 3805593 online), Vitest test suites passed 100% (101/101 tests across `storeRanking.test.ts`, `storeAutoCorrection.test.ts`, and `establishments.test.ts`)].
+* **Feature & Interaction Specification**:
+  - **Option 1: Street-Only Road Pin Filtering (`isStreetOnlyName`)**:
+    - Added `isStreetOnlyName()` in `src/lib/places/googlePlacesClient.ts` and `CustomerApp/src/services/establishments.ts` to identify and discard places whose names are purely road or highway identifiers (e.g. `"Lesdema street tacurong city"`, `"Ledesma street"`, `"National Highway"`, `"Tacurong - Isulan Rd"`).
+    - Expanded `KNOWN_BUSINESS_TOKENS` with major national/local merchant brands (`jollibee`, `mercury`, `chowking`, `rose`, `gaisano`, `kcc`, `fitmart`, `savemore`, etc.) so authentic storefronts are never misclassified as roads.
+    - Wired `isStreetOnlyName()` into `isPabiliStore()` in `establishmentService.ts` and `isPabiliEstablishment()` in `establishments.ts`.
+  - **Option 3: Revitalize Owner-Verified Catalogue Places (`isVerified: boolean`, badging, & ranking boost)**:
+    - Added `isVerified: boolean` to `Establishment` interface on server and client.
+    - `fromCatalogue()` sets `isVerified: true`; `fromGoogle()` sets `isVerified: false`; `mergeEstablishments()` preserves `isVerified: true` and off-road coordinates when catalogue stores match Google Places.
+    - Added `isVerified` ranking boost in `src/lib/places/storeRanking.ts` (`+0.15` recommendation bonus) so verified catalogue storefronts rank above unverified Google search results.
+    - In CustomerApp `StoreCard.tsx`, added a clean, subtle `[VERIFIED]` badge pill with Lucide vector `Check` icon next to the store name.
+  - **Option 4: Self-Healing Rider Auto-Correction Engine (`storeAutoCorrectionService.ts`)**:
+    - Created `src/services/storeAutoCorrectionService.ts`: when a rider dwells outside a store during an errand (`applyGeofenceTransitions` in `geofenceService.ts`), the system captures their true physical GPS coordinate.
+    - If the store has an existing `placeId` whose coordinates were on the road centerline (>15m away), refines `verified_places` coordinates.
+    - If the store was an uncatalogued Google Place (`placeId: null`), auto-registers the storefront in `verified_places` and links the stop, permanently curing middle-of-the-road pins for all future customer searches.
+* **Files Modified**:
+  - `src/lib/places/googlePlacesClient.ts`
+  - `src/lib/places/storeRanking.ts`
+  - `src/services/establishmentService.ts`
+  - `src/services/storeAutoCorrectionService.ts` (NEW)
+  - `src/services/geofenceService.ts`
+  - `tests/establishments.test.ts`
+  - `tests/storeAutoCorrection.test.ts` (NEW)
+  - CustomerApp: `src/services/establishments.ts`, `src/components/stores/StoreCard.tsx`
+* **Verification Ledger**:
+  - `npx vitest run tests/establishments.test.ts tests/storeRanking.test.ts tests/storeAutoCorrection.test.ts`: 101/101 passed.
+  - CustomerApp `npm test -- NearbyStoresRow.test.tsx`: 13/13 passed.
+  - Local & Remote `npx tsc --noEmit`: 0 errors.
+  - Remote deployment: PM2 `capstone-backend` PID 3805593 online on `http://0.0.0.0:5000`.
+
+---
+
+## 2026-10-12 - Strict Non-Pabili Search Query & Establishment Filtering (Police Outposts/Stations, Government Offices, Network, Internet Cafe, Nightclub, Logistics, Express) + 3-Tier Store Operating Hours (`isOpen`, `closedReason`) & Out-of-Service-Area Safeguard (`outsideServiceArea`) (Antigravity 2.0, Gemini 3.8 Flash)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & Verified Live - local & remote `npx tsc --noEmit` passed with 0 errors, `npm run build` succeeded, PM2 `capstone-backend` restarted (process 0 online), Vitest test suites passed 100% (`blockedCategoryNames.test.ts`, `establishments.test.ts`, and `establishmentController.test.ts`)].
+* **Feature & Interaction Specification**:
+  - **Strict Non-Pabili Search Query & Establishment Filtering (`isPabiliSearchQuery`, `isPabiliStore`, `NON_PABILI_GOOGLE_TYPES`)**:
+    - Added `isPabiliSearchQuery(query)` in `src/services/establishmentService.ts` and wired it into `searchEstablishments()` so when a customer searches for a non-Pabili destination (`"Police outpost"`, `"Stations"`, `"Government offices"`, `"Network"`, `"Internet Cafe"`, `"Nightclub"`, `"Logistics"`, `"Express"`, etc.), the endpoint immediately short-circuits and returns `items: []` without sending a text query to Google Places (preventing Google from returning coffee shops for `"Internet Cafe"`, late-night restaurants for `"Nightclub"`, or unflagged offices/couriers for `"Government offices"` / `"Logistics"` / `"Express"`).
+    - Expanded `NON_PABILI_GOOGLE_TYPES` in `src/lib/places/googlePlacesClient.ts` (`police`, `fire_station`, `gas_station`, `transit_station`, `bus_station`, `government_office`, `local_government_office`, `city_hall`, `courthouse`, `embassy`, `telecommunications_service_provider`, `internet_service_provider`, `corporate_office`, `internet_cafe`, `night_club`, `bar`, `pub`, `karaoke`, `comedy_club`, `casino`, `courier_service`, `shipping_service`, `moving_company`, `storage`, etc.).
+    - Hardened `isPabiliStore()` in `src/services/establishmentService.ts`:
+      - Closed the secondary-type loophole where `"internet_cafe"` + `"cafe"` or `"night_club"` + `"restaurant"` or `"courier_service"` + `"store"` was previously rescued by `isRetail`; now only major malls/supermarkets (`shopping_mall`, `department_store`, `supermarket`) may carry secondary `atm`/`bank` finance tags.
+      - Added `hasPabiliRetailOrFoodType(googlePlace)` so Google Places rows with only generic non-retail types (`["point_of_interest", "establishment"]`) are rejected.
+      - Blocked `"station"` / `"stations"` in `isNonPabiliText` unless paired with water-refilling keywords (`water`, `refilling`, `purified`, `alkaline`, `mineral`, `aquabest`, `tubig`).
+    - Expanded `BLOCKED_CATEGORY_TOKENS`, `BLOCKED_CATEGORY_PHRASES`, and `RETIRED_CATEGORY_NAMES` in `src/lib/blockedCategoryNames.ts`.
+  - **3-Tier Store Operating Hours Engine (`isOpen: boolean`) & User-Friendly Closed Store Notices (`closedReason?: string | null`)**:
+    - Added `places.currentOpeningHours.openNow`, `places.regularOpeningHours.openNow`, `places.currentOpeningHours.nextOpenTime`, and `places.regularOpeningHours.nextOpenTime` to `FIELD_MASK`, plus `openNow?: boolean | null`, `nextOpenTime?: string | null`, and `temporarilyClosed?: boolean` on `GooglePlace` in `src/lib/places/googlePlacesClient.ts`.
+    - Implemented `classifyStoreOperatingTier()`, `evaluateStoreOperatingStatus()`, `formatPhHour12()`, and `resolveClosedStoreNotice()` in `src/services/establishmentService.ts` wired into `finishRows()` and `mergeEstablishments()`:
+      1. **Malls & Major Supermarkets (`mall`)**: Uses Google Maps' set closing/opening time (`openNow` / `nextOpenTime`); falls back to expected Tacurong mall operating hours (**8:00 AM to 8:00 PM** PH time, `UTC+8`, `closedReason: "Opens at 8:00 AM"`) if Google Maps has no set timetable.
+      2. **24/7 Convenience Stores & Fast Food Chains (`convenience_24_7` & `fast_food_chain`)**:
+         - Convenience stores in Tacurong (`convenience_store`, 7-Eleven, Uncle John's, Ministop, Alfamart) stay **Open 24/7 (`isOpen: true`)** unless Google Maps explicitly reports `openNow: false` or `CLOSED_TEMPORARILY` (`closedReason: "Temporarily Unavailable"` or Google's `nextOpenTime`).
+         - Fast food chains (*Jollibee*, *McDonald's*, *Chowking*, *Mang Inasal*, *Greenwich*, *KFC*) follow their **Google Maps set time (`openNow` / `nextOpenTime`)**, falling back to `"Opens at 6:00 AM"` when closed without a Google `nextOpenTime`.
+      3. **Regular / Small Local Stores (`regular_store`)**: Uses expected category operating windows in Philippine Time (`UTC+8`: Bakeries/Markets `5:30 AM - 8:30 PM` -> `"Opens at 5:30 AM"`, Cafes/Restaurants `6:30 AM - 9:00 PM` -> `"Opens at 6:30 AM"`, Pharmacies `7:00 AM - 9:00 PM` -> `"Opens at 7:00 AM"`, Retail/Groceries `7:00 AM - 8:30 PM` -> `"Opens at 7:00 AM"`) **calibrated by historical order timestamps (`StoreHistory.orderHoursPh`)** from past non-cancelled `errand_pinpoints`.
+      4. **Temporary Closures (`businessStatus === "CLOSED_TEMPORARILY"`)**: Returns `isOpen: false` with `closedReason: "Temporarily Unavailable"`.
+  - **Out-of-Service-Area Customer Location Safeguard (`outsideServiceArea?: boolean`)**:
+    - Updated `searchEstablishments()` and `popularEstablishments()` in `src/services/establishmentService.ts`: when `input.near` is outside `isWithinServiceBuffer(input.near, 0.1)`, immediately short-circuit and return `{ items: [], google: ..., outsideServiceArea: true, hasMore: false }` without executing billed Google Places API calls.
+* **Files Modified**:
+  - `src/lib/blockedCategoryNames.ts`
+  - `src/lib/places/googlePlacesClient.ts`
+  - `src/services/establishmentService.ts`
+  - `tests/blockedCategoryNames.test.ts`
+  - `tests/establishments.test.ts`
+* **Verification & Deployment Ledger**:
+  - Remote backup: `/root/deploy-backups/server-20261012-operating-hours-and-safeguard`.
+  - Local & Remote `npx tsc --noEmit`: 0 TypeScript compiler errors.
+  - Remote `npm run build` & `pm2 restart capstone-backend`: succeeded (process 0 online).
+  - Local & Remote `npx vitest run tests/blockedCategoryNames.test.ts tests/establishments.test.ts tests/establishmentController.test.ts`: 100% passed.
+  - Live health check `http://127.0.0.1:5000/api/health`: 200 OK (`System Online`).
+
+---
+
+## 2026-10-12 - Google Places Landscape Storefront Photo Filtering & Catalogue Store Photo Enrichment (Antigravity 2.0, Gemini 3.8 Flash)
+* **Status**: [Executed & Verified by Antigravity 2.0 - `npx tsc --noEmit` passed with 0 errors, Vitest test suites passed 100% (71/71 tests in `establishments.test.ts` & `establishmentController.test.ts`)].
+* **Feature & Interaction Specification**:
+  - **Portrait/Selfie & Low-Resolution Photo Rejection (`src/lib/places/googlePlacesClient.ts`)**:
+    - Added `isLandscapeStorefrontPhoto(photo)` inside `googlePlacesClient.ts` (`MIN_LANDSCAPE_ASPECT_RATIO = 1.15`, `MIN_PHOTO_WIDTH_PX = 400`, `MIN_PHOTO_HEIGHT_PX = 250`).
+    - Updated `firstPhoto(photos)` to scan `places.photos` and select the first valid landscape photo instead of blindly selecting `photos[0]`, filtering out vertical portrait phone selfies (`9:16`, `3:4`, `4:5`), square `1:1` profile avatars, and tiny low-res thumbnails.
+  - **Catalogue Store Photo & Rating Enrichment (`src/services/establishmentService.ts`)**:
+    - Updated `mergeEstablishments()` so when an Owner-verified catalogue store (`verified_places`) matches a Google Place (`isSamePlace(c, g)`), the catalogue row retains its verified `source: "catalogue"`, `placeId`, and `categoryId` while inheriting Google's `photoName`, `photoAttribution`, `rating`, and `ratingCount`.
+* **Files Modified**:
+  - `src/lib/places/googlePlacesClient.ts` (lines 338–366)
+  - `src/services/establishmentService.ts` (lines 190–227)
+  - `tests/establishments.test.ts` (lines 164–202, 353–371)
+* **Verification Ledger**:
+  - `npx tsc --noEmit`: 0 TypeScript compiler errors.
+  - `npx vitest run tests/establishments.test.ts tests/establishmentController.test.ts`: 71/71 tests passed (100%).
+
+---
+
+## 2026-10-12 - Category-Scoped Popular & Nearby Establishments Support + Edge-Case Hardening (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & Verified Live 100% Parity - local & remote `npx tsc --noEmit` passed with 0 errors, `npm run build` succeeded, PM2 `capstone-backend` restarted, Vitest test suites passed 100% (70/70 tests in `establishments.test.ts` & `establishmentController.test.ts` locally and on VPS)].
+* **Feature & Interaction Specification**:
+  - Added optional `categoryId: z.coerce.number().int().positive().optional()` to `popularEstablishmentsSchema` in `src/validators/placeValidators.ts`.
+  - Updated `popularEstablishmentsHandler` in `src/controllers/establishmentController.ts` to pass `categoryId` to `popularEstablishments()`.
+  - Updated `searchPlacesByText(query, options?: { includeRatings?: boolean })` in `src/lib/places/googlePlacesClient.ts` to support `POPULAR_FIELD_MASK` when fetching popular stores by category name for custom owner categories.
+  - Updated `categoryForGoogleTypes` in `src/lib/places/establishmentCategory.ts` so `KIND_KEYWORDS` fallback sorts matching categories by word count (`wordsOf(a.name).size - wordsOf(b.name).size`), preventing compound categories (`Fast Food & Restaurant`) from shadowing narrower categories (`Restaurant`), and exported `wordsOf`.
+  - Updated `categoryEstablishments`, `googleTypesFor`, and `popularCategoryEstablishments` in `src/services/establishmentService.ts` (`constituentCategoryIds`, `placeBelongsToCategory`):
+    - Standard categories (`Pharmacy`, `Bakery`, `Cafe`, `Supermarket & Grocery`, `Convenience Store`, `Retail & General Merchandise`, `Fast Food`, `Restaurant`) strictly query and match only their own Google types and catalogue stores.
+    - Compound categories (`Fast Food & Restaurant`, `Restaurants & Cafes`, or categories with descriptions claiming a subset of types) resolve constituent narrower category types using singularized `wordsOf(category.name)` without prematurely short-circuiting on partial direct type matches.
+    - Custom owner categories (`Water Refilling`, `Pasalubong`) fall back to `searchPlacesByText(category.name, { includeRatings: true })` and keep places unclaimed by other categories OR whose store name explicitly contains all words of the custom category name (`[...targetWords].every((w) => placeWords.has(w))`); `popularCategoryEstablishments` also falls back to `searchPlacesByText(category.name, { includeRatings: true })` when `searchPopularPlaces` returns `null`.
+    - In `categoryEstablishments`, when `ids.size > 1` (compound categories such as `Fast Food & Restaurant`), `placeService.searchPlaces` is queried without a single `categoryId` SQL restriction (`query ? { search: query } : {}`) before filtering by `ids.has(placeCatId)` and slicing to `CANDIDATE_LIMIT`, so constituent catalogue places (e.g. `Arabian Spice Restaurant` under `Cat 7: Restaurant`) are included in production SQL results for `Cat 9: Fast Food & Restaurant`, and stamped `categoryId: category.id, categoryName: category.name` onto `fromCatalogue(place, near)` entries.
+* **Files Modified**:
+  - `src/validators/placeValidators.ts`
+  - `src/controllers/establishmentController.ts`
+  - `src/lib/places/googlePlacesClient.ts`
+  - `src/lib/places/establishmentCategory.ts`
+  - `src/services/establishmentService.ts`
+  - `tests/establishmentController.test.ts`
+  - `tests/establishments.test.ts`
+* **Verification & Deployment Ledger**:
+  - Remote backup: `/root/deploy-backups/server-20261012-category-stores-edge-cases`.
+  - Local & Remote `npx tsc --noEmit`: 0 TypeScript compiler errors.
+  - Remote `npm run build` & `pm2 restart capstone-backend`: succeeded (process 0 online).
+  - Local & Remote `npx vitest run tests/establishments.test.ts tests/establishmentController.test.ts`: 70/70 tests passed (100%).
+  - Live HTTP verification on `109.123.239.182`: `/api/health` (200 OK), `/api/places/establishments?categoryId=...` and `/api/places/establishments/popular?categoryId=...` tested across all 9 active categories (`5:Bakery`, `8:Cafe`, `6:Convenience Store`, `1:Fast Food`, `9:Fast Food & Restaurant` including constituent catalogue store `Arabian Spice Restaurant`, `2:Pharmacy`, `7:Restaurant`, `4:Retail & General Merchandise`, `3:Supermarket & Grocery`) with 0 cross-category leaks, plus `categoryId=999999` (200 empty) and `categoryId=0` (400 validation error).
+
+---
+
+## 2026-10-11 - Pabili Store Filter Expansion: Logistics, Salons, Carwash (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & Verified Live - npx tsc --noEmit passed 0 errors, npm run build succeeded, PM2 restarted, live health 200 OK].
+* **Specification & Implementation**:
+  - Added **Logistics**, **Salons**, and **Carwash** (and common spelling variants/typos such as "Logicstics") to the non-Pabili denylist.
+  - In `src/lib/blockedCategoryNames.ts`:
+    - Added tokens: `logistics`, `logistic`, `logicstics`, `courier`, `freight`, `cargo`, `shipping`, `salon`, `salons`, `barbershop`, `barber`, `spa`, `carwash`.
+    - Added phrases: `logistics services`, `courier services`, `express courier`, `beauty salon`, `hair salon`, `nail salon`, `barber shop`, `hair and beauty`, `car wash`, `auto wash`, `car detailing`, `auto detailing`.
+    - Added retired names to `RETIRED_CATEGORY_NAMES` covering Logistics, Salons, Carwash and their variations.
+  - In `src/lib/places/googlePlacesClient.ts`:
+    - Added `courier_service`, `shipping_service`, `moving_company`, `post_office`, `beauty_salon`, `hair_salon`, `barber_shop`, `nail_salon`, `spa`, `car_wash` to `NON_PABILI_GOOGLE_TYPES`.
+  - In `src/services/establishmentService.ts`:
+    - Added logistics, salon, and carwash store phrases and tokens to `NON_PABILI_STORE_PHRASES` and `NON_PABILI_STORE_TOKENS`.
+  - In `tests/blockedCategoryNames.test.ts`:
+    - Added unit test cases verifying rejection of Logistics, Logicstics, Salons, Carwash, etc. 50/50 tests passing.
+* **VPS Deployment Verification**:
+  - Remote backup: `/root/deploy-backups/server-20261011-logistics-salons-carwash`.
+  - Synced files via SCP, compiled cleanly with `npx tsc --noEmit` and `npm run build`.
+  - Synced places and category statuses via `npx tsx prisma/seedPlaces.ts` (42 places).
+  - Restarted PM2 process 0 (`capstone-backend`).
+  - Verified `https://api.sugo-express.org/api/health` -> 200 OK (`System Online`).
+
+---
+
+## 2026-10-11 - Pabili-Only Store & Category Filtering (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [Executed & Verified by Antigravity 2.0 - npx tsc --noEmit passed with 0 errors, Vitest test suites passed 100% (67/67 tests in establishments.test.ts & establishmentController.test.ts)].
+* **Feature & Interaction Specification**:
+  - **Pabili Category Filtering & Denylist Expansion**:
+    - Added comprehensive non-Pabili categories to `RETIRED_CATEGORY_NAMES` in `src/lib/blockedCategoryNames.ts` (Schools, Banks, Padala Outlets, Motor Trades, and variations).
+    - Exported `isPabiliCategoryName(name: string): boolean` helper checking exact retired category matches, blocked billing/remittance phrases, and non-Pabili tokens.
+    - Updated `merchantCategoryService.listMerchantCategories(includeInactive)`: when `includeInactive` is false (public/customer fetch), automatically filters out non-Pabili categories.
+    - Updated `placeRepository.getCategories()`: returns only active Pabili categories.
+  - **Google Places Types & Search Filtering**:
+    - Removed `auto_parts_store` from `SEARCHABLE_TYPES` in `src/lib/places/googlePlacesClient.ts`.
+    - Defined `NON_PABILI_GOOGLE_TYPES` Set covering schools, universities, banks, ATMs, finance, money_transfer, car_repair, motorcycle_repair, auto_parts_store.
+    - Exported `isPabiliStore(store: Establishment, googlePlace?: GooglePlace | null): boolean` in `src/services/establishmentService.ts`.
+    - Filtered `activeCategories()` with `isPabiliCategoryName` so non-Pabili categories never claim Google places or initiate gap-filling searches.
+    - Pruned candidate pools in `searchEstablishments`, `categoryEstablishments`, and `popularEstablishments` using `isPabiliStore`.
+* **Files Modified**:
+  - `src/lib/blockedCategoryNames.ts`
+  - `src/services/merchantCategoryService.ts`
+  - `src/lib/places/googlePlacesClient.ts`
+  - `src/services/establishmentService.ts`
+  - `src/repositories/placeRepository.ts`
+* **Verification Ledger**:
+  - `npx tsc --noEmit`: 0 TypeScript compiler errors.
+  - `npm test -- tests/establishments.test.ts tests/establishmentController.test.ts`: 67/67 tests passed (100%).
+
+---
+
+## 2026-10-10 - In-App Update, Release Management & Changelog System (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) by Antigravity 2.0 2026-10-10 ~14:31 +08].
+* **Deployment & Verification Ledger**:
+  - **Server Backend**: Deployed `src/services/appReleaseService.ts`, `src/controllers/appReleaseController.ts` to `/var/www/server`. Merged release schema into `/var/www/server/config/app-releases.json`. Remote `tsc --noEmit` clean, remote `npm run build` succeeded, `pm2 restart capstone-backend` succeeded (Process 0 online). Verified: `curl http://127.0.0.1:5000/api/health` -> HTTP 200 (System Online), `curl http://127.0.0.1:5000/api/app-releases/public` -> HTTP 200 with `features`, `fixes`, `logs`. Rollback backup: `/root/deploy-backups/server-20261010-082702-app-releases`.
+  - **Landing Page**: Shipped via `scripts/deploy-landing.sh`. Synced to `/var/www/landing/dist/`. Live check `https://sugoonthego.online` -> HTTP 200. Rollback backup: `/root/deploy-backups/landing-20261010-142921`.
+  - **Web & Staff Portal**: Shipped via `scripts/deploy-web.sh`. Synced to `/var/www/web/dist/`. Live check `https://portal.sugo-express.org` -> HTTP 200. Rollback backup: `/root/deploy-backups/web-20261010-143124`.
+* **Specification & Architecture**:
+  - **Release Metadata Schema**: Added `features?: string[]`, `fixes?: string[]`, and `logs?: string[]` to `AppReleaseInfo` & `UpdateReleaseInput` in `src/services/appReleaseService.ts`. Auto-synthesizes legacy `whatsNew` array for backward compatibility.
+  - **Controller & Endpoints**: Updated `updateReleaseDetailsHandler` in `src/controllers/appReleaseController.ts` to accept and persist `features`, `fixes`, and `logs`.
+  - **Persistence**: Persisted structured metadata in `config/app-releases.json` for customer and rider app releases.
+
+---
+
+## 2026-10-09 - Customer Feedback & Review System Pipeline (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [Executed by Antigravity 2.0 - Prisma schema updated & client generated with 0 errors, npx tsc --noEmit passed with 0 errors].
+* **Feature & Architecture Specification**:
+  - **Prisma Schema Additions**: Added `enum FeedbackCategory` (`BUG_REPORT`, `FEATURE_REQUEST`, `DELIVERY_EXPERIENCE`, `APP_USABILITY`, `OTHER`), `enum FeedbackStatus` (`PENDING`, `INVESTIGATING`, `RESOLVED`, `DISMISSED`), and `model CustomerFeedback` mapped to table `customer_feedbacks`. Added optional relations to `CustomerAccount` (`customerId`) and `User` (`readByUserId`).
+  - **Zero-Loss Data Pipeline**: Customer feedback is written immediately to MariaDB first with an auto-generated tracking reference code (`FB-YYMMDD-XXXX`).
+  - **Real-Time Developer Alerting**: Configured `DEVELOPER_FEEDBACK_EMAIL` in `src/config/env.ts` defaulting to `aljayveeversola@gmail.com`. On submission, `feedbackService.ts` dispatches a high-priority, formatted HTML email notification containing the customer's star rating, sentiment, subject, message, contact info, and attached device telemetry. Optional customer acknowledgment email dispatched if email provided.
+  - **Staff Management & Audit Trail**: Created protected endpoints for DISPATCHER and OWNER roles to list feedback, view details, mark as read (recording `readAt` and `readByUserId`), and resolve with developer notes.
+  - **Routes & Gatekeeping**: Mounted at `/api/feedback` with strict `express-rate-limit` (10 per 15 min), Zod request validation, and optional customer token association.
+* **Files Modified / Created**:
+  - `prisma/schema.prisma`
+  - `src/config/env.ts`
+  - `src/validators/feedbackValidators.ts` (new)
+  - `src/services/feedbackService.ts` (new)
+  - `src/routes/feedbackRoutes.ts` (new)
+  - `src/routes/index.ts`
+* **Verification Ledger**:
+  - `npx prisma generate` -> Generated Prisma Client v5.22.0 successfully.
+  - `npx tsc --noEmit` -> 0 errors.
 
 ---
 
@@ -95,7 +420,33 @@
 ---
 
 ## 🛠️ Model B (Gemini / Antigravity) Execution & Verification
-* **Status**: [Phone Verification & Multi-Channel Password Reset Deployed to Production]
+* **Status**: [APK Chunk-by-Chunk Upload & Data Streaming Download Deployed to Production]
+* **Session (2026-10-08 — APK Chunk-by-Chunk Upload & Streaming Download Architecture)**:
+  - **Backend Server (`Capstone_Server/server`)**:
+    - `src/services/appReleaseService.ts`:
+      - Upload: Implemented `saveChunk`, `finalizeChunkedUpload`, `cancelChunkedUpload`, and `cleanStaleChunks`.
+      - Download: Added `getApkFileInfo`, upgraded `getApkFileStream` to support RFC 7233 byte ranges (`{ start, end }`), and added `getApkChunkStream` for discrete chunk retrieval.
+    - `src/controllers/appReleaseController.ts`:
+      - Upload: Added `uploadChunkHandler`, `finalizeChunkedUploadHandler`, `cancelChunkedUploadHandler`.
+      - Download: Upgraded `downloadApkHandler` to support `req.headers.range` returning `HTTP 206 Partial Content`, `Content-Range`, `Accept-Ranges: bytes`, proper MIME type, and connection close stream destruction. Added `downloadApkChunkHandler` for discrete chunk retrieval.
+    - `src/routes/sysAdminRoutes.ts`: Mounted `/app-releases/download-chunk/:target` and sysadmin chunk upload routes.
+    - `src/index.ts`: Added exposed CORS headers (`Content-Disposition`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `X-Chunk-*`).
+    - Verification: `npx tsc --noEmit` green (0 errors). Vitest unit tests in `tests/appReleaseStreaming.test.ts` (7/7 passed).
+    - Production VPS: Deployed via `scripts/deploy-server.sh`, Nginx configured with `proxy_buffering off;` and reloaded. Verified live `HTTP 206 Partial Content` on `https://api.sugo-express.org/api/app-releases/download/customer`.
+  - **Resolution of `net::ERR_QUIC_PROTOCOL_ERROR` & 100% "Network Failed" Download Abort**:
+    - Root Cause 1: Backend file size mismatch (`Content-Length` sent 131,203,802 bytes from config, but streamed an older 130,863,854 byte file on disk). When stream reached EOF 431KB early, Cloudflare HTTP/3 QUIC connection closed abruptly with protocol mismatch error.
+    - Root Cause 2: In `AppDownloadGrid.tsx`, client-side JavaScript was buffering 131MB into browser RAM (`new Blob(chunks)` / `createObjectURL`), causing mobile browsers and Chromium to exhaust heap space and terminate with "Network error" at 100%.
+    - Surgical Fixes:
+      - `src/services/appReleaseService.ts`: `getApkFileInfo()` dynamically queries `statSync(filePath).size` on disk so `Content-Length` matches bytes over the wire with 100% accuracy. Reordered download directories to prioritize authoritative `/var/www/server/public/downloads`.
+      - Synchronized local and VPS files: Guaranteed `sugo-customer-app.apk` on VPS is exactly 131,203,802 bytes across `/var/www/server/public/downloads` and `/var/www/landing/dist/downloads`.
+      - `Capstone_Landing_Page/src/components/AppDownloadGrid.tsx`: Replaced in-memory JavaScript Blob buffering with native browser stream downloading (`<a download>` directed to `https://api.sugo-express.org/api/app-releases/download/:target`), allowing OS download managers to write directly to disk with pause & resume support.
+      - Verification: Direct curl test of full 125MB download (`131,203,802 bytes`) succeeded completely without errors (`100% 125M received, exit code 0`). Landing page rebuilt and deployed to `sugoonthego.online` (HTTP 200).
+  - **Marketing Landing Page (`Capstone_Landing_Page`)**:
+    - `src/components/AppDownloadGrid.tsx`: Implemented interactive native streaming download with visual confirmation, direct API streaming endpoint, direct mirror fallback, and zero-RAM disk writing.
+    - Built via Vite (`dist/`) and deployed via `scripts/deploy-landing.sh` to `sugoonthego.online`. Verified live `HTTP 200`.
+  - **SysAdmin Web Console (`Capstone_Project_Web`)**:
+    - `src/services/sysAdminApiService.ts` & `AppReleasesTab.tsx`: Implemented 5MB slice chunk uploader with retry and progress telemetry. Deployed to `portal.sugo-express.org`.
+
 * **Session (2026-10-05 — Phone Password Reset Verification Route & Repository Normalization)**:
   - **Backend Server (`Capstone_Server/server`)**:
     - `src/repositories/customerRepository.ts`: Added `findByPhone(phone: string)` with full normalization and matching against multiple format representations (`+63...`, `09...`, `63...`, 10-digit).
@@ -657,13 +1008,58 @@
     - `nginx -t` passed (configuration syntax is ok).
     - Nginx reloaded via `systemctl reload nginx`.
     - Live HTTP header verification via `curl -sI https://portal.sugo-express.org/dispatcher`: `content-security-policy` successfully returns `script-src` with `https://*.firebasedatabase.app`, `https://*.firebaseio.com`, `https://*.firebaseapp.com`, and `media-src 'self' data: blob:;`.
+* **Session Log (2026-10-08 11:15 - Dual-Channel Email & Firebase SMS OTP Authentication)**:
+  - **Driver**: Antigravity 2.0 (Gemini 3.8 Flash High)
+  - **Features Implemented**:
+    - `src/validators/authValidators.ts`: Updated `verifyLoginOtpSchema` with optional `code` and optional `firebaseIdToken`.
+    - `src/repositories/userRepository.ts`: Added `markPhoneVerified(id: number)`.
+    - `src/services/loginChallengeService.ts`: Added `maskedPhone` and `phone` to `LoginChallenge`. Updated `evaluateGate(user)` to satisfy authentication if either `emailVerified` or `phoneVerified` is true. Added `maskPhone` helper.
+    - `src/services/authService.ts`: Updated `completeLoginOtp` to support `firebaseIdToken` using Firebase Admin (`verifyFirebaseIdToken`), phone ownership validation against the user's registered phone, marking phone verified, and generating session tokens.
+    - `src/controllers/authController.ts`: Returned `maskedPhone` and `phone` in challenge responses and forwarded `firebaseIdToken` to `completeLoginOtp`.
+  - **Empirical Verification & VPS Deployment**:
+    - `npx tsc --noEmit` passed with 0 errors.
+    - `npm run build` passed with 0 errors.
+    - Deployed to Contabo VPS (`109.123.239.182`) via `scripts/deploy-server.sh`:
+      - Prisma sync: schema up to date.
+      - PM2 `capstone-backend` restarted online.
+      - Health checks verified live: `https://api.sugo-express.org/api/health` returned HTTP 200 OK.
 
+* **Session Log (2026-10-08 17:15 - Chunk-by-Chunk APK Upload Architecture & Deployment)**:
+  - **Driver**: Antigravity 2.0 (Gemini 3.8 Flash High)
+  - **Problem & Architecture**:
+    - Uploading full 120MB–190MB APKs in a single HTTP request poses risks over mobile or unstable connections.
+    - Designed and implemented chunk-by-chunk binary upload (5MB slices) with per-chunk retry, server-side assembly, ZIP header integrity validation, SHA-256 calculation, and atomic deployment to downloads paths.
+  - **Files Modified**:
+    1. **Backend Server (`Capstone_Server/server`)**:
+       - `src/services/appReleaseService.ts`: Added `saveChunk` (streaming slice into `config/uploads/chunks/${uploadId}/part_${chunkIndex}.tmp`), `finalizeChunkedUpload` (stream concatenation, ZIP `PK\x03\x04` validation, SHA256 checksum, atomic deployment to `/var/www/landing/dist/downloads`), `cancelChunkedUpload`, and periodic stale chunk cleaner (`cleanStaleChunks`).
+       - `src/controllers/appReleaseController.ts`: Exported `uploadChunkHandler`, `finalizeChunkedUploadHandler`, and `cancelChunkedUploadHandler`.
+       - `src/routes/sysAdminRoutes.ts`: Mounted `POST /sysadmin/app-releases/upload-chunk/:target`, `POST /sysadmin/app-releases/finalize-upload/:target`, and `POST /sysadmin/app-releases/cancel-upload/:target` under SysAdmin auth and CSRF protection.
+    2. **Web Portal (`Capstone_Project_Web`)**:
+       - `src/services/sysAdminApiService.ts`: Exported `UploadChunkProgress` interface; implemented `uploadAppReleaseApkChunked` with 5MB chunk slicing (`file.slice`), automatic 3-attempt retry on failure, fine-grained byte progress reporting, and final assembly trigger.
+       - `src/portals/sysadmin/modules/devops/AppReleasesTab.tsx`: Integrated `uploadAppReleaseApkChunked` into `handleUploadApk`; added live visual chunk telemetry (`Part X of Y`, MB transferred, assembling indicator, and estimated parts counter on file dropzone).
+  - **Empirical Verification & VPS Deployment**:
+    - Backend: `npx tsc --noEmit` passed (0 errors). Deployed via `scripts/deploy-server.sh` to Contabo VPS (`109.123.239.182`); PM2 `capstone-backend` reloaded and online.
+    - Web Portal: `npx tsc --noEmit` passed (0 errors); `npm run build` completed; deployed via `scripts/deploy-web.sh --no-build` to `/var/www/web/dist` on Contabo VPS (`portal.sugo-express.org`).
+    - Live Endpoints Verified:
+      - `https://api.sugo-express.org/api/app-releases/public` -> HTTP 200 OK.
+      - `https://api.sugo-express.org/api/sysadmin/app-releases/upload-chunk/customer` -> Protected by CSRF & Bearer auth.
+      - `https://portal.sugo-express.org` -> HTTP 200 OK.
 
-
-
-
-
-
-
-
+* **Session Log (2026-10-17 - Dispatcher Dashboard Aggregation Endpoint & Shift Handover Auto-Release)**:
+  - **Driver**: Antigravity 2.0 (Gemini 3.8 Flash High)
+  - **Problem & Requirements**:
+    - Dispatched orders claimed but left unverified or unassigned by an off-duty dispatcher were getting orphaned in limbo without visibility or assignment.
+    - Lack of an aggregated operational dashboard endpoint required multiple polling requests or left dispatchers without real-time bottleneck visibility.
+  - **Files Modified**:
+    1. `src/repositories/errandRepository.ts`: Added `findUnverifiedByDispatcherId(dispatcherId: number)` to `dispatchLogRepository`.
+    2. `src/services/errandService.ts`: Added `releaseAllUnverifiedForDispatcher(dispatcherId: number)` which finds claimed unverified orders (`status: "PENDING"`, `riderId: null`), reverts their status to `"AVAILABLE"`, clears `dispatcherId` on active chats, deletes dispatch log entries, and broadcasts Socket.io `order:updated` and `order:new` notifications.
+    3. `src/controllers/authController.ts`: Hooked `releaseAllUnverifiedForDispatcher` directly into `logout` for users with `DISPATCHER` role before clearing refresh token cookies and destroying sessions.
+    4. `src/controllers/dispatcherDashboardController.ts` (NEW): Built `getDispatcherDashboardSummary` aggregating:
+       - Real-time pulse metrics (`unclaimedCount`, `urgentUnclaimedCount` >3m, `activeInMotionCount`, `deliveredTodayCount`, `helpDeskCount`).
+       - 5-Phase pipeline counts (`claimed`, `toStore`, `bought`, `onTheWay`, `delivered`).
+       - Attention center items (stale unclaimed >3m, stalled store dwells, unresolved overage disputes, post-purchase cancellations) with drill-down actions (`CLAIM_AND_REVIEW`, `OPEN_CHAT`, `RESOLVE_EXCEPTION`).
+       - Operational telemetry: top 5 store stops today, top decline reasons today, and personal shift stats (`myHandledToday`, `myAvgClaimLatencySeconds`).
+    5. `src/routes/errandRoutes.ts`: Mounted `GET /api/errands/dispatcher-dashboard-summary` under `authenticateToken`, `requireRole(["OWNER", "DISPATCHER"])`, and `readLimiter` before parametrized `/:id` routes.
+  - **Empirical Verification**:
+    - `npx tsc --noEmit` in `Capstone_Server/server`: Passed with 0 errors (clean exit code 0).
 

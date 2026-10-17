@@ -1121,6 +1121,35 @@ export async function releaseErrand(errandId: string, dispatcherId: number) {
   return errandWithNames;
 }
 
+/**
+ * Shift handover / logout cleanup:
+ * Automatically releases all claimed but unverified/unassigned orders for a dispatcher
+ * back to AVAILABLE status so the next on-duty dispatcher can claim and review them.
+ */
+export async function releaseAllUnverifiedForDispatcher(dispatcherId: number): Promise<number> {
+  const unverifiedLogs = await dispatchLogRepository.findUnverifiedByDispatcherId(dispatcherId);
+  let releasedCount = 0;
+  for (const log of unverifiedLogs) {
+    if (log.errand && log.errand.status === "PENDING" && log.errand.riderId === null) {
+      try {
+        await dispatchLogRepository.deleteUnverifiedForErrand(log.errandId, dispatcherId);
+        await setChatDispatcher(log.errandId, null);
+        await errandRepository.update(log.errandId, { status: "AVAILABLE" });
+        const updated = await errandRepository.findById(log.errandId);
+        const errandWithNames = updated ? attachErrandNames(updated) : updated;
+        publishToErrand("order:updated", errandWithNames);
+        if (errandWithNames) {
+          eventPublisher.emitToRole("DISPATCHER", "order:new", errandWithNames);
+        }
+        releasedCount++;
+      } catch (err) {
+        logger.warn(`Failed to release errand ${log.errandId} on dispatcher ${dispatcherId} logout:`, err);
+      }
+    }
+  }
+  return releasedCount;
+}
+
 export async function assignRider(
   errandId: string,
   riderId?: number,
