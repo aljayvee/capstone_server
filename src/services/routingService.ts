@@ -4,6 +4,9 @@ import { ServiceError } from "./ServiceError.js";
 import { smoothPath } from "../lib/routing/smoothPath.js";
 import { bestRoute, type RouteSelection } from "../lib/routing/bestRoute.js";
 import { rememberRiderChoice, riderChoiceFor } from "../lib/routing/riderRouteChoice.js";
+import { assignedMapFor } from "../lib/routing/mapAssignment.js";
+import { recordRoutePick, type MapSource } from "../lib/routing/routePickLog.js";
+import { ROUTE_MAP_ASSIGNMENT } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
 
 // The wire shape POST /api/routing/directions returns. Both mobile apps
@@ -104,6 +107,9 @@ export async function getDirections(
   if (options.choose === "fastest") {
     let keep = options.keep;
     let drawOn = options.prefer;
+    const riderId =
+      options.caller && String(options.caller.role).toUpperCase() === "RIDER" ? options.caller.id : null;
+    let mapSource: MapSource = drawOn ? "app" : "winner";
     // A customer tracking an errand gets the rider's own verdict: the same
     // engine's path, on the same map, unless their app can only show Google.
     const riderChoice = await riderChoiceForErrand(options.errandId, options.caller);
@@ -111,13 +117,21 @@ export async function getDirections(
       keep = riderChoice.chosen as "osrm" | "google";
       drawOn = options.prefer ?? (riderChoice.drawnWith as "osrm" | "google");
     }
+    // A rider whose app shows no map yet is given today's (mapAssignment.ts).
+    // The fastest path still wins; bestRoute draws it on this map's roads, or
+    // on its own when it cannot be redrawn faithfully.
+    if (riderId != null && !drawOn && ROUTE_MAP_ASSIGNMENT === "rider_day") {
+      drawOn = assignedMapFor(riderId);
+      mapSource = "assigned";
+    }
 
     const best = await bestRoute([origin, ...waypoints, destination], drawOn, { keep, origin: options.origin });
     if (best) {
       result = best.route;
       selection = best.selection;
-      if (options.caller && String(options.caller.role).toUpperCase() === "RIDER") {
-        rememberRiderChoice(options.caller.id, best.selection);
+      if (riderId != null) {
+        rememberRiderChoice(riderId, best.selection);
+        recordRoutePick({ riderId, mapSource, mapAsked: drawOn ?? null, selection: best.selection });
       }
     }
   }

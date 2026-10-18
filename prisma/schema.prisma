@@ -79,6 +79,7 @@ model User {
   presence                RiderPresence?
   knownDevices            UserKnownDevice[]
   feedbacksRead           CustomerFeedback[]       @relation("FeedbackReadBy")
+  routePicks              RoutePick[]
 
   @@map("users")
 }
@@ -1780,6 +1781,39 @@ model DwellObservation {
   @@index([categoryId, createdAt])
   @@index([placeId, createdAt])
   @@map("dwell_observations")
+}
+
+// 18b. Route Picks (Sugo Rider's map: OpenStreetMap or Google)
+// One row per fastest-route decision made for a rider: whose path won, which
+// map it was drawn on, why that map, and both engines' ETA and distance. Kept
+// so the split between the two maps is measured rather than assumed. Written
+// by lib/routing/routePickLog.ts, never read on a request path.
+model RoutePick {
+  id        Int      @id @default(autoincrement())
+  riderId   Int
+  rider     User     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  // The Manila calendar day of the decision, the day the map was assigned for.
+  day       DateTime @db.Date
+  // Who named the map: "assigned" (the server, by rider and day), "app" (the
+  // rider's app already shows one) or "winner" (assignment off: the map of
+  // whichever path won).
+  mapSource String   @db.VarChar(10)
+  // The map the line was asked to be drawn on ("osrm" | "google"); null for "winner".
+  mapAsked  String?  @db.VarChar(10)
+  // Whose path won, and whose roads it is drawn on. drawnWith differs from
+  // mapAsked only when the winner could not be redrawn on the asked map.
+  chosen    String   @db.VarChar(10)
+  drawnWith String   @db.VarChar(10)
+  // Each engine's own answer; null when that engine gave none.
+  osrmDurationSeconds   Int?
+  osrmDistanceMeters    Int?
+  googleDurationSeconds Int?
+  googleDistanceMeters  Int?
+  createdAt DateTime @default(now())
+
+  @@index([day, mapSource])
+  @@index([riderId, day])
+  @@map("route_picks")
 }
 
 // 19. Crawled Merchant Items (catalog assistance for dispatchers & customers)

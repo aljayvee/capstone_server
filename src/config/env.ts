@@ -167,6 +167,15 @@ export const STORE_PIN_MAX_KM_BEYOND_BORDER: number | null =
 const routeMaxSpeed = Number(process.env.ROUTE_MAX_SPEED_KMH ?? 60);
 export const ROUTE_MAX_SPEED_KMH = Number.isFinite(routeMaxSpeed) && routeMaxSpeed >= 0 ? routeMaxSpeed : 60;
 
+// How Sugo Rider's map (OpenStreetMap or Google) is decided when the app has
+// not shown one yet. "rider_day" (the default): by rider and Manila day, so
+// each rider alternates daily and the fleet splits about evenly; the fastest
+// path still wins and is drawn on the assigned map's roads. "off": the map of
+// whichever engine's path won, as before 2026-10-18. Takes effect at a
+// restart. See lib/routing/mapAssignment.ts.
+export const ROUTE_MAP_ASSIGNMENT: "rider_day" | "off" =
+  process.env.ROUTE_MAP_ASSIGNMENT === "off" ? "off" : "rider_day";
+
 // Google Cloud Vision, used to read photographed store receipts (see lib/ocr/).
 // Deliberately a separate key from GOOGLE_MAPS_API_KEY and scoped to the Vision
 // API alone: if it leaks, the exposure is OCR calls rather than everything the

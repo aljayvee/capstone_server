@@ -182,6 +182,61 @@ distances that actually get billed.
    surfaces later as a wrong fare or a wrong ETA — this is the check that
    catches it before a customer does.
 
+## 5. Which map a rider sees, and the pick log
+
+Sugo Rider shows one of two maps, OpenStreetMap (our tiles, OSRM's roads) or
+Google (Google Directions' roads), and keeps it until the app is closed. Two
+choices are made for every rider route (`src/lib/routing/bestRoute.ts`):
+
+- **The path**: the faster of OSRM's and Google's, always. Never balanced: that
+  would send riders down a slower road on purpose.
+- **The map**: since 2026-10-18 assigned by rider and Manila day
+  (`src/lib/routing/mapAssignment.ts`) when the app shows no map yet. Each rider
+  alternates daily, and a hash of the id splits the fleet about evenly on any
+  one day. The fastest path is redrawn on the assigned map's roads; when it
+  cannot be redrawn faithfully it is drawn on its own roads instead. The app
+  still falls back to Google on its own when our tiles do not load.
+
+`ROUTE_MAP_ASSIGNMENT=off` in `.env` (and a restart) goes back to the old rule:
+the map of whichever path won.
+
+Every rider decision is written to `route_picks` (`src/lib/routing/routePickLog.ts`):
+`mapSource` says who named the map (`assigned`, `app` when the phone already
+shows one, `winner` with assignment off), `mapAsked` the map asked for,
+`drawnWith` the map drawn on, `chosen` whose path won, and both engines' ETA and
+distance (empty when an engine gave no answer). To check the split:
+
+```sql
+-- Riders per map each day: what was assigned, and what they were shown.
+SELECT day, mapAsked, drawnWith, COUNT(DISTINCT riderId) AS riders, COUNT(*) AS decisions
+FROM route_picks
+WHERE mapSource = 'assigned'
+GROUP BY day, mapAsked, drawnWith
+ORDER BY day, mapAsked, drawnWith;
+
+-- Every decision by the map drawn on, including the app's own requests.
+SELECT day, drawnWith, COUNT(*) AS decisions, COUNT(DISTINCT riderId) AS riders
+FROM route_picks
+GROUP BY day, drawnWith
+ORDER BY day, drawnWith;
+
+-- Whose path wins, and by how much (positive: OSRM's ETA is the longer one).
+SELECT chosen, COUNT(*) AS wins,
+       ROUND(AVG(osrmDurationSeconds - googleDurationSeconds)) AS osrm_minus_google_s
+FROM route_picks
+WHERE osrmDurationSeconds IS NOT NULL AND googleDurationSeconds IS NOT NULL
+GROUP BY chosen;
+
+-- Paths that could not be drawn on the map asked for.
+SELECT day, mapAsked, drawnWith, COUNT(*) AS decisions
+FROM route_picks
+WHERE mapAsked IS NOT NULL AND drawnWith <> mapAsked
+GROUP BY day, mapAsked, drawnWith;
+```
+
+An `app` row asking for `google` on a day the rider was assigned OpenStreetMap
+usually means that phone could not load our tiles.
+
 ## Notes
 
 - **The images come from GHCR, not Docker Hub.** The OSRM project stopped
