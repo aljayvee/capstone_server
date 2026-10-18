@@ -8,4 +8,8 @@ export const paymentModeRepository = {
   findById(id: number) {
     return prisma.paymentMode.findUnique({ where: { id } });
   },
+
+  findByName(name: string) {
+    return prisma.paymentMode.findUnique({ where: { name } });
+  },
 };

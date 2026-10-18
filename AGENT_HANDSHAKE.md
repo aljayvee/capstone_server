@@ -21,6 +21,20 @@
 
 ---
 
+## 2026-10-19 - Paid in cash instead of GCash/PayMaya is recorded (Claude, Opus 5.5)
+* **Status**: [Executed by Claude - tsc 0; vitest 1643 pass, 15 new in `tests/cashInsteadSwitch.test.ts` + `tests/cashInsteadUpload.test.ts`. The 14 failures (reportPdfExport, dateRangeResolver, firebaseUid, categoryWarm) do not import any file below. No schema change, no migration. DEPLOYED 2026-10-19 to api.sugo-express.org (7 files only; the live copies equalled local minus this change). Backup: `/root/deploy-backups/server-20261019-011640` (src-files + dist). Health 200, PM2 stable, `attachErrandNames` verified read-only on a live GCash errand.]
+* **Non-COD fee (user decision, same day)**: paying cash instead removes the non-COD fee. `switchToCashOnDelivery` subtracts the stamped `nonCodFee` from `deliveryFee`, `totalCost`, `quotedDeliveryFee` (else `recalculateFee`'s frozen fare would restore it) and the customer transaction amount, sets `nonCodFee` 0, and never re-routes. `priceForStops` prices `errand.paymentMode = Cash on Delivery` as COD so no later reprice re-adds it. Settlement's expected amount follows the reduced total. The rider app expects balance minus the fee at the door (`cashDueAtDoorFor`), the same figure before and after the switch.
+* **Ask**: when a GCash/PayMaya customer pays the rider cash instead (rider app "They're paying cash instead"), the server records it and the Customer App's Transaction Summary strikes the transfer through and shows Cash on Delivery.
+* **Modified**:
+  - `src/services/paymentSelectionService.ts`: new `switchToCashOnDelivery(errandId)`. On a ledger mode (GCash/PayMaya, Bank Transfer) it moves `Errand.paymentModeId` to Cash on Delivery and emits `order:updated` to the errand's parties. `PaymentSelection` (the customer's choice) is never rewritten; the two disagreeing IS the record. Idempotent; COD / no selection untouched. Nothing repriced: `recalculateFee` and `paymentPlan` read the selection.
+  - `src/services/proofImageService.ts`: the CASH_COLLECTED branch calls it after saving the photo; a failure is logged, never a refused upload.
+  - `src/services/patterns/paymentModes.ts`: `paymentMethodChangeOf(errand)` -> `{ from, to } | null`.
+  - `src/services/errandService.ts` (`attachErrandNames`): adds `paymentMethodChange` when both `paymentMode` and `paymentSelection` are in the payload. `src/repositories/errandRepository.ts`: `ERRAND_INCLUDE` now selects `paymentMode { name }`.
+  - `src/services/customerService.ts` (`listTransactions`): `paymentMethodChange`, and `paymentMethod` reads the method actually used (so installed apps' list shows cash).
+  - `src/repositories/paymentModeRepository.ts`: `findByName`.
+* **Not changed**: owner reports still group by `paymentSelection` first (`reportService.ts` ~L707), so a switched errand reports as GCash there. Settlement already accepted cash on ledger errands.
+* **Prod data check before relying on it**: no errand had a GCash/bank selection with its own mode already Cash on Delivery (5 GCash errands have a null own mode, which never reads as a change).
+
 ## 2026-10-18 - Rider map assigned by rider and day; route pick log (Claude, Opus 5.5)
 * **Status**: [Commit 3ceafc7. DEPLOYED TO PRODUCTION 2026-10-18 ~18:00 (+08): migration applied with `prisma db execute` (live DB to new schema diffed to exactly this table and FK beforehand), `tsc --noEmit` gate, `npm run build`, `pm2 restart capstone-backend` (online). Backup `/root/deploy-backups/server-20261018-175937` (files, dist, prisma client). Live check: table and FK present, a real route through dist, API answering. Production has NO `_prisma_migrations` table, so no `migrate resolve` there. Local DB: migration NOT applied (MariaDB was off). tsc 0; `tests/routeMapAssignment.test.ts` 12/12.]
 * **Rollback**: `ROUTE_MAP_ASSIGNMENT=off` in `/var/www/server/.env` + `pm2 restart capstone-backend --update-env` stops the assignment and keeps the log. Full code rollback: untar `files.tar`, `dist.tar`, `prisma-client.tar` from the backup, delete the two new `src/lib/routing` files, restart. The table can stay (nothing reads it).

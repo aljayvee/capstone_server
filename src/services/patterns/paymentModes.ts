@@ -76,3 +76,22 @@ export function hasPaymentLedger(selection: SelectionLike | null | undefined): b
 export function riderCollectsCash(_selection: SelectionLike | null | undefined): boolean {
   return true;
 }
+
+/**
+ * A GCash/PayMaya or bank customer who paid the rider in cash instead.
+ *
+ * The customer's PaymentSelection is never rewritten, so it keeps what they
+ * chose; the errand's own payment mode is moved to Cash on Delivery when the
+ * rider files the cash photo (paymentSelectionService.switchToCashOnDelivery).
+ * The two disagreeing is the record of the change. Null when they agree, when
+ * nothing was chosen, or when the errand moved anywhere but cash.
+ */
+export function paymentMethodChangeOf(errand: {
+  paymentSelection?: SelectionLike | null;
+  paymentMode?: { name: string } | null;
+}): { from: string; to: string } | null {
+  const chosen = errand.paymentSelection?.paymentMode?.name;
+  const current = errand.paymentMode?.name;
+  if (!chosen || !current || !NON_COD_MODES.has(chosen) || current !== PAYMENT_MODE_COD) return null;
+  return { from: chosen, to: current };
+}

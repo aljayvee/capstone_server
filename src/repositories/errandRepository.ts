@@ -44,6 +44,10 @@ export const ERRAND_INCLUDE = {
   // separately would show a stale balance for as long as the second request took.
   payments: { select: { kind: true, amount: true } },
   paymentSelection: { select: { paymentMode: { select: { name: true } } } },
+  // The errand's own mode, which moves to Cash on Delivery when a transfer
+  // customer pays cash instead while the selection above keeps their choice.
+  // attachErrandNames reports the difference as paymentMethodChange.
+  paymentMode: { select: { name: true } },
   dispatchLogs: {
     include: { dispatcher: { select: { firstName: true, lastName: true } } },
     orderBy: { dispatchedAt: "desc" as const },

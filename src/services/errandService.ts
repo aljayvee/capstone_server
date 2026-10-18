@@ -51,7 +51,7 @@ import { buildFeeBreakdown, type CustomerFeeBreakdown, type PricedErrand } from 
 import { modesForCategoryNames, resolveCategoryModes } from "./patterns/categoryFeeModes.js";
 import type { HandlingFeeMode } from "./patterns/pricingStrategy.js";
 import { resolveHandlingEvidence } from "./patterns/handlingEvidence.js";
-import { isCodSelection, hasPaymentLedger } from "./patterns/paymentModes.js";
+import { isCodSelection, hasPaymentLedger, paymentMethodChangeOf, PAYMENT_MODE_COD } from "./patterns/paymentModes.js";
 import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { buildRiderEarnings, type EarningErrand } from "./patterns/riderEarnings.js";
 import { whereRiderBecomesFree, dispatchCostSeconds } from "./patterns/dispatchCost.js";
@@ -236,6 +236,12 @@ export function attachErrandNames<
       ? { dispatcherName: personFullName(errand.dispatchLogs[0]?.dispatcher) }
       : {}),
     ...(confirmedMode ? { paymentMethod: confirmedMode } : {}),
+    // A GCash/PayMaya or bank customer who paid the rider cash instead:
+    // { from, to }, or null. Only when both modes are in the payload, so a slim
+    // projection merged into a client's copy never erases a change it showed.
+    ...("paymentMode" in errand && "paymentSelection" in errand
+      ? { paymentMethodChange: paymentMethodChangeOf(errand as Parameters<typeof paymentMethodChangeOf>[0]) }
+      : {}),
     customer: withCustomerName(errand.customer),
     rider: withPersonName(errand.rider),
     // Each stop's own arrival radius, flattened from its category so every
@@ -773,7 +779,10 @@ async function priceForStops(
   const distanceKm = routed?.distanceKm ?? totalRouteDistanceKm(stops, destination);
 
   const selection = await paymentSelectionRepository.findByErrandId(errand.id);
-  const isCod = isCodSelection(selection);
+  // A transfer customer who paid cash at the door is priced as cash from then
+  // on (paymentSelectionService.switchToCashOnDelivery), so no later reprice
+  // puts the non-COD fee back.
+  const isCod = isCodSelection(selection) || errand.paymentMode?.name === PAYMENT_MODE_COD;
 
   // How good the basket figure is, and what the customer already agreed to pay
   // for handling it. The ceiling is null until they confirm the breakdown (see

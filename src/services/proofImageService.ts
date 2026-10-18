@@ -11,6 +11,7 @@ import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import * as errandService from "./errandService.js";
+import { switchToCashOnDelivery } from "./paymentSelectionService.js";
 import { holdScan, findScan, type ReceiptScan } from "../lib/pendingReceiptScans.js";
 import { formatItemLabel } from "./patterns/itemLabel.js";
 import type { ProofImageUploadInput, ProofImageScanInput } from "../validators/proofImageValidators.js";
@@ -203,6 +204,18 @@ export async function uploadProofImage(
     logger.info(
       `Errand ${errandId}: rider ${riderId} photographed ₱${input.declaredTotal} collected in cash.`
     );
+
+    // On a GCash/PayMaya or bank errand this is the customer paying cash
+    // instead, so the errand is now cash on delivery. The photo is already
+    // saved and is the evidence either way: a failure here is logged, never
+    // turned into a refused upload the rider would have to retake.
+    try {
+      if (await switchToCashOnDelivery(errandId)) {
+        logger.info(`Errand ${errandId}: paid in cash instead of the chosen transfer; now Cash on Delivery.`);
+      }
+    } catch (err) {
+      logger.warn(`Errand ${errandId}: could not record the switch to Cash on Delivery: ${String(err)}`);
+    }
 
     return { ...declared, clarityVerdict: null, extraction: null };
   }

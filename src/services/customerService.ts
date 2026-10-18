@@ -7,6 +7,7 @@ import { assignPushToken } from "./pushTokenOwnership.js";
 import { withFullName, verifyFirebasePhoneToken, normalizePhoneDigits, assertPhoneAvailable } from "./authService.js";
 import { flattenCustomerAccount } from "./patterns/customerFactory.js";
 import { formatItemLabel } from "./patterns/itemLabel.js";
+import { paymentMethodChangeOf } from "./patterns/paymentModes.js";
 import type { CustomerProfileUpdateInput } from "../validators/customerValidators.js";
 
 export async function getProfile(customerId: number) {
@@ -144,7 +145,12 @@ export async function listTransactions(customerId: number) {
       totalCost: Number(tx.errand.totalCost) || 0,
       estimatedCost: Number(tx.errand.estimatedCost) || 0,
       tip: Number(tx.errand.tip) || 0,
-      paymentMethod: effectivePaymentMethod,
+      // What it was actually paid with: a transfer customer who paid cash at
+      // the door reads as cash in the list, installed apps included.
+      paymentMethod: paymentMethodChangeOf(tx.errand)?.to ?? effectivePaymentMethod,
+      // Chosen as a transfer, paid in cash at the door. Same shape as the
+      // errand response's, so the list and the details screen agree.
+      paymentMethodChange: paymentMethodChangeOf(tx.errand),
       deliveryAddress: tx.errand.deliveryAddress,
       createdAt: tx.errand.createdAt,
       latitude: tx.errand.deliveryLatitude,
