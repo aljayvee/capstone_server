@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { send, findErrand, findCustomer, markSent, createNotification, notifyNearby, routeWith, getFresh } =
+const { send, findErrand, findCustomer, markSent, createNotification, notifyNearby, routeWith, getFresh, findBasic, findCandidates } =
   vi.hoisted(() => ({
     send: vi.fn(),
     findErrand: vi.fn(),
+    findBasic: vi.fn(),
+    findCandidates: vi.fn(),
     findCustomer: vi.fn(),
     markSent: vi.fn(),
     createNotification: vi.fn(),
@@ -14,7 +16,12 @@ const { send, findErrand, findCustomer, markSent, createNotification, notifyNear
 
 vi.mock("../src/lib/pushNotifications.js", () => ({ sendPushNotification: send }));
 vi.mock("../src/repositories/errandRepository.js", () => ({
-  errandRepository: { findById: findErrand, markProximityAlertSent: markSent },
+  errandRepository: {
+    findById: findErrand,
+    markProximityAlertSent: markSent,
+    findByIdBasic: findBasic,
+    findHoldCandidates: findCandidates,
+  },
 }));
 vi.mock("../src/repositories/customerRepository.js", () => ({ customerRepository: { findById: findCustomer } }));
 vi.mock("../src/repositories/notificationRepository.js", () => ({
@@ -29,6 +36,7 @@ vi.mock("../src/lib/riderPositionStore.js", () => ({ getFresh }));
 
 import {
   __resetDeliveryReminders,
+  notifyDeliveryHeld,
   notifyOnTheWay,
   onDeliveryEta,
   onRiderPosition,
@@ -51,10 +59,13 @@ const errand = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   __resetDeliveryReminders();
-  for (const fn of [send, findErrand, findCustomer, markSent, createNotification, notifyNearby, routeWith, getFresh]) {
+  for (const fn of [send, findErrand, findCustomer, markSent, createNotification, notifyNearby, routeWith, getFresh, findBasic, findCandidates]) {
     fn.mockReset();
   }
   findErrand.mockResolvedValue(errand());
+  findBasic.mockResolvedValue(errand());
+  // Only this errand in hand for the customer: nothing to wait for.
+  findCandidates.mockResolvedValue([errand()]);
   findCustomer.mockResolvedValue({ id: 9, expoPushToken: "fcm-token" });
   createNotification.mockResolvedValue({ id: 1 });
   notifyNearby.mockResolvedValue({ id: 2, title: "t", body: "b" });
@@ -114,6 +125,29 @@ describe("notifyOnTheWay", () => {
     await notifyOnTheWay("e-1");
     expect(send).not.toHaveBeenCalled();
   });
+
+  it("says so once for every order that was waiting to come with it", async () => {
+    await notifyOnTheWay("e-1", { together: 1 });
+    expect(send.mock.calls[0][1]).toMatchObject({ title: "Your orders are on the way" });
+    expect(send.mock.calls[0][1].body).toBe(
+      "Renen bought everything for both of your orders and is heading to you. About 14 min away."
+    );
+  });
+});
+
+describe("notifyDeliveryHeld", () => {
+  it("tells the customer why the rider with their order is heading to a store", async () => {
+    await notifyDeliveryHeld("e-1");
+    const [token, payload] = send.mock.calls[0];
+    expect(token).toBe("fcm-token");
+    expect(payload).toMatchObject({
+      title: "Your orders will arrive together",
+      body: "Renen has your order and is shopping for your other one first, so both arrive in one trip.",
+      tag: "delivery-e-1",
+      data: { errandId: "e-1", type: "DELIVERY_HELD" },
+    });
+    expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({ type: "DELIVERY_HELD" }));
+  });
 });
 
 describe("onDeliveryEta", () => {
@@ -148,5 +182,26 @@ describe("onRiderPosition", () => {
     await onRiderPosition(errand(), { latitude: 6.72, longitude: 124.66 });
     await onRiderPosition(errand({ itemsPurchasedAt: null }), CUSTOMER);
     expect(markSent).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet while the order is held for the customer's other one, then fires once both come", async () => {
+    markSent.mockResolvedValue({ count: 1 });
+    // The rider passes the door on the way to the other order's store.
+    const shopping = errand({ id: "e-2", itemsPurchasedAt: null });
+    findCandidates.mockResolvedValue([errand(), shopping]);
+    await onRiderPosition(errand(), CUSTOMER);
+    expect(markSent).not.toHaveBeenCalled();
+
+    // The other order bought: both on the way, and this time it is real.
+    findCandidates.mockResolvedValue([errand(), { ...shopping, itemsPurchasedAt: new Date() }]);
+    await onRiderPosition(errand(), CUSTOMER);
+    expect(notifyNearby).toHaveBeenCalledTimes(1);
+  });
+
+  it("still alerts when the hold cannot be read", async () => {
+    markSent.mockResolvedValue({ count: 1 });
+    findBasic.mockRejectedValue(new Error("database away"));
+    await onRiderPosition(errand(), CUSTOMER);
+    expect(notifyNearby).toHaveBeenCalledTimes(1);
   });
 });

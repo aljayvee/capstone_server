@@ -5,6 +5,7 @@ import { errandRepository } from "../repositories/errandRepository.js";
 import { pinpointRepository } from "../repositories/pinpointRepository.js";
 import { defaultEtaStrategy, type EtaStopInput } from "./patterns/etaStrategy.js";
 import * as deliveryReminders from "./deliveryReminderService.js";
+import { findDeliveryHold } from "./deliveryHoldService.js";
 
 // A position older than this is not evidence of where a rider is now. Kept
 // identical to the web dashboard's SIGNAL_LOST_THRESHOLD_MS so a rider painted
@@ -39,9 +40,16 @@ export async function recomputeForErrand(errandId: string, options: { force?: bo
   // Once everything is bought, no store is still ahead, whatever the geofence
   // recorded: a stop never marked departed used to keep a detour back through
   // it inside the customer's ETA for the whole delivery run.
-  const pinpoints = errand.itemsPurchasedAt
-    ? []
-    : await pinpointRepository.findByErrandIdWithCategory(errandId);
+  //
+  // Unless the order is held for the same customer's other one
+  // (patterns/deliveryHold.ts): the rider shops that one first, so its stores
+  // are ahead of this door too, and the ETA goes through them.
+  const heldFor = errand.itemsPurchasedAt ? await findDeliveryHold(errand).catch(() => null) : null;
+  const pinpoints = heldFor
+    ? await pinpointRepository.findByErrandIdWithCategory(heldFor.id)
+    : errand.itemsPurchasedAt
+      ? []
+      : await pinpointRepository.findByErrandIdWithCategory(errandId);
   const stops: EtaStopInput[] = pinpoints.map((pin) => ({
     pinpointId: pin.id,
     point: { latitude: pin.latitude, longitude: pin.longitude },

@@ -59,6 +59,7 @@ import type { GeoPoint } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import * as deliveryReminders from "./deliveryReminderService.js";
+import * as deliveryHolds from "./deliveryHoldService.js";
 import { prisma } from "../lib/prisma.js";
 import type { Prisma } from "@prisma/client";
 
@@ -387,7 +388,59 @@ export async function listErrands(requestingUser?: { id: number; role: string })
 
 export async function getErrandById(id: string) {
   const errand = await errandRepository.findById(id);
-  return errand ? attachErrandNames(errand) : null;
+  if (!errand) return null;
+  // Whether this order is waiting for the same customer's other one
+  // (patterns/deliveryHold.ts). Left out, rather than claimed null, when it
+  // cannot be read, so a client's copy keeps what it last knew.
+  const deliveryHold = await deliveryHolds.deliveryHoldOf(errand).catch(() => undefined);
+  return { ...attachErrandNames(errand), ...(deliveryHold !== undefined ? { deliveryHold } : {}) };
+}
+
+/**
+ * A hold begins or ends for the bought errands at this errand's door when this
+ * one is accepted or bought. Each of them is redrawn on its customer's and
+ * rider's screens with its hold as it now stands, and its ETA recomputed along
+ * the rider's real next stops. `announcedBy` names the errand whose arrival
+ * starts a hold worth telling the customer about: the one it now waits for.
+ */
+async function refreshDeliveryHolds(errand: Parameters<typeof deliveryHolds.boughtNeighbours>[0], announcedBy?: string) {
+  const neighbours = await deliveryHolds.boughtNeighbours(errand);
+  for (const { errandId, heldFor } of neighbours) {
+    const full = await errandRepository.findById(errandId);
+    if (!full) continue;
+    publishToErrand("order:updated", full, {
+      ...attachErrandNames(full),
+      deliveryHold: heldFor ? { errandId: heldFor.id } : null,
+    });
+    etaService.recomputeInBackground(errandId, { force: true });
+    if (announcedBy && heldFor?.id === announcedBy) {
+      deliveryReminders.inBackground(deliveryReminders.notifyDeliveryHeld(errandId), "delivery-held push");
+    }
+  }
+  return neighbours;
+}
+
+/**
+ * Once an errand's goods are bought: held for the same customer's other order,
+ * the customer is told the two will come together; otherwise it is on the way,
+ * along with any of their orders that were waiting for it.
+ */
+async function afterItemsPurchased(errandId: string) {
+  const errand = await errandRepository.findById(errandId);
+  if (!errand) return;
+  const heldFor = await deliveryHolds.findDeliveryHold(errand);
+  const neighbours = await refreshDeliveryHolds(errand);
+
+  if (heldFor) {
+    publishToErrand("order:updated", errand, {
+      ...attachErrandNames(errand),
+      deliveryHold: { errandId: heldFor.id },
+    });
+    await deliveryReminders.notifyDeliveryHeld(errandId);
+    return;
+  }
+  const released = neighbours.filter((n) => !n.heldFor).length;
+  await deliveryReminders.notifyOnTheWay(errandId, { together: released });
 }
 
 export async function verifyDispatcherAccess(errandId: string, callerId: number, callerRole: string) {
@@ -1920,9 +1973,11 @@ export async function markItemsPurchased(
 
   // Everything is bought and the rider is heading to the customer: the push
   // that reaches them with the app closed. Only the first time, so a retried
-  // request (a flushed offline queue) cannot send it twice.
+  // request (a flushed offline queue) cannot send it twice. Unless the order is
+  // held for the same customer's other one, which is a different message
+  // (afterItemsPurchased).
   if (!existing.itemsPurchasedAt) {
-    deliveryReminders.inBackground(deliveryReminders.notifyOnTheWay(errandId), "on-the-way push");
+    deliveryReminders.inBackground(afterItemsPurchased(errandId), "on-the-way push");
   }
   return errandWithNames;
 }
@@ -2215,6 +2270,12 @@ export async function acceptErrand(errandId: string, riderId: number, occurredAt
   publishToErrand("order:updated", errandWithNames);
   // The rider is now en route, so an ETA becomes meaningful for the first time.
   etaService.recomputeInBackground(errandId, { force: true });
+  // The same customer's order already bought and on its way to the same door
+  // now waits for this one, so both arrive in one trip.
+  deliveryReminders.inBackground(
+    refreshDeliveryHolds(updatedErrand, errandId).then(() => undefined),
+    "delivery hold"
+  );
   return errandWithNames;
 }
 

@@ -8,6 +8,7 @@ import { withFullName, verifyFirebasePhoneToken, normalizePhoneDigits, assertPho
 import { flattenCustomerAccount } from "./patterns/customerFactory.js";
 import { formatItemLabel } from "./patterns/itemLabel.js";
 import { paymentMethodChangeOf } from "./patterns/paymentModes.js";
+import { holdingSiblingFor, type HoldCandidate } from "./patterns/deliveryHold.js";
 import type { CustomerProfileUpdateInput } from "../validators/customerValidators.js";
 
 export async function getProfile(customerId: number) {
@@ -118,8 +119,17 @@ export function listModificationLogs(customerId: number) {
   return getCustomerModificationLogs(customerId);
 }
 
+function deliveryHoldFromList(errand: HoldCandidate & { status: unknown }, candidates: HoldCandidate[]) {
+  const sibling = holdingSiblingFor({ ...errand, status: String(errand.status) }, candidates);
+  return sibling ? { errandId: sibling.id } : null;
+}
+
 export async function listTransactions(customerId: number) {
   const transactions = await customerTransactionRepository.findByCustomerId(customerId);
+  // Every one of this customer's errands is in hand, so a delivery hold (one
+  // order waiting for their other, patterns/deliveryHold.ts) is read from the
+  // list itself rather than queried per row.
+  const holdCandidates = transactions.map((tx) => ({ ...tx.errand, status: String(tx.errand.status) }));
 
   const orders = transactions.map((tx) => {
     const confirmedMode =
@@ -159,6 +169,7 @@ export async function listTransactions(customerId: number) {
       riderName: tx.errand.rider ? `${tx.errand.rider.firstName} ${tx.errand.rider.lastName}`.trim() : null,
       pinpoints: tx.errand.pinpoints,
       itemsPurchasedAt: tx.errand.itemsPurchasedAt,
+      deliveryHold: deliveryHoldFromList(tx.errand, holdCandidates),
     };
   });
 

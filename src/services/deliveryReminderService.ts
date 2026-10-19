@@ -9,6 +9,7 @@ import { riderChoiceFor } from "../lib/routing/riderRouteChoice.js";
 import { haversineDistanceKm } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
 import * as notificationService from "./notificationService.js";
+import { findDeliveryHold } from "./deliveryHoldService.js";
 
 /**
  * The customer's pushes for the delivery run: the stretch after the rider has
@@ -100,8 +101,12 @@ async function minutesToCustomer(riderId: number, destination: { latitude: numbe
   return route && !route.degraded ? minutesFrom(route.durationSeconds) : null;
 }
 
-/** 1. The rider has bought everything and is heading to the customer. */
-export async function notifyOnTheWay(errandId: string): Promise<void> {
+/**
+ * 1. The rider has bought everything and is heading to the customer.
+ * `together` is how many of the customer's other orders were held for this
+ * one (deliveryHold.ts) and now come with it, so one push says so for all.
+ */
+export async function notifyOnTheWay(errandId: string, options: { together?: number } = {}): Promise<void> {
   const parties = await deliveryParties(errandId);
   if (!parties) return;
   const { errand, customer } = parties;
@@ -115,11 +120,14 @@ export async function notifyOnTheWay(errandId: string): Promise<void> {
   runs.set(errandId, { initialMinutes: minutes, sent: new Set(), at: Date.now() });
 
   const riderName = errand.rider?.firstName?.trim() || "Your rider";
-  const title = "Your order is on the way";
+  const together = Math.max(0, options.together ?? 0);
+  const orders = together === 1 ? "both of your orders" : `all ${together + 1} of your orders`;
+  const title = together > 0 ? "Your orders are on the way" : "Your order is on the way";
+  const bought = together > 0 ? `bought everything for ${orders}` : "bought everything";
   const body =
     minutes != null
-      ? `${riderName} bought everything and is heading to you. About ${minutes} min away.`
-      : `${riderName} bought everything and is heading to you.`;
+      ? `${riderName} ${bought} and is heading to you. About ${minutes} min away.`
+      : `${riderName} ${bought} and is heading to you.`;
 
   const record = await notificationRepository.create({
     customerId: customer.id,
@@ -138,6 +146,45 @@ export async function notifyOnTheWay(errandId: string): Promise<void> {
   eventPublisher.emitToCustomer(customer.id, "notification:new", {
     id: record.id,
     type: "RIDER_ON_THE_WAY",
+    title,
+    body,
+    errandId,
+  });
+}
+
+/**
+ * 1b. The order is bought, but held for the same customer's other order
+ * (deliveryHold.ts): the rider is shopping for that one first, and both come
+ * in one trip. Said because the customer's map would otherwise show the rider
+ * with their order heading away from them, toward a store.
+ */
+export async function notifyDeliveryHeld(errandId: string): Promise<void> {
+  const parties = await deliveryParties(errandId);
+  if (!parties) return;
+  const { errand, customer } = parties;
+  if (errand.status !== "IN_TRANSIT" || !errand.riderId) return;
+
+  const riderName = errand.rider?.firstName?.trim() || "Your rider";
+  const title = "Your orders will arrive together";
+  const body = `${riderName} has your order and is shopping for your other one first, so both arrive in one trip.`;
+
+  const record = await notificationRepository.create({
+    customerId: customer.id,
+    type: "DELIVERY_HELD",
+    title,
+    body,
+  });
+  void sendPushNotification(customer.expoPushToken, {
+    title,
+    body,
+    channelId: CHANNEL,
+    tag: tagFor(errandId),
+    urgent: true,
+    data: { errandId, type: "DELIVERY_HELD" },
+  });
+  eventPublisher.emitToCustomer(customer.id, "notification:new", {
+    id: record.id,
+    type: "DELIVERY_HELD",
     title,
     body,
     errandId,
@@ -210,6 +257,11 @@ export async function onRiderPosition(
   });
   if (km > ARRIVING_KM) return;
 
+  // Held for the same customer's other order, the rider may pass this door on
+  // the way to that one's store. Not "almost there": not marked arrived either,
+  // so the alert still comes once both are on their way.
+  if (await isHeld(errand.id)) return;
+
   arrived.add(errand.id);
   const won = await errandRepository.markProximityAlertSent(errand.id);
   if (won.count === 0) return;
@@ -236,6 +288,19 @@ export async function onRiderPosition(
     title: record.title,
     body: record.body,
   });
+}
+
+/**
+ * Whether the order is held for the customer's other one. Fails open: a lookup
+ * that breaks must not cost a customer their "almost there".
+ */
+async function isHeld(errandId: string): Promise<boolean> {
+  try {
+    const full = await errandRepository.findByIdBasic(errandId);
+    return Boolean(full && (await findDeliveryHold(full)));
+  } catch {
+    return false;
+  }
 }
 
 /** Fire-and-forget wrapper: reminders must never fail what triggered them. */

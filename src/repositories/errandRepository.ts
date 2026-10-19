@@ -285,6 +285,26 @@ export const errandRepository = {
     return prisma.errand.count({ where: { riderId, status: "IN_TRANSIT" } });
   },
 
+  // Every errand this rider has accepted for this customer: what a delivery
+  // hold is decided from (patterns/deliveryHold.ts). Small by construction,
+  // since a rider carries at most MAX_ACTIVE_ERRANDS_PER_RIDER.
+  findHoldCandidates(customerId: number, riderId: number) {
+    return prisma.errand.findMany({
+      where: { customerId, riderId, status: "IN_TRANSIT" },
+      select: {
+        id: true,
+        customerId: true,
+        riderId: true,
+        status: true,
+        itemsPurchasedAt: true,
+        acceptedAt: true,
+        deliveryLatitude: true,
+        deliveryLongitude: true,
+        deliveryAddress: true,
+      },
+    });
+  },
+
   // Counts in-progress (not yet DELIVERED/COMPLETED/CANCELLED) errands per rider in one
   // query. Deliberately excludes rather than includes specific "active" status names —
   // sidesteps the documented IN_TRANSIT-vs-DB-enum mismatch (see errandStateMachine.ts)

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * A receipt reprices the errand; only the rider says the shopping is done.
@@ -19,6 +19,9 @@ vi.mock("../src/repositories/errandRepository.js", () => ({
     findByIdBasic: vi.fn(async () => stored),
     findById: vi.fn(async () => ({ ...stored, pinpoints: [] })),
     update: vi.fn(async () => stored),
+    // The customer's errands with this rider: just this one, unless a test
+    // gives them another order at the same door (deliveryHold.ts).
+    findHoldCandidates: vi.fn(async () => [stored]),
   },
   dispatchLogRepository: {},
 }));
@@ -39,6 +42,7 @@ vi.mock("../src/services/errandPaymentService.js", () => ({
 vi.mock("../src/services/deliveryReminderService.js", () => ({
   inBackground: vi.fn(),
   notifyOnTheWay: vi.fn(async () => undefined),
+  notifyDeliveryHeld: vi.fn(async () => undefined),
 }));
 
 vi.mock("../src/lib/logger.js", () => ({
@@ -89,12 +93,49 @@ describe("the rider heading to the customer", () => {
       ERRAND_ID,
       expect.objectContaining({ itemsPurchasedAt: expect.any(Date) })
     );
-    expect(deliveryReminders.notifyOnTheWay).toHaveBeenCalledWith(ERRAND_ID);
+    await vi.waitFor(() =>
+      expect(deliveryReminders.notifyOnTheWay).toHaveBeenCalledWith(ERRAND_ID, { together: 0 })
+    );
   });
 
   it("tells the customer only once", async () => {
     stored.itemsPurchasedAt = new Date();
     await markItemsPurchased(ERRAND_ID, RIDER_ID);
     expect(deliveryReminders.notifyOnTheWay).not.toHaveBeenCalled();
+  });
+});
+
+describe("bought while the same customer's other order is still being shopped", () => {
+  const door = { customerId: 42, status: "IN_TRANSIT", deliveryLatitude: 6.6915, deliveryLongitude: 124.6772 };
+
+  afterEach(() => {
+    vi.mocked(errandRepository.findById).mockImplementation(async () => ({ ...stored, pinpoints: [] }) as any);
+    vi.mocked(errandRepository.findHoldCandidates).mockImplementation(async () => [stored] as any);
+  });
+
+  it("says the two will come together, not that this one is on the way", async () => {
+    const bought = { ...stored, ...door, itemsPurchasedAt: new Date() };
+    const other = { ...bought, id: "ERR-SECOND", itemsPurchasedAt: null, acceptedAt: new Date() };
+    vi.mocked(errandRepository.findById).mockResolvedValue({ ...bought, pinpoints: [] } as any);
+    vi.mocked(errandRepository.findHoldCandidates).mockResolvedValue([bought, other] as any);
+
+    await markItemsPurchased(ERRAND_ID, RIDER_ID);
+
+    await vi.waitFor(() => expect(deliveryReminders.notifyDeliveryHeld).toHaveBeenCalledWith(ERRAND_ID));
+    expect(deliveryReminders.notifyOnTheWay).not.toHaveBeenCalled();
+  });
+
+  it("brings the held order with it once the other is bought too", async () => {
+    const second = { ...stored, ...door, itemsPurchasedAt: new Date() };
+    const held = { ...second, id: "ERR-FIRST", itemsPurchasedAt: new Date(Date.now() - 600_000) };
+    vi.mocked(errandRepository.findById).mockResolvedValue({ ...second, pinpoints: [] } as any);
+    vi.mocked(errandRepository.findHoldCandidates).mockResolvedValue([held, second] as any);
+
+    await markItemsPurchased(ERRAND_ID, RIDER_ID);
+
+    await vi.waitFor(() =>
+      expect(deliveryReminders.notifyOnTheWay).toHaveBeenCalledWith(ERRAND_ID, { together: 1 })
+    );
+    expect(deliveryReminders.notifyDeliveryHeld).not.toHaveBeenCalled();
   });
 });
