@@ -85,28 +85,51 @@ describe("resolveRange — explicit range", () => {
     // edge; the resolver must not invent a window from it either.
     const resolved = resolveRange({ period: "MONTHLY", date: day(2026, 9, 15), start: day(2026, 9, 1) });
 
+    // Monthly is the whole year, by month, since the 2026-10-18 period change.
     expect(resolved.period).toBe("MONTHLY");
-    expect(resolved.start).toEqual(day(2026, 9, 1));
-    expect(resolved.end).toEqual(day(2026, 10, 1));
+    expect(resolved.start).toEqual(day(2026, 1, 1));
+    expect(resolved.end).toEqual(day(2027, 1, 1));
   });
 });
 
 describe("resolveRange — named periods still work", () => {
-  it("resolves a month from a reference date", () => {
+  // Each window is what its breakdown table lays out (periodBuckets): Daily the
+  // week by day, Weekly the month by week, Monthly the year by month, Yearly five
+  // years. A narrower window drew empty rows that looked like missing data
+  // (Weekly on 2026-10-27 fetched only Oct 26 to Nov 1 under October's 4 weeks).
+  it("resolves Weekly to the whole month of the reference date", () => {
+    const resolved = resolveRange({ period: "WEEKLY", date: day(2026, 10, 27) });
+
+    expect(resolved.start).toEqual(day(2026, 10, 1));
+    expect(resolved.end).toEqual(day(2026, 11, 1));
+    expect(resolved.period).toBe("WEEKLY");
+  });
+
+  it("resolves Monthly to the whole year of the reference date", () => {
     const resolved = resolveRange({ period: "MONTHLY", date: day(2026, 8, 15) });
 
-    expect(resolved.start).toEqual(day(2026, 8, 1));
-    expect(resolved.end).toEqual(day(2026, 9, 1));
-    expect(resolved.label).toBe("August 2026");
+    expect(resolved.start).toEqual(day(2026, 1, 1));
+    expect(resolved.end).toEqual(day(2027, 1, 1));
+    expect(resolved.label).toBe("2026");
     expect(resolved.period).toBe("MONTHLY");
   });
 
-  it("defaults to today when nothing is supplied at all", () => {
+  it("resolves Yearly to the five years ending with the reference year", () => {
+    const resolved = resolveRange({ period: "YEARLY", date: day(2026, 8, 15) });
+
+    expect(resolved.start).toEqual(day(2022, 1, 1));
+    expect(resolved.end).toEqual(day(2027, 1, 1));
+  });
+
+  it("defaults to this week, Sunday to Saturday, when nothing is supplied at all", () => {
     const resolved = resolveRange({});
     const now = new Date();
 
     expect(resolved.period).toBe("DAILY");
-    expect(resolved.start.getDate()).toBe(now.getDate());
+    expect(resolved.start.getDay()).toBe(0);
+    expect(resolved.start.getTime()).toBeLessThanOrEqual(now.getTime());
+    expect(resolved.end.getTime()).toBeGreaterThan(now.getTime());
+    expect((resolved.end.getTime() - resolved.start.getTime()) / 86_400_000).toBeCloseTo(7, 1);
   });
 });
 
