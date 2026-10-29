@@ -5,11 +5,6 @@ const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const PERSON_NAME_PATTERN = /^[A-Za-zÑñ.\-'\s]+$/;
 const ROLES = ["OWNER", "DISPATCHER", "RIDER", "owner", "dispatcher", "rider"] as const;
 
-// Roles whose re-assignment costs the acting admin their own password. Kept
-// here next to the schema that carries `adminPassword`; enforced in
-// userService.updateUser().
-export const ROLE_CHANGE_REAUTH_ROLES = ["DISPATCHER", "RIDER"];
-
 // Deliberately an allow-list rather than a shape check: a typo'd domain
 // (gmial.com, outlok.com) satisfies any regex but can never receive a password
 // reset, so the account is unrecoverable. Mirrored in the web dashboard at
@@ -110,9 +105,6 @@ export const updateUserSchema = z.object({
   phone: strictPhone.optional(),
   status: z.enum(["Active", "Inactive", "active", "inactive"]).optional(),
   role: z.enum(ROLES).optional(),
-  // The acting admin's OWN password, re-entered to authorise a Dispatcher or
-  // Rider role change. Ignored for every other kind of edit.
-  adminPassword: z.string().optional(),
   version: z.number().int().positive("A version number is required to save changes."),
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;

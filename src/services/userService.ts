@@ -8,7 +8,6 @@ import { ServiceError } from "./ServiceError.js";
 import { withFullName } from "./authService.js";
 import { buildUserCreateData } from "./patterns/userFactory.js";
 import { normalizeUsername, normalizeEmail } from "../lib/identity.js";
-import { ROLE_CHANGE_REAUTH_ROLES } from "../validators/userValidators.js";
 import type { CreateUserInput, UpdateUserInput, ProfileUpdateInput, ChangePasswordInput } from "../validators/userValidators.js";
 import type { PushTokenInput } from "../validators/pushTokenValidators.js";
 import { assignPushToken } from "./pushTokenOwnership.js";
@@ -50,56 +49,13 @@ export async function createUser(input: CreateUserInput) {
   }
 }
 
-// Re-assigning a Dispatcher or Rider immediately changes what that account can
-// see and do on the live dispatch board, so it costs the acting admin their own
-// password. 403 rather than 401 on purpose: the caller IS authenticated, and a
-// 401 would make the dashboard's axios interceptor burn a token refresh and
-// retry the very request that was just refused.
-async function assertRoleChangeAuthorised(
-  currentRole: string,
-  nextRole: string,
-  adminPassword: string | undefined,
-  actingUserId: number | undefined
-) {
-  const from = String(currentRole).toUpperCase();
-  const to = String(nextRole).toUpperCase();
-  if (from === to || !ROLE_CHANGE_REAUTH_ROLES.includes(from)) {
-    return;
-  }
-
-  if (!actingUserId) {
-    throw new ServiceError(403, "Sign in again before changing an account's role.");
-  }
-  if (!adminPassword) {
-    throw new ServiceError(
-      403,
-      "Changing the role of a Dispatcher or Rider account requires your Admin password."
-    );
-  }
-
-  const actingUser = await userRepository.findById(actingUserId);
-  if (!actingUser || String(actingUser.role).toUpperCase() !== "OWNER") {
-    throw new ServiceError(403, "Only an Admin account can change the role of a Dispatcher or Rider.");
-  }
-
-  const passwordMatches = await bcrypt.compare(adminPassword, actingUser.passwordHash);
-  if (!passwordMatches) {
-    throw new ServiceError(403, "Incorrect Admin password. The role change was not saved.");
-  }
-}
-
+// Role changes need no password re-entry: PUT /users/:id is already limited to
+// OWNER by requireRole in userRoutes.ts, and self role changes are refused below.
 export async function updateUser(userId: number, input: UpdateUserInput, actingUserId?: number) {
   const existingUser = await userRepository.findById(userId);
   if (!existingUser) {
     throw new ServiceError(404, "User not found");
   }
-
-  await assertRoleChangeAuthorised(
-    existingUser.role,
-    input.role ?? existingUser.role,
-    input.adminPassword,
-    actingUserId
-  );
 
   const updateData: Record<string, unknown> = {};
   // Canonicalised on update as well as on create — otherwise renaming a user to
