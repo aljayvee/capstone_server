@@ -4,7 +4,7 @@
  * Express middleware that intercepts all incoming requests to enforce:
  *  1. Whitelist bypass
  *  2. In-memory IP blacklist enforcement (HTTP 403)
- *  3. Heuristic directory & vulnerability probe auto-banning (Instant Permanent Ban)
+ *  3. Heuristic directory & vulnerability probe auto-banning (instant, expires after AUTO_BAN_HOURS)
  */
 
 import { Request, Response, NextFunction } from "express";
@@ -18,6 +18,15 @@ const MALICIOUS_PATH_PATTERNS = [
   /(\.php|\.asp|\.aspx|\.jsp|\.cgi)$/i, // Legacy server file probes on Node API
   /^\/(vendor|cgi-bin|autodiscover|solr|actuator)/i, // Vulnerability scanners
 ];
+
+/**
+ * How long a probe auto-ban lasts. It used to be permanent, but a ban lands on
+ * an IP, not a person: on mobile data one carrier IP is shared by many
+ * customers and riders (CGNAT), so one scanner there locked all of them out of
+ * the API for good. jobs/pruneBlocklist.ts expires it hourly and re-syncs the
+ * nginx blocklist. Manual bans from the Threat Center keep their own duration.
+ */
+export const AUTO_BAN_HOURS = 24;
 
 /**
  * The client IP, from the one place that resolves it (lib/requestContext.ts).
@@ -57,7 +66,7 @@ export const threatInterceptor = (req: Request, res: Response, next: NextFunctio
   const isMaliciousProbe = MALICIOUS_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath));
 
   if (isMaliciousProbe) {
-    logger.warn(`[ThreatInterceptor] Malicious probe detected from ${clientIp}: ${req.path}. Enforcing permanent auto-ban.`);
+    logger.warn(`[ThreatInterceptor] Malicious probe detected from ${clientIp}: ${req.path}. Enforcing ${AUTO_BAN_HOURS}h auto-ban.`);
 
     // Auto-ban immediately
     sysAdminThreatService
@@ -66,7 +75,7 @@ export const threatInterceptor = (req: Request, res: Response, next: NextFunctio
         reason: `Malicious directory/vulnerability scan: ${req.path.slice(0, 100)}`,
         banType: "AUTOMATIC",
         severity: "CRITICAL",
-        durationHours: null, // Permanent
+        durationHours: AUTO_BAN_HOURS,
         metadata: {
           path: req.path,
           method: req.method,
@@ -80,7 +89,7 @@ export const threatInterceptor = (req: Request, res: Response, next: NextFunctio
 
     res.status(403).json({
       error: "Access Denied",
-      message: "Malicious scanning probe detected. Your IP address has been permanently blacklisted.",
+      message: `Malicious scanning probe detected. Your IP address has been blocked for ${AUTO_BAN_HOURS} hours.`,
     });
     return;
   }

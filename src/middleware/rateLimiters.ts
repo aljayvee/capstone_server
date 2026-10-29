@@ -176,23 +176,44 @@ export const userApiLimiter = rateLimit({
 /**
  * 4. Verification & OTP Limiter (SMS / Email OTP Verification)
  * Prevents OTP brute-forcing while allowing users reasonable resend attempts.
+ * Only failures count (skipSuccessfulRequests).
+ *
+ * Two limits, both of which must pass, built like sign-in (2026-10-30):
+ *   - 15 failures per device, so customers and riders sharing a mobile
+ *     carrier's IP (CGNAT) do not spend each other's attempts;
+ *   - 45 failures per IP, so rotating x-device-id still stops there.
+ * Mounted as an array; a route lists it like a single middleware.
  */
-export const verificationLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15-minute sliding window
-  max: isDev ? 50 : 15, // 15 attempts in prod
+const VERIFICATION_WINDOW_MS = 15 * 60 * 1000;
+const VERIFICATION_MESSAGE = {
+  status: 429,
+  error: "Too many verification attempts. Please wait a few minutes before trying again.",
+};
+
+const verificationIpCeiling = rateLimit({
+  windowMs: VERIFICATION_WINDOW_MS,
+  max: isDev ? 150 : 45,
+  keyGenerator: clientIpKey,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    status: 429,
-    error: "Too many verification attempts. Please wait a few minutes before trying again.",
-  },
+  message: VERIFICATION_MESSAGE,
 });
+
+const verificationDeviceLimiter = rateLimit({
+  windowMs: VERIFICATION_WINDOW_MS,
+  max: isDev ? 50 : 15,
+  keyGenerator: deviceKeyGenerator,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: VERIFICATION_MESSAGE,
+});
+
+export const verificationLimiter: RequestHandler[] = [verificationIpCeiling, verificationDeviceLimiter];
 
 /**
  * 5. Password Reset Limiter (Anti-Enumeration)
- *
- * Two deliberate differences from the limiters above.
  *
  * It does NOT skip successful requests. /forgot-password answers 200 whether or
  * not the account exists — that is what closes the enumeration oracle — so a
@@ -200,21 +221,37 @@ export const verificationLimiter = rateLimit({
  * leave the endpoint effectively unlimited for precisely the traffic it needs
  * to cap.
  *
- * It keys on IP (express-rate-limit's default key), the only key here the
- * caller cannot choose for themselves: password reset is unauthenticated, and
- * an `x-device-id` header is whatever the caller sends. smartKeyGenerator no
- * longer falls back to that header either (2026-10-16).
+ * Two limits, both of which must pass (2026-10-30), like sign-in:
+ *   - 8 requests per device, so people sharing a carrier IP each get their own;
+ *   - 24 requests per IP. `x-device-id` is whatever the caller sends, so on its
+ *     own a fresh id per request would be a fresh bucket; this ceiling is what
+ *     still stops that, and it is the only key the caller cannot choose.
  */
-export const passwordResetLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isDev ? 60 : 8,
+const RESET_WINDOW_MS = 15 * 60 * 1000;
+const RESET_MESSAGE = {
+  status: 429,
+  error: "Too many password reset requests. Please try again after 15 minutes.",
+};
+
+const passwordResetIpCeiling = rateLimit({
+  windowMs: RESET_WINDOW_MS,
+  max: isDev ? 180 : 24,
+  keyGenerator: clientIpKey,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    status: 429,
-    error: "Too many password reset requests. Please try again after 15 minutes.",
-  },
+  message: RESET_MESSAGE,
 });
+
+const passwordResetDeviceLimiter = rateLimit({
+  windowMs: RESET_WINDOW_MS,
+  max: isDev ? 60 : 8,
+  keyGenerator: deviceKeyGenerator,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: RESET_MESSAGE,
+});
+
+export const passwordResetLimiter: RequestHandler[] = [passwordResetIpCeiling, passwordResetDeviceLimiter];
 
 /**
  * 6. Rider Breadcrumb Ingest Limiter (POST /errands/:id/track)
