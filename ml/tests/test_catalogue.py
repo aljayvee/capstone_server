@@ -152,6 +152,26 @@ def test_built_in_categories_take_nothing_from_their_descriptions():
     assert stores["7 eleven"] == "Convenience Store"
 
 
+def test_prepared_coffee_follows_cafe_but_packaged_coffee_stays_grocery():
+    catalogue = Catalogue({**PRODUCTION, "Cafe": "Coffee shops, beverage stalls, and milk tea spots"})
+    items = labels(synthetic_rows(catalogue), "item")
+    for name in ("latte", "americano", "frappe", "espresso", "cold brew"):
+        assert items[name] == "Cafe"
+    for name in ("coffee", "nescafe", "3 in 1 coffee", "instant coffee sachet"):
+        assert items[name] == "Supermarket & Grocery"
+
+
+def test_prepared_coffee_keeps_parent_category_without_a_cafe():
+    items = labels(synthetic_rows(Catalogue(PRODUCTION)), "item")
+    for name in ("latte", "americano", "frappe"):
+        assert items[name] == "Fast Food & Restaurant"
+
+
+def test_cafe_rename_keeps_prepared_coffee_vocabulary():
+    catalogue = Catalogue({**PRODUCTION, "Coffee & Tea Corner": "Coffee shops and milk tea"})
+    assert labels(synthetic_rows(catalogue), "item")["cold brew"] == "Coffee & Tea Corner"
+
+
 # ── through the trainer ────────────────────────────────────────────────────
 
 

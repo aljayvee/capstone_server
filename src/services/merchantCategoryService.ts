@@ -1,4 +1,5 @@
 import { merchantCategoryRepository } from "../repositories/merchantCategoryRepository.js";
+import { getCachedMerchantCategories, invalidateMerchantCategoryCache } from "../lib/merchantCategoryCache.js";
 import { ServiceError } from "./ServiceError.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
 import { findBlockedCategoryTerm, isPabiliCategoryName } from "../lib/blockedCategoryNames.js";
@@ -28,7 +29,7 @@ export async function listMerchantCategories(
   includeInactive = false,
   customerId?: number | null
 ) {
-  const categories = await merchantCategoryRepository.findMany({ includeInactive });
+  const categories = await getCachedMerchantCategories(includeInactive);
   if (includeInactive) return categories;
 
   // Non-Pabili categories (Schools, Banks, Padala Outlets, Motor Trades, etc.)
@@ -177,6 +178,7 @@ export async function createMerchantCategory(input: CreateMerchantCategoryInput)
   assertCategoryNameAllowed(input.name);
 
   const category = await merchantCategoryRepository.create(input);
+  invalidateMerchantCategoryCache();
   announceCatalogueChange("created", category.id);
   triggerCategoryAutoLearning({ reason: "created", categoryId: category.id });
   return category;
@@ -193,6 +195,7 @@ export async function updateMerchantCategory(id: number, input: UpdateMerchantCa
   assertCategoryNameAllowed(input.name);
 
   const category = await merchantCategoryRepository.update(id, input);
+  invalidateMerchantCategoryCache();
 
   // A rename has to reach every place that stores the category by NAME, or
   // what was learned under the old name is cut loose: filed items (the
@@ -284,6 +287,7 @@ export async function setCategoryImage(categoryId: number, input: StoreCategoryI
   await assertCategoryExists(categoryId);
 
   const saved = await merchantCategoryRepository.upsertImage(categoryId, input);
+  invalidateMerchantCategoryCache();
 
   // The blob is echoed straight back to the uploader in the customer-photo
   // endpoints, which doubles the response for no gain. Return metadata only -
@@ -303,6 +307,7 @@ export async function removeCategoryImage(categoryId: number) {
   await assertCategoryExists(categoryId);
 
   const result = await merchantCategoryRepository.deleteImageByCategoryId(categoryId);
+  invalidateMerchantCategoryCache();
   if (result.count > 0) {
     announceCatalogueChange("image-removed", categoryId);
   }

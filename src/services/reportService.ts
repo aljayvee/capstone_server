@@ -5,7 +5,14 @@ import { userRepository } from "../repositories/userRepository.js";
 import { ratingRepository } from "../repositories/ratingRepository.js";
 import { type ReportPeriod } from "./patterns/reportPeriodStrategy.js";
 import { resolveRange as resolveDateRange, type RangeRequest } from "./patterns/dateRangeResolver.js";
+import {
+  breakdown,
+  describeCoverage,
+  periodBuckets,
+  type BucketUnit,
+} from "./patterns/periodBuckets.js";
 import { RIDER_SHARE_RATE, splitCommission } from "./patterns/commissionSplit.js";
+import { ADJUSTMENT_LABEL, settlementBalance, type AdjustmentKind } from "./patterns/settlementBalance.js";
 import { activeCategoryNameSet } from "./patterns/categoryFeeModes.js";
 import {
   UNCATEGORISED,
@@ -16,12 +23,18 @@ import {
   type ErrandCategoryRow,
 } from "./patterns/categoryRevenueAllocation.js";
 import * as exceptionService from "./exceptionService.js";
+import type { ExceptionKind } from "./patterns/exceptionRules.js";
 import * as riderPerformanceService from "./riderPerformanceService.js";
+import { ServiceError } from "./ServiceError.js";
 
 interface ReportMeta {
   /** "CUSTOM" when the caller supplied an explicit start and end. */
   period: ReportPeriod | "CUSTOM";
   rangeLabel: string;
+  /** The window in one plain sentence, naming the days: see describeCoverage. */
+  coverageLabel: string;
+  /** What each timelineBreakdown row is: a day, week, month or year. */
+  breakdownUnit: BucketUnit;
   start: string;
   end: string;
 }
@@ -30,17 +43,25 @@ interface ReportMeta {
  * Every report takes the same window request: either a named period with a
  * reference date, or the explicit start/end the calendar picker sends.
  */
-export type ReportRequest = RangeRequest;
+export type ReportRequest = RangeRequest & {
+  /** Rider Performance only: one rider's report. Ignored by the other five. */
+  riderId?: number;
+};
 
 function resolveRange(request: ReportRequest) {
   const resolved = resolveDateRange(request);
+  // The rows every report's breakdown table is split into, from the one
+  // definition the PDF uses too.
+  const plan = periodBuckets(resolved.period, resolved.start, resolved.end);
   const meta: ReportMeta = {
     period: resolved.period,
     rangeLabel: resolved.label,
+    coverageLabel: describeCoverage(resolved),
+    breakdownUnit: plan.unit,
     start: resolved.start.toISOString(),
     end: resolved.end.toISOString(),
   };
-  return { start: resolved.start, end: resolved.end, meta };
+  return { start: resolved.start, end: resolved.end, meta, plan };
 }
 
 /**
@@ -64,12 +85,26 @@ interface CategoryBucket {
 }
 
 type AllocationRow = ErrandCategoryRow & {
+  createdAt: Date;
   totalCost: number;
   deliveryFee: number;
   tip: number;
   estimatedCost: number;
   commission: { riderShare: number; businessShare: number } | null;
 };
+
+/**
+ * What an errand counts as in sales: the items bought plus the delivery fee.
+ *
+ * `totalCost` is items + delivery fee + tip. The business takes no tips, yet
+ * 100 delivered errands on prod (2026-08-18 to 10-15) carry tip 20, so summing
+ * totalCost overstated Total sales by PHP 2,000 and, with the Tips column gone,
+ * left rows that did not add up. Taken off totalCost rather than rebuilt from
+ * the parts, so any other charge folded into totalCost still counts.
+ */
+function salesValue(r: { totalCost: number; tip: number }): number {
+  return round2(r.totalCost - (r.tip ?? 0));
+}
 
 function emptyBucket(category: string): CategoryBucket {
   return {
@@ -128,7 +163,7 @@ function allocateByCategory(rows: AllocationRow[], activeNames: ReadonlySet<stri
     businessShareTotal = round2(businessShareTotal + split.businessShare);
     riderShareTotal = round2(riderShareTotal + split.riderShare);
 
-    const revenue = allocate(row.totalCost, weights);
+    const revenue = allocate(salesValue(row), weights);
     const itemCost = allocate(row.estimatedCost, weights);
     const deliveryFee = allocate(row.deliveryFee, weights);
     const tip = allocate(row.tip, weights);
@@ -170,19 +205,19 @@ function categoryNotes(rowCount: number, errandsWithoutReceipts: number, uncateg
 
   if (errandsWithoutReceipts > 0) {
     notes.push(
-      `${errandsWithoutReceipts} of ${rowCount} errands carried no receipt, so their item money ` +
-        `was attributed from the categories requested rather than from what was spent.`
+      `${errandsWithoutReceipts} of ${rowCount} orders had no receipt, so their item cost is ` +
+        `counted under the store types the customer picked.`
     );
   }
   if (uncategorised > 0) {
     notes.push(
-      `${formatAmount(uncategorised)} could not be attributed to any active merchant category ` +
-        `and is reported under "${UNCATEGORISED}" rather than omitted.`
+      `${formatAmount(uncategorised)} could not be matched to a store type, so it is listed ` +
+        `under "${UNCATEGORISED}" instead of being left out.`
     );
   }
   notes.push(
-    "Money is attributed to the shop it was spent in; handling fees are priced from the " +
-      "categories the customer selected. The two can differ on an errand that was re-pinned."
+    "Item cost is counted under the store where the money was spent. Delivery fees follow the " +
+      "store types the customer picked, so the two can differ when an order changed stores."
   );
 
   return notes;
@@ -192,8 +227,43 @@ function formatAmount(value: number): string {
   return `PHP ${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+export interface TimelineBreakdownPoint {
+  /** "Sunday", "Week 2", "January", "2026". */
+  label: string;
+  /** The dates the row covers: "Oct 18", "Oct 8 to 14". */
+  dateLabel: string;
+  orderCount: number;
+  revenue: number;
+  itemCost: number;
+  deliveryFee: number;
+  tip: number;
+}
+
+/**
+ * Sales per day / week / month / year, on the same rows the category table
+ * adds up, so the breakdown's total is the report's total.
+ */
+function buildSalesTimeline(
+  rows: AllocationRow[],
+  plan: ReturnType<typeof periodBuckets>
+): TimelineBreakdownPoint[] {
+  return breakdown(
+    plan,
+    rows,
+    (r) => r.createdAt,
+    () => ({ orderCount: 0, revenue: 0, itemCost: 0, deliveryFee: 0, tip: 0 }),
+    (f, r) => {
+      f.orderCount += 1;
+      f.revenue = round2(f.revenue + salesValue(r));
+      f.itemCost = round2(f.itemCost + r.estimatedCost);
+      f.deliveryFee = round2(f.deliveryFee + r.deliveryFee);
+      f.tip = round2(f.tip + r.tip);
+    }
+  );
+}
+
 export async function getSalesReport(request: ReportRequest) {
-  const { start, end, meta } = resolveRange(request);
+  const { start, end, meta, plan } = resolveRange(request);
   const [totals, rows, activeNames] = await Promise.all([
     errandRepository.aggregateBetween(start, end),
     errandRepository.findForCategoryAllocationBetween(start, end),
@@ -202,7 +272,8 @@ export async function getSalesReport(request: ReportRequest) {
 
   const { byCategory, errandsWithoutReceipts } = allocateByCategory(rows, activeNames);
 
-  const totalRevenue = round2(totals._sum.totalCost ?? 0);
+  // Tip excluded, the same as every row below (salesValue), so they still reconcile.
+  const totalRevenue = round2((totals._sum.totalCost ?? 0) - (totals._sum.tip ?? 0));
   const allocatedRevenue = round2(byCategory.reduce((sum, c) => sum + c.revenue, 0));
   const uncategorised = byCategory.find((c) => c.category === UNCATEGORISED)?.revenue ?? 0;
 
@@ -210,6 +281,7 @@ export async function getSalesReport(request: ReportRequest) {
     ...meta,
     totalRevenue,
     totalOrders: totals._count._all,
+    timelineBreakdown: buildSalesTimeline(rows, plan),
     byCategory: byCategory.map((c) => ({
       category: c.category,
       revenue: c.revenue,
@@ -250,12 +322,27 @@ export async function getRiderPerformanceReport(request: ReportRequest) {
 // one's recorded payout — getSettlementReport below does prefer the stored
 // RiderCommission where one exists, and is the ledger-accurate view.
 export async function getCommissionReport(request: ReportRequest) {
-  const { start, end, meta } = resolveRange(request);
-  const [totals, rows, activeNames] = await Promise.all([
-    errandRepository.aggregateBetween(start, end),
-    errandRepository.findForCategoryAllocationBetween(start, end),
+  const { start, end, meta, plan } = resolveRange(request);
+  const riderId = request.riderId;
+  const [totals, rows, activeNames, riders] = await Promise.all([
+    errandRepository.aggregateBetween(start, end, riderId),
+    errandRepository.findForCategoryAllocationBetween(start, end, riderId),
     activeCategoryNameSet(),
+    userRepository.findAllRiders(),
   ]);
+
+  // Every rider, for the report's rider picker, whichever one is being shown.
+  const riderOptions = riders
+    .map((r) => ({ riderId: r.id, name: `${r.firstName} ${r.lastName}`.trim() || r.username }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // An unknown id is refused rather than answered with an empty report that
+  // would print as a rider who earned nothing.
+  const rider = riderId ? (riderOptions.find((o) => o.riderId === riderId) ?? null) : null;
+  if (riderId && !rider) throw new ServiceError(404, "That rider was not found.");
+
+  // The split each order was paid at: the stored payout first, as everywhere.
+  const splitOf = (r: (typeof rows)[number]) =>
+    r.commission ?? splitCommission({ deliveryFee: r.deliveryFee, tip: r.tip, itemCost: r.estimatedCost });
 
   const { byCategory, errandsWithoutReceipts, businessShareTotal, riderShareTotal } =
     allocateByCategory(rows, activeNames);
@@ -277,12 +364,29 @@ export async function getCommissionReport(request: ReportRequest) {
   // run. See commissionSplit.ts.
   const estimatedCommission = businessShareTotal;
 
+  // Per day / week / month / year, from the same per-errand split the headline
+  // is summed from (stored payout first), so each column adds up to its total.
+  const timelineBreakdown = breakdown(
+    plan,
+    rows,
+    (r) => r.createdAt,
+    () => ({ orderCount: 0, deliveryFee: 0, businessShare: 0, riderShare: 0 }),
+    (f, r) => {
+      const split = splitOf(r);
+      f.orderCount += 1;
+      f.deliveryFee = round2(f.deliveryFee + r.deliveryFee);
+      f.businessShare = round2(f.businessShare + split.businessShare);
+      f.riderShare = round2(f.riderShare + split.riderShare);
+    }
+  );
+
   return {
     ...meta,
     estimatedCommission,
     riderCommission: riderShareTotal,
     totalDeliveryFees: round2(totals._sum.deliveryFee ?? 0),
     orderCount: totals._count._all,
+    timelineBreakdown,
     // The rate the split was taken at, so the UI stops hardcoding "30%"/"70%"
     // captions that go stale the moment this business rule changes.
     commissionRate: RIDER_SHARE_RATE,
@@ -297,13 +401,46 @@ export async function getCommissionReport(request: ReportRequest) {
       businessShare: c.businessShare,
       riderShare: c.riderShare,
     })),
+    riderOptions,
+    /** The rider this report is narrowed to, or null for every rider. */
+    rider,
+    /** One rider's report only: every order in the window and how its fee was split, newest first. */
+    orders: rider
+      ? [...rows]
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .map((r) => {
+            const split = splitOf(r);
+            return {
+              errandId: r.id,
+              referenceNo: r.referenceNo ?? null,
+              placedAt: r.createdAt.toISOString(),
+              deliveryFee: round2(r.deliveryFee),
+              tip: round2(r.tip ?? 0),
+              businessShare: round2(split.businessShare),
+              riderShare: round2(split.riderShare),
+            };
+          })
+      : [],
     notes: categoryNotes(rows.length, errandsWithoutReceipts, uncategorised),
   };
 }
 
 export async function getSettlementReport(request: ReportRequest) {
-  const { start, end, meta } = resolveRange(request);
-  const rows = await errandRepository.findWithSettlementBetween(start, end);
+  const { start, end, meta, plan } = resolveRange(request);
+  const riderId = request.riderId;
+  const [rows, riders] = await Promise.all([
+    errandRepository.findWithSettlementBetween(start, end, riderId),
+    userRepository.findAllRiders(),
+  ]);
+
+  // Every rider, for the report's rider picker, whichever one is being shown.
+  const riderOptions = riders
+    .map((r) => ({ riderId: r.id, name: `${r.firstName} ${r.lastName}`.trim() || r.username }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // An unknown id is refused rather than answered with an empty report that
+  // would print as a rider who handed over nothing.
+  const rider = riderId ? (riderOptions.find((o) => o.riderId === riderId) ?? null) : null;
+  if (riderId && !rider) throw new ServiceError(404, "That rider was not found.");
 
   const totalDeliveryFees = round2(rows.reduce((sum, r) => sum + r.deliveryFee, 0));
 
@@ -372,7 +509,12 @@ export async function getSettlementReport(request: ReportRequest) {
   // correct. Reporting them as one figure would make the per-rider lines fail to
   // add up to the header, which an owner reads as money going missing — so the
   // two travel as separate blocks, each naming the column it was windowed on.
-  const settlements = await settlementRepository.findBetweenWithRider(start, end);
+  const [settlements, repaymentsRaw] = await Promise.all([
+    settlementRepository.findBetweenWithRider(start, end, riderId),
+    settlementRepository.findRepaymentsBetweenWithSettlement?.(start, end, riderId) ?? [],
+  ]);
+  const repayments = repaymentsRaw ?? [];
+  const settlementIdsInWindow = new Set(settlements.map((s) => s.id));
 
   const byRider = new Map<
     number,
@@ -383,9 +525,21 @@ export async function getSettlementReport(request: ReportRequest) {
       expected: number;
       collected: number;
       variance: number;
+      /** Short and over apart (owner, 2026-10-27): netted, one hides the other. */
+      short: number;
+      over: number;
       shortageCount: number;
+      /** Paid back afterwards, by the rider or the customer. */
+      paidBackLater: number;
+      writtenOff: number;
+      stillOwed: number;
     }
   >();
+
+  // Each handover's short and what has happened to it since. "Since" means up
+  // to now, not up to the window's end: still owed is today's figure.
+  const balanceOf = new Map(settlements.map((s) => [s.id, settlementBalance(s.variance, s.adjustments)]));
+  const balance = (s: (typeof settlements)[number]) => balanceOf.get(s.id)!;
 
   for (const s of settlements) {
     let entry = byRider.get(s.riderId);
@@ -397,22 +551,83 @@ export async function getSettlementReport(request: ReportRequest) {
         expected: 0,
         collected: 0,
         variance: 0,
+        short: 0,
+        over: 0,
         shortageCount: 0,
+        paidBackLater: 0,
+        writtenOff: 0,
+        stillOwed: 0,
       };
       byRider.set(s.riderId, entry);
     }
+    const b = balance(s);
     entry.settlementCount += 1;
     entry.expected = round2(entry.expected + s.expectedAmount);
     entry.collected = round2(entry.collected + s.collectedAmount);
     entry.variance = round2(entry.variance + s.variance);
+    entry.short = round2(entry.short + b.short);
+    entry.over = round2(entry.over + Math.max(0, s.variance));
     if (s.variance < 0) entry.shortageCount += 1;
+    entry.paidBackLater = round2(entry.paidBackLater + b.riderPaidBack + b.customerPaid);
+    entry.writtenOff = round2(entry.writtenOff + b.writtenOff);
+    entry.stillOwed = round2(entry.stillOwed + b.stillOwed);
   }
+
+  for (const a of repayments) {
+    if (settlementIdsInWindow.has(a.settlementId)) continue;
+    let entry = byRider.get(a.settlement.riderId);
+    if (!entry) {
+      entry = {
+        riderId: a.settlement.riderId,
+        riderName: `${a.settlement.rider.firstName} ${a.settlement.rider.lastName}`.trim() || null,
+        settlementCount: 0,
+        expected: 0,
+        collected: 0,
+        variance: 0,
+        short: 0,
+        over: 0,
+        shortageCount: 0,
+        paidBackLater: 0,
+        writtenOff: 0,
+        stillOwed: 0,
+      };
+      byRider.set(a.settlement.riderId, entry);
+    }
+    entry.paidBackLater = round2(entry.paidBackLater + a.amount);
+  }
+
+  // On the cash clock (settledAt), like the rider table it sits beside: its
+  // totals are the cash totals, not the revenue ones.
+  const timelineBreakdown = breakdown(
+    plan,
+    settlements,
+    (s) => s.settledAt,
+    () => ({ settlementCount: 0, expected: 0, collected: 0, variance: 0, short: 0, over: 0, shortageCount: 0, stillOwed: 0 }),
+    (f, s) => {
+      f.settlementCount += 1;
+      f.expected = round2(f.expected + s.expectedAmount);
+      f.collected = round2(f.collected + s.collectedAmount);
+      f.variance = round2(f.variance + s.variance);
+      f.short = round2(f.short + balance(s).short);
+      f.over = round2(f.over + Math.max(0, s.variance));
+      if (s.variance < 0) f.shortageCount += 1;
+      f.stillOwed = round2(f.stillOwed + balance(s).stillOwed);
+    }
+  );
+
+  const sumOf = (pick: (b: ReturnType<typeof settlementBalance>) => number) =>
+    round2(settlements.reduce((sum, s) => sum + pick(balance(s)), 0));
+  const shortTotal = sumOf((b) => b.short);
+  const paidBackLaterTotal = sumOf((b) => b.riderPaidBack + b.customerPaid);
+  const writtenOffTotal = sumOf((b) => b.writtenOff);
+  const stillOwedTotal = sumOf((b) => b.stillOwed);
 
   return {
     ...meta,
     // Read from commissionSplit rather than restated in the UI, so a change to
     // the business rule cannot leave a caption claiming the old ratio.
     commissionRate: RIDER_SHARE_RATE,
+    timelineBreakdown,
 
     revenue: {
       basis: "errand.createdAt" as const,
@@ -436,18 +651,93 @@ export async function getSettlementReport(request: ReportRequest) {
       varianceTotal: round2(settlements.reduce((sum, s) => sum + s.variance, 0)),
       settlementCount: settlements.length,
       shortageCount: settlements.filter((s) => s.variance < 0).length,
+      // Over, apart from short: netted into varianceTotal, a ₱60 short and a
+      // ₱60 over read as nothing wrong. overTotal - shortTotal = varianceTotal.
+      overTotal: round2(settlements.reduce((sum, s) => sum + Math.max(0, s.variance), 0)),
+      overCount: settlements.filter((s) => s.variance > 0).length,
+      // What happened to the shorts afterwards. Always
+      // shortTotal = paidBackLaterTotal + writtenOffTotal + stillOwedTotal.
+      shortTotal,
+      paidBackLaterTotal,
+      writtenOffTotal,
+      stillOwedTotal,
       byRider: [...byRider.values()].sort((a, b) => a.variance - b.variance),
-      lines: settlements.map((s) => ({
-        errandId: s.errandId,
-        riderName: `${s.rider.firstName} ${s.rider.lastName}`.trim() || null,
-        expected: round2(s.expectedAmount),
-        collected: round2(s.collectedAmount),
-        variance: round2(s.variance),
-        status: s.status,
-        shortReason: s.shortReason,
-        settledAt: s.settledAt.toISOString(),
-      })),
+      lines: [
+        ...settlements.map((s) => {
+          const b = balance(s);
+          return {
+            lineKey: `settlement-${s.id}`,
+            lineKind: "HANDOVER" as const,
+            errandId: s.errandId,
+            referenceNo: s.errand?.referenceNo ?? null,
+            riderName: `${s.rider.firstName} ${s.rider.lastName}`.trim() || null,
+            expected: round2(s.expectedAmount),
+            collected: round2(s.collectedAmount),
+            variance: round2(s.variance),
+            status: s.status,
+            shortReason: s.shortReason,
+            settledAt: s.settledAt.toISOString(),
+            short: b.short,
+            over: round2(Math.max(0, s.variance)),
+            paidBackLater: round2(b.riderPaidBack + b.customerPaid),
+            writtenOff: b.writtenOff,
+            stillOwed: b.stillOwed,
+            /** Every amount recorded since the handover and not undone, oldest first. */
+            followUps: s.adjustments
+              .filter((a) => !a.voidedAt)
+              .map((a) => ({
+                kind: a.kind,
+                label: ADJUSTMENT_LABEL[a.kind as AdjustmentKind] ?? a.kind,
+                amount: a.amount,
+                reference: a.reference,
+                recordedAt: a.recordedAt.toISOString(),
+                recordedBy:
+                  `${a.recordedBy.firstName ?? ""} ${a.recordedBy.lastName ?? ""}`.trim() ||
+                  a.recordedBy.username,
+              })),
+          };
+        }),
+        ...repayments.map((a) => {
+          const label = ADJUSTMENT_LABEL[a.kind as AdjustmentKind] ?? a.kind;
+          const recordedBy =
+            `${a.recordedBy.firstName ?? ""} ${a.recordedBy.lastName ?? ""}`.trim() ||
+            a.recordedBy.username;
+          return {
+            lineKey: `repayment-${a.id}`,
+            lineKind: "REPAYMENT" as const,
+            errandId: a.settlement.errandId,
+            referenceNo: a.settlement.errand?.referenceNo ?? null,
+            riderName:
+              `${a.settlement.rider.firstName} ${a.settlement.rider.lastName}`.trim() || null,
+            expected: round2(a.amount),
+            collected: round2(a.amount),
+            variance: 0,
+            status: label,
+            shortReason: a.note ?? (a.reference ? `Ref ${a.reference}` : null),
+            settledAt: a.recordedAt.toISOString(),
+            short: 0,
+            over: 0,
+            paidBackLater: 0,
+            writtenOff: 0,
+            stillOwed: 0,
+            followUps: [
+              {
+                kind: a.kind,
+                label,
+                amount: round2(a.amount),
+                reference: a.reference,
+                recordedAt: a.recordedAt.toISOString(),
+                recordedBy,
+              },
+            ],
+          };
+        }),
+      ],
     },
+
+    riderOptions,
+    /** The rider this report is narrowed to, or null for every rider. */
+    rider,
 
     // Flat mirrors of the revenue block. The five report views and the CSV
     // exports read these names today; keeping them means the settlement change
@@ -461,14 +751,21 @@ export async function getSettlementReport(request: ReportRequest) {
     orderCount: rows.length,
 
     notes: [
-      "Revenue is windowed on when each errand was placed; cash on when it was settled. " +
-        "An errand placed near the end of a period settles in the next one, so the two " +
-        "sections are not expected to add up to each other.",
+      "Sales are counted on the day the order was placed. Cash is counted on the day the " +
+        "rider handed it over. An order placed late in a period can hand over its cash in the " +
+        "next one, so the two sections do not have to match.",
       ...(awaitingCollection > 0
         ? [
-            `₱${awaitingCollection.toFixed(2)} of this revenue is from finished errands whose ` +
-              "cash was never reconciled — it is priced, not counted. Non-COD errands cannot " +
-              "be settled at all today, so any that reach here will always sit in this figure.",
+            `₱${awaitingCollection.toFixed(2)} of these sales comes from finished orders whose ` +
+              "cash has not been handed over and counted yet. Orders not paid in cash cannot " +
+              "be handed over here, so they always stay in this amount.",
+          ]
+        : []),
+      ...(shortTotal > 0
+        ? [
+            "A short stays on the handover as it was counted. Money paid back later, by the " +
+              "rider or the customer, and amounts written off are shown beside it, and Still " +
+              "owed is what is left as of today, even if it was paid after these dates.",
           ]
         : []),
     ],
@@ -501,11 +798,23 @@ function canonicalPaymentMethod(raw?: string | null): string {
 }
 
 export async function getTransactionSummary(request: ReportRequest) {
-  const { start, end, meta } = resolveRange(request);
-  const [transactions, activeNames] = await Promise.all([
-    customerTransactionRepository.findBetween(start, end),
+  const { start, end, meta, plan } = resolveRange(request);
+  const riderId = request.riderId;
+  const [transactions, activeNames, riders] = await Promise.all([
+    customerTransactionRepository.findBetween(start, end, riderId),
     activeCategoryNameSet(),
+    userRepository.findAllRiders(),
   ]);
+
+  // Every rider, for the report's rider picker, whichever one is being shown
+  // (owner, 2026-10-27). Same rules as the Settlement report: an unknown id is
+  // refused rather than answered with an empty report that would print as a
+  // rider with no transactions.
+  const riderOptions = riders
+    .map((r) => ({ riderId: r.id, name: `${r.firstName} ${r.lastName}`.trim() || r.username }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const rider = riderId ? (riderOptions.find((o) => o.riderId === riderId) ?? null) : null;
+  if (riderId && !rider) throw new ServiceError(404, "That rider was not found.");
 
   const rows = transactions.map((t) => {
     const errand = t.errand;
@@ -513,6 +822,7 @@ export async function getTransactionSummary(request: ReportRequest) {
       return {
         transactionId: t.id,
         errandId: t.errandId,
+        referenceNo: null,
         category: UNCATEGORISED,
         categories: [UNCATEGORISED],
         riderName: null,
@@ -527,6 +837,7 @@ export async function getTransactionSummary(request: ReportRequest) {
         paymentTransactionId: null,
         paymentConfirmedBy: null,
         paymentEvidenceSource: null,
+        paymentProofImageId: null,
         status: "CANCELLED" as const,
         errandStatus: "CANCELLED" as const,
         paymentStatus: t.status ?? "PENDING",
@@ -560,6 +871,7 @@ export async function getTransactionSummary(request: ReportRequest) {
     return {
       transactionId: t.id,
       errandId: t.errandId,
+      referenceNo: errand.referenceNo ?? null,
       // The single category this transaction counts under, plus every category
       // it touched — a two-stop errand is one row but two shops.
       category: primaryCategory(weights),
@@ -590,6 +902,9 @@ export async function getTransactionSummary(request: ReportRequest) {
       // door-side photo of the customer's receipt. Exactly one of
       // customerId/riderId is ever set on a proof image.
       paymentEvidenceSource: proof ? (proof.customerId ? "customer" : "rider") : null,
+      // The photo itself, for the report's viewer: opened through
+      // GET /errands/:id/proof-images/:imageId, which owners may read.
+      paymentProofImageId: proof?.id ?? null,
       // The errand's own lifecycle state. This is the status column that carries
       // information — see paymentStatus below for the one that does not.
       status: errand.status,
@@ -612,8 +927,60 @@ export async function getTransactionSummary(request: ReportRequest) {
       .sort((a, b) => b.amount - a.amount);
   };
 
+  let unremitted = 0;
+  let unremittedCount = 0;
+  let uncollected = 0;
+  let uncollectedCount = 0;
+  for (const t of transactions) {
+    const errand = t.errand;
+    if (!errand || errand.status === "CANCELLED") continue;
+    const txAmount = Number(t.amount) || 0;
+    const settlement = (
+      errand as {
+        settlement?: {
+          variance: number;
+          adjustments?: Array<{ kind: string; amount: number; voidedAt?: Date | null }>;
+        } | null;
+      }
+    ).settlement;
+    if (settlement) {
+      const b = settlementBalance(
+        settlement.variance,
+        (settlement.adjustments ?? []).map((a) => ({ ...a, voidedAt: a.voidedAt ?? null }))
+      );
+      if (b.stillOwed > 0) {
+        unremitted = round2(unremitted + b.stillOwed);
+        unremittedCount += 1;
+      }
+    } else {
+      const ledgerPaid = (errand.payments ?? []).reduce((sum, p) => {
+        const amt = Number(p.amount) || 0;
+        return p.kind === "REFUND" ? sum - amt : sum + amt;
+      }, 0);
+      const unpaid = round2(Math.max(0, txAmount - ledgerPaid));
+      if (unpaid > 0) {
+        uncollected = round2(uncollected + unpaid);
+        uncollectedCount += 1;
+      }
+    }
+  }
+
+  // Over the same rows as `totals` below, so the breakdown's total row is that total.
+  const timelineBreakdown = breakdown(
+    plan,
+    rows,
+    (r) => new Date(r.createdAt),
+    () => ({ count: 0, amount: 0, deliveryFee: 0 }),
+    (f, r) => {
+      f.count += 1;
+      f.amount = round2(f.amount + r.amount);
+      f.deliveryFee = round2(f.deliveryFee + r.deliveryFee);
+    }
+  );
+
   return {
     ...meta,
+    timelineBreakdown,
     transactions: rows,
     byPaymentMethod: tally((r) => r.paymentMethod).map(({ name, ...rest }) => ({
       paymentMethod: name,
@@ -631,11 +998,18 @@ export async function getTransactionSummary(request: ReportRequest) {
       count: rows.length,
       amount: round2(rows.reduce((sum, r) => sum + r.amount, 0)),
       deliveryFee: round2(rows.reduce((sum, r) => sum + r.deliveryFee, 0)),
+      unremitted,
+      unremittedCount,
+      uncollected,
+      uncollectedCount,
     },
+    riderOptions,
+    /** The rider this report is narrowed to, or null for every rider. */
+    rider,
     notes: [
-      "Payment status is recorded once when an errand is created and is never advanced, " +
-        "so it reads PENDING for every transaction. Errand status is the column that " +
-        "reflects what actually happened.",
+      "Payment status is saved once, when the order is placed, and is not updated after " +
+        "that, so it shows Pending on every row. Order status is the one that shows what " +
+        "really happened.",
     ],
   };
 }
@@ -654,7 +1028,59 @@ function round2(value: number): number {
  * thing this report exists to make impossible to miss.
  */
 export async function getExceptionReport(request: ReportRequest) {
-  const { start, end, meta } = resolveRange(request);
+  const { start, end, meta, plan } = resolveRange(request);
   const found = await exceptionService.findExceptions(start, end);
-  return { meta, ...found };
+
+  // Counted on the day the order was placed: that is what the window selects
+  // on, so every problem in the list lands in exactly one row. Bucketing on
+  // when it happened would drop a short handover settled the morning after.
+  const timelineBreakdown = breakdown(
+    plan,
+    found.exceptions,
+    (e) => e.orderPlacedAt ?? e.occurredAt,
+    () => ({ count: 0, openCount: 0, resolvedCount: 0, atRisk: 0 }),
+    (f, e) => {
+      f.count += 1;
+      if (e.resolvedAt) f.resolvedCount += 1;
+      else f.openCount += 1;
+      f.atRisk = round2(f.atRisk + e.amountAtRisk);
+    }
+  );
+
+  // Cash short and cash over as two problems on this report (owner,
+  // 2026-10-27): one "Cash short or over" bar hid which way the money went.
+  // Only the report splits them; the dispatcher's queue keeps CASH_VARIANCE.
+  // Each line carries `problem`, the kind it is counted and labelled under.
+  const problemOf = (e: (typeof found.exceptions)[number]): ReportProblem =>
+    e.kind !== "CASH_VARIANCE" || !e.cash
+      ? e.kind
+      : e.cash.collected < e.cash.expected
+        ? "CASH_SHORT"
+        : "CASH_OVER";
+  const exceptions = found.exceptions.map((e) => ({ ...e, problem: problemOf(e) }));
+
+  // Same order as before: the split pair takes CASH_VARIANCE's place, short first.
+  const byProblem = new Map<ReportProblem, { count: number; atRisk: number }>();
+  for (const { kind } of found.summary.byKind) {
+    for (const problem of kind === "CASH_VARIANCE" ? (["CASH_SHORT", "CASH_OVER", "CASH_VARIANCE"] as const) : [kind]) {
+      for (const e of exceptions) {
+        if (e.kind !== kind || e.problem !== problem) continue;
+        const entry = byProblem.get(problem) ?? { count: 0, atRisk: 0 };
+        entry.count += 1;
+        entry.atRisk = round2(entry.atRisk + e.amountAtRisk);
+        byProblem.set(problem, entry);
+      }
+    }
+  }
+
+  return {
+    meta,
+    ...found,
+    exceptions,
+    summary: { ...found.summary, byKind: [...byProblem.entries()].map(([kind, v]) => ({ kind, ...v })) },
+    timelineBreakdown,
+  };
 }
+
+/** What a Help Desk Report line is counted under: its kind, with cash split. */
+export type ReportProblem = ExceptionKind | "CASH_SHORT" | "CASH_OVER";

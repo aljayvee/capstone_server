@@ -32,6 +32,9 @@ services:
       - "${CATEGORY_BIND:-127.0.0.1}:8100:8100"
     environment:
       SUGO_MODEL_DIR: /srv/models
+      # Explicit opt-in: permits bounded review of training names/labels by
+      # the configured external model before automatic retraining.
+      TRAINING_QUALITY_ENABLED: "${TRAINING_QUALITY_ENABLED:-0}"
       # Gemini 3.8 Flash, with Gemma 4 behind it, as a second opinion on unsure
       # names and on the Conflict Management suggestions (sugo_category/gemma.py).
       # The key comes from ml/.env beside this file (compose reads it for

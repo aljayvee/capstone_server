@@ -13,6 +13,7 @@ import {
   getCustomerProfile,
   updateCustomerProfile,
   uploadCustomerPhoto,
+  getCustomerPhoto,
   registerCustomerPushToken,
   deleteCustomerPhoto,
   getCustomerTransactions,
@@ -61,6 +62,8 @@ router.post("/resend-verification-email", verificationLimiter, resendVerificatio
 router.get("/:id", authenticateToken, readLimiter, getCustomerProfile);
 router.put("/:id", authenticateToken, userApiLimiter, updateCustomerProfile);
 router.post("/:id/push-token", authenticateToken, userApiLimiter, registerCustomerPushToken);
+// No sign-in: a signed link the customer's own profile response hands out.
+router.get("/:id/photo", readLimiter, getCustomerPhoto);
 router.put("/:id/photo", authenticateToken, userApiLimiter, uploadCustomerPhoto);
 router.delete("/:id/photo", authenticateToken, userApiLimiter, deleteCustomerPhoto);
 router.get("/:id/transactions", authenticateToken, readLimiter, getCustomerTransactions);

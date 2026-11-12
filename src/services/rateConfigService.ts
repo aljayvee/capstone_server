@@ -1,4 +1,5 @@
 import { rateConfigRepository, type RateConfigInput } from "../repositories/rateConfigRepository.js";
+import { getCachedRateConfig, invalidateRateConfigCache } from "../lib/rateConfigCache.js";
 import {
   BASE_FEE_DISTANCE_KM,
   HANDLING_AMOUNT_THRESHOLD,
@@ -36,12 +37,14 @@ export const PRICING_RULES: PricingRules = {
 };
 
 export async function getRateConfig() {
-  const config = await rateConfigRepository.findFirst();
+  const config = await getCachedRateConfig();
   if (!config) return config;
 
   return { ...config, pricingRules: PRICING_RULES };
 }
 
-export function updateRateConfig(data: RateConfigInput) {
-  return rateConfigRepository.upsert(data);
+export async function updateRateConfig(data: RateConfigInput) {
+  const updated = await rateConfigRepository.upsert(data);
+  invalidateRateConfigCache();
+  return updated;
 }

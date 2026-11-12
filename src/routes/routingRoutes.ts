@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getDirections } from "../controllers/routingController.js";
+import { getDirections, getRiderRoute } from "../controllers/routingController.js";
 import { authenticateToken } from "../middleware/auth.js";
 import rateLimit from "express-rate-limit";
 
@@ -13,6 +13,18 @@ const routingLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Reading a line already calculated costs no routing-engine request, and a
+// tracking map asks again on every notice plus a slow safety poll, so this is
+// looser than the limiter above. Several customers can share one carrier IP.
+const riderRouteLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 120,
+  message: { error: "Too many route requests from this connection. Please try again in a minute." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 router.post("/directions", authenticateToken, routingLimiter, getDirections);
+router.get("/rider-route", authenticateToken, riderRouteLimiter, getRiderRoute);
 
 export default router;

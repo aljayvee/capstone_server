@@ -312,7 +312,7 @@ export async function completeReset(
 ): Promise<void> {
   let claims: ResetClaims;
   try {
-    claims = jwt.verify(resetToken, JWT_PASSWORD_RESET_SECRET) as ResetClaims;
+    claims = jwt.verify(resetToken, JWT_PASSWORD_RESET_SECRET, { algorithms: ["HS256"] }) as ResetClaims;
   } catch {
     throw new ServiceError(400, "This reset session has expired. Please start again.");
   }

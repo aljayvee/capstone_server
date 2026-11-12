@@ -1,6 +1,11 @@
 import type { GeoPoint } from "../lib/geo.js";
 import { OsrmRoutingProvider } from "../lib/routing/osrmProvider.js";
-import { distanceOutsideServiceAreaKm, isServiceAreaConfigured } from "../lib/serviceArea.js";
+import {
+  detectServiceZone,
+  distanceOutsideServiceAreaKm,
+  isServiceAreaConfigured,
+  serviceZoneName,
+} from "../lib/serviceArea.js";
 import { STORE_PIN_MAX_KM_BEYOND_BORDER } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -9,7 +14,7 @@ import { logger } from "../lib/logger.js";
  *
  * Three answers, in order of strictness:
  *
- * - **inside**: within the Tacurong service area. Nothing to say.
+ * - **inside**: within a service area (Tacurong City or Banga). Nothing to say.
  * - **outside**: past the border, but on the road map the router has loaded.
  *   A rider can be routed there, so it is allowed, but the dispatcher is told
  *   how far past the border it is and must confirm. Buying across town lines
@@ -116,7 +121,7 @@ export async function checkStoreLocation(point: GeoPoint): Promise<StoreLocation
       kmBeyondBorder,
       nearestRoadMeters,
       graphChecked,
-      message: "This store is outside Tacurong City. SUGO Express currently operates exclusively within Tacurong City.",
+      message: "This store is outside all supported service areas. SUGO Express currently operates within Tacurong City and Banga.",
     };
   } else if (graphChecked && nearestRoadMeters! > OFF_GRAPH_METERS) {
     verdict = {
@@ -137,16 +142,17 @@ export async function checkStoreLocation(point: GeoPoint): Promise<StoreLocation
       kmBeyondBorder,
       nearestRoadMeters,
       graphChecked,
-      message: `This store is ${km(kmBeyondBorder)} km past the Tacurong border. Stores more than ${km(STORE_PIN_MAX_KM_BEYOND_BORDER)} km outside cannot be pinned.`,
+      message: `This store is ${km(kmBeyondBorder)} km past the service-area border. Stores more than ${km(STORE_PIN_MAX_KM_BEYOND_BORDER)} km outside cannot be pinned.`,
     };
   } else {
+    const zone = detectServiceZone(safePoint);
     verdict = {
       status: "inside",
       reason: "inside_border",
       kmBeyondBorder: 0,
       nearestRoadMeters,
       graphChecked,
-      message: "Inside Tacurong.",
+      message: zone ? `Inside ${serviceZoneName(zone)}.` : "Inside the service area.",
     };
   }
 

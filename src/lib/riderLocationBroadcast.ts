@@ -281,6 +281,7 @@ export function registerRiderLocationChannel(): void {
 
       // Also freshens the cache dispatch ranking and the ETA engine read.
       riderPositionStore.record(riderId, {
+        speedMps: fix.speedMps ?? null,
         point: { latitude: fix.latitude, longitude: fix.longitude },
         recordedAt,
         accuracyMeters: fix.accuracyMeters ?? null,

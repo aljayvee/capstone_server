@@ -38,7 +38,7 @@ import { featuredFirst, parseFeaturedBrands } from "../lib/places/featuredBrands
 import { FEATURED_STORE_BRANDS } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma.js";
-import { isWithinServiceBuffer, SERVICE_AREA_CENTRE } from "../lib/serviceArea.js";
+import { detectServiceZone, isWithinServiceBuffer, SERVICE_AREA_CENTRE, type ServiceZone } from "../lib/serviceArea.js";
 import { merchantCategoryRepository } from "../repositories/merchantCategoryRepository.js";
 import type { IVerifiedPlace } from "../types/place.js";
 import { placeService } from "./placeService.js";
@@ -153,7 +153,7 @@ export interface EstablishmentSearch {
   google: "ok" | "unavailable";
   /** The nearby list only: another page follows this one. */
   hasMore?: boolean;
-  /** True when the customer's requested location is outside the Tacurong City service area. */
+  /** True when the customer's requested location is outside every service area (Tacurong City, Banga). */
   outsideServiceArea?: boolean;
 }
 
@@ -1161,7 +1161,7 @@ export async function searchEstablishments(input: {
   now?: Date;
 }): Promise<EstablishmentSearch> {
   const query = input.query?.trim() ?? "";
-  // Safeguard: when the customer's location is outside the Tacurong service area,
+  // Safeguard: when the customer's location is outside every service area (any zone counts),
   // do not list stores and notify the app that Sugo Express is not in their area.
   if (input.near && !isWithinServiceBuffer(input.near, 0.1)) {
     return {
@@ -1189,7 +1189,7 @@ export async function searchEstablishments(input: {
 
   const [cataloguePlaces, googlePlaces, active] = await Promise.all([
     query ? placeService.searchPlaces({ search: query, limit: CANDIDATE_LIMIT }) : nearbyCataloguePlaces(centre),
-    query ? textPlaces(query) : nearbyPlaces(centre),
+    query ? textPlaces(query, detectServiceZone(centre)) : nearbyPlaces(centre),
     activeCategories(),
   ]);
 
@@ -1291,13 +1291,14 @@ async function keptSearch(key: string, ask: () => Promise<GooglePlace[] | null>)
 
 /**
  * Google's shops for a typed search, kept per word typed. The search covers the
- * whole service area, not the customer's block, so one answer serves everyone.
+ * customer's whole service zone (Tacurong City or Banga), not their block, so
+ * one answer serves everyone in that zone. Without a zone it spans every zone.
  * Shorter than GOOGLE_MIN_QUERY_LENGTH asks Google nothing (an empty answer).
  */
-function textPlaces(query: string): Promise<GooglePlace[] | null> {
+function textPlaces(query: string, zone?: ServiceZone | null): Promise<GooglePlace[] | null> {
   const words = query.toLowerCase().replace(/\s+/g, " ").trim();
   if (words.length < GOOGLE_MIN_QUERY_LENGTH) return Promise.resolve([]);
-  return keptSearch(`text:${words}`, () => searchPlacesByText(query));
+  return keptSearch(`text:${zone ?? "ALL"}:${words}`, () => searchPlacesByText(query, { zone }));
 }
 
 /** ~1 km squares: a 5 km search moved a few hundred metres finds the same shops. */
@@ -1430,6 +1431,7 @@ async function categoryEstablishments(input: {
   now?: Date;
 }): Promise<EstablishmentSearch> {
   const { categoryId, query, near, centre } = input;
+  const zone = detectServiceZone(centre);
   const active = await activeCategories();
   const category = active.find((c) => c.id === categoryId);
   // A category since switched off lists nothing, as the Home grid no longer shows it.
@@ -1448,17 +1450,17 @@ async function categoryEstablishments(input: {
           : { categoryId }
     ),
     query
-      ? textPlaces(query)
+      ? textPlaces(query, zone)
       : types.length > 0
         ? keptSearch(`${cityCell(centre)}:category:${category.id}`, () =>
             searchNearbyPlaces(centre, types, CATEGORY_RADIUS_METERS)
           )
-        : textPlaces(category.name),
+        : textPlaces(category.name, zone),
   ]);
   // A refused type search still has the category's name to go on.
   const googlePlaces =
     found === null && !query && types.length > 0 && isGooglePlacesConfigured()
-      ? await textPlaces(category.name)
+      ? await textPlaces(category.name, zone)
       : found;
   const google = isGooglePlacesConfigured() && googlePlaces !== null ? "ok" : "unavailable";
 
@@ -1698,10 +1700,10 @@ async function popularCategoryEstablishments(input: {
     const initialFound =
       types.length > 0
         ? await searchPopularPlaces(centre, types)
-        : await searchPlacesByText(category.name, { includeRatings: true });
+        : await searchPlacesByText(category.name, { includeRatings: true, zone: detectServiceZone(centre) });
     const found =
       initialFound === null && types.length > 0 && isGooglePlacesConfigured()
-        ? await searchPlacesByText(category.name, { includeRatings: true })
+        ? await searchPlacesByText(category.name, { includeRatings: true, zone: detectServiceZone(centre) })
         : initialFound;
     if (found !== null) {
       places = uniquePlaces(found);

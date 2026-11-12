@@ -1,6 +1,7 @@
 import { customerRepository } from "../repositories/customerRepository.js";
 import { customerTransactionRepository } from "../repositories/customerTransactionRepository.js";
 import { customerPhotoRepository } from "../repositories/customerPhotoRepository.js";
+import { decodeStoredPhoto } from "../lib/customerPhotoLink.js";
 import { recordCustomerModifications, getCustomerModificationLogs } from "./accountAuditService.js";
 import { ServiceError } from "./ServiceError.js";
 import { assignPushToken } from "./pushTokenOwnership.js";
@@ -30,6 +31,9 @@ export async function updateProfile(
   }
 
   const newEmail = input.email && input.email !== "" ? input.email.trim().toLowerCase() : existing.email;
+  // Verification belonged to the old address. The new one has proved nothing,
+  // the same rule userService applies to staff.
+  const emailChanged = newEmail !== (existing.email || "").trim().toLowerCase();
   const newFirstName = input.firstName !== undefined && input.firstName !== "" ? input.firstName.trim() : existing.information?.firstName;
   const newMiddleName = input.middleName !== undefined ? (input.middleName ? input.middleName.trim() : null) : existing.information?.middleName;
   const newLastName = input.lastName !== undefined && input.lastName !== "" ? input.lastName.trim() : existing.information?.lastName;
@@ -86,6 +90,7 @@ export async function updateProfile(
   try {
     const updated = await customerRepository.update(customerId, {
       email: newEmail,
+      ...(emailChanged ? { emailVerified: false } : {}),
       phoneVerified,
       information: {
         firstName: newFirstName,
@@ -148,6 +153,7 @@ export async function listTransactions(customerId: number) {
     return {
       id: tx.errandId,
       orderId: tx.errandId,
+      referenceNo: tx.errand.referenceNo ?? null,
       status: tx.errand.status,
       categories: tx.errand.pabiliDetails.map((d) => formatItemLabel(d.itemName, d.size)).join(", ") || tx.errand.category,
       grandTotal: Number(tx.errand.totalCost) || Number(tx.amount) || 0,
@@ -246,6 +252,23 @@ export async function deleteCustomerPhoto(
     message: "Profile photo removed successfully",
     user: updatedProfile,
   };
+}
+
+/**
+ * The photo behind a signed link (customerPhotoLink.ts), or null when the link
+ * names a version that is no longer current: a replaced or removed photo's old
+ * links stop working. The uploaded photo first; else a legacy data URI that
+ * only customer_information.avatar holds.
+ */
+export async function getLinkedPhoto(customerId: number, version: number) {
+  const photo = await customerPhotoRepository.findByCustomerId(customerId);
+  if (photo) {
+    return photo.updatedAt.getTime() === version ? decodeStoredPhoto(photo.photoData, photo.mimeType) : null;
+  }
+  const customer = await customerRepository.findById(customerId);
+  const information = customer?.information;
+  if (!information?.avatar?.startsWith("data:") || information.updatedAt.getTime() !== version) return null;
+  return decodeStoredPhoto(information.avatar, "image/jpeg");
 }
 
 /**

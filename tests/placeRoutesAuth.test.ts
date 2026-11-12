@@ -55,6 +55,18 @@ const WRITES: [string, string][] = [
   ["delete", "/:id/photo"],
 ];
 
+// The Owner-only directory routes, which also take merchants.manage.
+const OWNER_DIRECTORY_WRITES: [string, string][] = [
+  ["post", "/"],
+  ["put", "/:id"],
+  ["delete", "/:id"],
+  ["get", "/google"],
+  ["get", "/google/:googlePlaceId"],
+  ["put", "/:id/photo"],
+  ["post", "/restore"],
+  ["delete", "/:id/photo"],
+];
+
 // Index of a path in the router's declaration order.
 function positionOf(method: string, path: string): number {
   const index = stack().findIndex((e) => e.route?.path === path && e.route?.methods[method]);
@@ -71,7 +83,13 @@ describe("place routes authorization", () => {
   it.each(WRITES)("adds a role guard to %s %s", (method, path) => {
     // requireRole and the limiters are anonymous closures, so the role guard is
     // asserted structurally: writes carry exactly one handler more than reads.
-    expect(chainFor(method, path)).toHaveLength(4);
+    // The access-group guard is named, and counted separately below.
+    expect(chainFor(method, path).filter((name) => name !== "requirePermissionGuard")).toHaveLength(4);
+  });
+
+  it.each(OWNER_DIRECTORY_WRITES)("checks the access group on %s %s", (method, path) => {
+    // Admin-only directory work needs merchants.manage on top of the role.
+    expect(chainFor(method, path)).toContain("requirePermissionGuard");
   });
 
   it.each(READS)("leaves %s %s open to any signed-in role", (method, path) => {

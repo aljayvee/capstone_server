@@ -10,7 +10,8 @@ import {
 import { userRepository } from "../repositories/userRepository.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { riderLoginSessionRepository } from "../repositories/riderLoginSessionRepository.js";
-import { notificationRepository } from "../repositories/notificationRepository.js";
+import { notifyStaff } from "./notificationService.js";
+import { riderRef } from "./notificationCatalog.js";
 import * as riderBeaconService from "./riderBeaconService.js";
 import { emitToRiderCustomers } from "../lib/riderLocationBroadcast.js";
 
@@ -36,16 +37,15 @@ export { describeReason };
 const REMINDER_AFTER_MS = [5 * 60 * 1000, 15 * 60 * 1000];
 
 /**
- * A rider whose signal flaps must not fill every dispatcher's bell. One
- * persisted notification per rider per this window; the live alert still fires.
+ * A rider whose signal flaps must not fill every dispatcher's bell or toasts.
  */
 const NOTIFICATION_COOLDOWN_MS = 10 * 60 * 1000;
 
 /**
- * Cooldown for live socket toast alerts (rider:connectivity_alert).
- * Prevents rapid-fire toast spam when a phone experiences intermittent cell jitter.
+ * Status/assignment safety updates immediately; interrupt dispatchers only
+ * after a continuous loss, with the same cooldown for toasts and saved alerts.
  */
-const LIVE_ALERT_COOLDOWN_MS = 60 * 1000;
+export const SIGNAL_LOSS_ALERT_GRACE_MS = 30 * 1000;
 
 interface Seen {
   status: RiderStatus;
@@ -53,6 +53,8 @@ interface Seen {
   /** When the current signal loss began, for reminders. */
   lostAt: number | null;
   remindersSent: number;
+  /** A rider seen online dropped out; consume after the confirmation window. */
+  notifyOnLoss: boolean;
 }
 
 const seen = new Map<number, Seen>();
@@ -60,24 +62,54 @@ const lastNotifiedAt = new Map<number, number>();
 const lastLiveAlertAt = new Map<number, number>();
 let seeded = false;
 
-async function notifyDispatchers(riderId: number, riderName: string): Promise<void> {
-  const last = lastNotifiedAt.get(riderId) ?? 0;
-  if (Date.now() - last < NOTIFICATION_COOLDOWN_MS) return;
-  lastNotifiedAt.set(riderId, Date.now());
+/**
+ * Riders whose loss was written to the bell, and whether owners heard too, so
+ * the "back online" row goes to exactly the people told about the loss.
+ */
+const lossNotified = new Map<number, { ownersToo: boolean }>();
 
-  const dispatchers = await prisma.user.findMany({
-    where: { role: "DISPATCHER", status: "Active" },
-    select: { id: true },
-  });
-  await Promise.all(
-    dispatchers.map((d) =>
-      notificationRepository.create({
-        userId: d.id,
-        type: "RIDER_SIGNAL_LOST",
-        title: `${riderName} lost signal`,
-        body: `${riderName} is on duty but their phone has stopped reporting. They cannot be assigned until it reconnects. Consider calling them.`,
-      })
-    )
+/** Escalates once per loss: still dark after this long, with errands on hand. */
+const ESCALATE_AFTER_MS = 15 * 60 * 1000;
+
+async function notifyDispatchers(riderId: number, riderName: string, activeOrders: number, now: number): Promise<void> {
+  const last = lastNotifiedAt.get(riderId);
+  if (last !== undefined && now - last < NOTIFICATION_COOLDOWN_MS) return;
+  lastNotifiedAt.set(riderId, now);
+
+  // Owners hear about a lost rider only when errands are riding on them.
+  const ownersToo = activeOrders > 0;
+  lossNotified.set(riderId, { ownersToo });
+  await notifyStaff(
+    "RIDER_SIGNAL_LOST",
+    {
+      title: `${riderName} lost signal`,
+      body: `${riderName} is on duty but their phone has stopped reporting. They cannot be assigned until it reconnects. Consider calling them.`,
+    },
+    { refKey: riderRef(riderId), includeOwners: ownersToo }
+  );
+}
+
+async function escalateLostRider(riderId: number, riderName: string, activeOrders: number): Promise<void> {
+  if (activeOrders <= 0) return;
+  lossNotified.set(riderId, { ownersToo: true });
+  await notifyStaff(
+    "RIDER_SIGNAL_LOST_PERSISTING",
+    {
+      title: `${riderName} still has no signal after 15 min`,
+      body: `${riderName} has ${activeOrders} errand${activeOrders === 1 ? "" : "s"} on hand and has not reported for 15 minutes. Call them or reassign.`,
+    },
+    { refKey: riderRef(riderId) }
+  );
+}
+
+async function notifyRestored(riderId: number, riderName: string): Promise<void> {
+  const told = lossNotified.get(riderId);
+  if (!told) return;
+  lossNotified.delete(riderId);
+  await notifyStaff(
+    "RIDER_SIGNAL_RESTORED",
+    { title: `${riderName} is back online`, body: `${riderName}'s phone is reporting again.` },
+    { refKey: riderRef(riderId), includeOwners: told.ownersToo }
   );
 }
 
@@ -114,6 +146,7 @@ export async function checkRiderStatuses(now: number = Date.now()): Promise<void
       reason: result.riderStatusReason,
       lostAt: lost ? previous?.lostAt ?? now : null,
       remindersSent: lost ? previous?.remindersSent ?? 0 : 0,
+      notifyOnLoss: lost && (previous?.status === "AVAILABLE_SIGNAL_LOST" ? previous.notifyOnLoss : previous?.status === "AVAILABLE_ONLINE"),
     };
 
     if (!seeded) {
@@ -144,23 +177,40 @@ export async function checkRiderStatuses(now: number = Date.now()): Promise<void
         at: now,
       });
 
-      // Only a rider who was reachable and dropped out is news. One moving
-      // between two offline reasons, or first seen already lost, is not.
-      if (lost && previous?.status === "AVAILABLE_ONLINE") {
-        const lastAlert = lastLiveAlertAt.get(rider.id) ?? 0;
-        if (now - lastAlert >= LIVE_ALERT_COOLDOWN_MS) {
-          lastLiveAlertAt.set(rider.id, now);
-          eventPublisher.emitToRole("DISPATCHER", "rider:connectivity_alert", { ...payload, reminder: false });
-        }
-        void notifyDispatchers(rider.id, name).catch((error) =>
+      if (result.riderStatus === "AVAILABLE_ONLINE" && previous?.status === "AVAILABLE_SIGNAL_LOST") {
+        void notifyRestored(rider.id, name).catch((error) =>
+          logger.error(`Could not notify that rider ${rider.id} is back:`, error)
+        );
+      } else if (result.riderStatus === "OFFLINE") {
+        // Went off duty instead of coming back: nothing to announce later.
+        lossNotified.delete(rider.id);
+      }
+    }
+
+    // Evaluate on every pass, not only a status transition. Brief losses clear
+    // this pending alert on recovery and produce neither a loss nor a restore
+    // notification. Riders already lost at startup are only seeded above.
+    if (lost && current.lostAt !== null && current.notifyOnLoss && now - current.lostAt >= SIGNAL_LOSS_ALERT_GRACE_MS) {
+      current.notifyOnLoss = false;
+      const lastAlert = lastLiveAlertAt.get(rider.id);
+      if (lastAlert === undefined || now - lastAlert >= NOTIFICATION_COOLDOWN_MS) {
+        lastLiveAlertAt.set(rider.id, now);
+        eventPublisher.emitToRole("DISPATCHER", "rider:connectivity_alert", { ...payload, reminder: false });
+        void notifyDispatchers(rider.id, name, payload.activeOrdersCount, now).catch((error) =>
           logger.error(`Could not notify dispatchers about rider ${rider.id}:`, error)
         );
       }
-    } else if (lost && current.lostAt !== null) {
+    } else if (lost && current.lostAt !== null && lossNotified.has(rider.id)) {
       const due = REMINDER_AFTER_MS[current.remindersSent];
       if (due !== undefined && now - current.lostAt >= due) {
         current.remindersSent += 1;
         eventPublisher.emitToRole("DISPATCHER", "rider:connectivity_alert", { ...payload, reminder: true });
+        // The 15-minute reminder is the one that becomes Critical, once.
+        if (due >= ESCALATE_AFTER_MS && lossNotified.has(rider.id)) {
+          void escalateLostRider(rider.id, name, payload.activeOrdersCount).catch((error) =>
+            logger.error(`Could not escalate rider ${rider.id}:`, error)
+          );
+        }
       }
     }
 
@@ -220,5 +270,6 @@ export function resetWatchState(): void {
   seen.clear();
   lastNotifiedAt.clear();
   lastLiveAlertAt.clear();
+  lossNotified.clear();
   seeded = false;
 }

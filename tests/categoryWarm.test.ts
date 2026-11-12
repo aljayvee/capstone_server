@@ -9,7 +9,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * fire and forget: order creation never waits on it and never fails with it.
  */
 
-process.env.CATEGORY_SERVICE_URL = "http://category.test";
+vi.mock("../src/config/env.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/config/env.js")>()),
+  CATEGORY_SERVICE_URL: "http://category.test",
+}));
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 

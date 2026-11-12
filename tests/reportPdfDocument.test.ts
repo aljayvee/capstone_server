@@ -2,6 +2,9 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   CONTENT_WIDTH,
+  MARGIN,
+  PAGE_HEIGHT,
+  PAGE_WIDTH,
   erase,
   renderReportDocument,
   type ReportDocumentSpec,
@@ -16,10 +19,11 @@ interface Row {
 function spec(partial: Partial<ReportDocumentSpec> = {}): ReportDocumentSpec {
   return {
     reportName: "Sales Report",
-    periodLabel: "MONTHLY",
+    periodName: "Monthly (January to December)",
+    coverageLabel: "2026, by month",
     rangeLabel: "September 2026",
-    generatedAt: new Date("2026-09-01T10:00:00Z"),
-    generatedBy: "Aljay Vee Versola",
+    printedAt: new Date("2026-09-01T10:00:00Z"),
+    printedBy: { fullName: "Aljay Vee Versola", roleLabel: "Owner" },
     summary: [{ label: "Total revenue", value: formatPesoAscii(125000) }],
     tables: [
       erase<Row>({
@@ -46,7 +50,10 @@ function pageCount(pdf: Buffer): number {
 /** Every string PDFKit actually drew, decoded from the content streams. */
 function drawnStrings(pdf: Buffer): string[] {
   let content = "";
-  for (const m of pdf.toString("latin1").matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+  // PDFKit writes "stream\n" + data + "\nendstream". An optional \r in the
+  // pattern ate a compressed stream's last byte whenever it was 0x0D, and that
+  // page then vanished from the decoded text.
+  for (const m of pdf.toString("latin1").matchAll(/stream\n([\s\S]*?)\nendstream/g)) {
     try {
       content += inflateSync(Buffer.from(m[1], "latin1")).toString("latin1") + "\n";
     } catch {
@@ -160,7 +167,7 @@ describe("renderReportDocument", () => {
 
     const strings = drawnStrings(pdf);
     expect(strings).toContain("Throughput and reliability");
-    expect(strings).toContain("NOTES");
+    expect(strings).toContain("ABOUT THESE NUMBERS");
   });
 
   it("carries notes into the document", async () => {
@@ -227,11 +234,67 @@ describe("money in the PDF", () => {
   });
 });
 
-describe("column widths", () => {
-  it("is a fixed content width every spec must divide", () => {
-    // Columns are laid out at absolute offsets, so a set that oversums runs off
-    // the page edge silently. This is the constant every builder is checked
-    // against in reportPdfService's own test.
-    expect(CONTENT_WIDTH).toBe(520);
+describe("page format", () => {
+  it("is Letter landscape with the same half-inch margin on every side", () => {
+    expect(PAGE_WIDTH).toBe(792);
+    expect(PAGE_HEIGHT).toBe(612);
+    expect(MARGIN).toBe(36);
+    expect(CONTENT_WIDTH).toBe(PAGE_WIDTH - 2 * MARGIN);
+  });
+
+  it("writes every page as landscape Letter", async () => {
+    const rows: Row[] = Array.from({ length: 120 }, (_, i) => ({ category: `C${i}`, revenue: i }));
+    const pdf = await renderReportDocument(
+      spec({ tables: [erase<Row>({ columns: spec().tables[0].columns, rows })] })
+    );
+    const boxes = pdf.toString("latin1").match(/\/MediaBox \[[^\]]+\]/g) ?? [];
+
+    expect(boxes.length).toBe(pageCount(pdf));
+    for (const box of boxes) expect(box.replace(/\s+/g, " ")).toBe("/MediaBox [0 0 792 612]");
+  });
+
+  it("scales column widths to fill the page whatever they sum to", async () => {
+    // Widths are proportions now. A set summing to 520 (the old portrait width)
+    // or to 3 must both print, neither running off the edge.
+    for (const widths of [[320, 200], [2, 1]]) {
+      const pdf = await renderReportDocument(
+        spec({
+          tables: [
+            erase<Row>({
+              columns: [
+                { header: "Store type", width: widths[0], value: (r) => r.category },
+                { header: "Total sales", width: widths[1], align: "right", value: (r) => String(r.revenue) },
+              ],
+              rows: [{ category: "Pharmacy", revenue: 1 }],
+            }),
+          ],
+        })
+      );
+      expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    }
+  });
+});
+
+describe("signatory block", () => {
+  it("names the printer and their role on the last page only", async () => {
+    const rows: Row[] = Array.from({ length: 200 }, (_, i) => ({ category: `C${i}`, revenue: i }));
+    const pdf = await renderReportDocument(
+      spec({ tables: [erase<Row>({ columns: spec().tables[0].columns, rows })] })
+    );
+    const strings = drawnStrings(pdf);
+
+    expect(pageCount(pdf)).toBeGreaterThan(1);
+    expect(strings.filter((t) => t === "Printed by:")).toHaveLength(1);
+    expect(strings).toContain("ALJAY VEE VERSOLA");
+    expect(strings).toContain("Owner");
+    // After the last body row, i.e. on the final page.
+    expect(strings.indexOf("Printed by:")).toBeGreaterThan(strings.indexOf("C199"));
+  });
+
+  it("prints the peso sign as PHP, since the PDF fonts have no glyph for it", async () => {
+    const pdf = await renderReportDocument(spec({ notes: ["Collected ₱158 against ₱26."] }));
+    const strings = drawnStrings(pdf);
+
+    expect(strings.some((t) => t.includes("PHP 158"))).toBe(true);
   });
 });

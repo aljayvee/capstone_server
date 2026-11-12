@@ -7,7 +7,9 @@ import {
   HEARTBEAT_LOST_AFTER_MS,
   liveLinkOf,
   onLiveLinkChange,
+  registerRiderLiveLink,
 } from "../src/lib/riderLiveLink.js";
+import { io } from "../src/lib/socket.js";
 
 const T0 = 1_000_000;
 
@@ -18,7 +20,7 @@ describe("the one-second rider heartbeat", () => {
     expect(liveLinkOf(3)).toBeNull();
   });
 
-  it("marks a rider lost three seconds after the heartbeat stops, and says so once", () => {
+  it("marks a rider lost after the heartbeat grace period, and says so once", () => {
     const changes: Array<[number, boolean]> = [];
     onLiveLinkChange((id, lost) => changes.push([id, lost]));
 
@@ -59,5 +61,25 @@ describe("the one-second rider heartbeat", () => {
     __testing.heartbeat(3, "s1", T0);
     __testing.heartbeat(3, "s1", T0 + 100);
     expect(liveLinkOf(3)?.lastHeartbeatAt).toBe(T0);
+  });
+
+  it("applies the grace period to transport failures and tolerates a quick reconnect", () => {
+    registerRiderLiveLink();
+    const connection = vi.mocked(io.on).mock.calls.at(-1)![1] as (socket: any) => void;
+    const handlers = new Map<string, (...args: any[]) => void>();
+    connection({ id: "s1", data: { riderId: 3, role: "RIDER" }, on: (name: string, fn: any) => handlers.set(name, fn) });
+    const changes = vi.fn();
+    onLiveLinkChange(changes);
+    __testing.heartbeat(3, "s1", T0);
+    handlers.get("disconnect")!("transport close");
+    expect(liveLinkOf(3)?.lost).toBe(false);
+    __testing.tick(T0 + HEARTBEAT_LOST_AFTER_MS - 1);
+    __testing.heartbeat(3, "s2", T0 + HEARTBEAT_LOST_AFTER_MS - 1);
+    expect(changes).not.toHaveBeenCalled();
+    // A late disconnect from the old socket must not affect the new link.
+    handlers.get("disconnect")!("transport close");
+    __testing.tick(T0 + 2 * HEARTBEAT_LOST_AFTER_MS);
+    expect(changes).toHaveBeenCalledTimes(1);
+    expect(changes).toHaveBeenCalledWith(3, true);
   });
 });

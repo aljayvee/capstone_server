@@ -4,7 +4,9 @@ import { logger } from "../lib/logger.js";
 import { dwellObservationRepository } from "../repositories/dwellObservationRepository.js";
 import { pinpointRepository } from "../repositories/pinpointRepository.js";
 import { placeRepository } from "../repositories/placeRepository.js";
+import { trackPointRepository } from "../repositories/trackPointRepository.js";
 import { storeAutoCorrectionService } from "./storeAutoCorrectionService.js";
+import { notifyStaffAboutErrand } from "./notificationService.js";
 
 // How close counts as "at the store". Wide enough to survive ordinary urban GPS
 // error and a rider parking round the back.
@@ -143,23 +145,58 @@ export async function applyGeofenceTransitions(
       if (presenceSeconds < MIN_PRESENCE_SECONDS && !stillInsideAtEnd) continue;
 
       arrivedAt = firstInside.recordedAt;
-      await pinpointRepository.markArrived(stop.id, arrivedAt);
-      transitions.push({ pinpointId: stop.id, kind: "arrived", at: arrivedAt });
-      void storeAutoCorrectionService.autoCorrectStoreCoordinates({
-        errandId,
-        stop,
-        arrivalPoint: firstInside,
-      });
+      const changed = await pinpointRepository.markArrived(stop.id, arrivedAt);
+      if ((changed?.count ?? 0) === 0) {
+        // A manual arrival or another batch won. Base dwell on the persisted
+        // stamp, and do not announce the same arrival a second time.
+        const persisted = (await pinpointRepository.findByErrandId(errandId)).find((pin) => pin.id === stop.id);
+        if (!persisted?.arrivedAt) continue;
+        arrivedAt = persisted.arrivedAt;
+      } else {
+        transitions.push({ pinpointId: stop.id, kind: "arrived", at: arrivedAt });
+        void storeAutoCorrectionService.autoCorrectStoreCoordinates({
+          errandId,
+          stop,
+          arrivalPoint: firstInside,
+        });
+      }
     }
 
     // Departure: the first fix after arrival that this stop no longer owns —
     // either outside every radius, or now nearer a different stop. The second
     // case matters on a tight block, where a rider crossing to the shop next
     // door has certainly left this one.
-    const departure = points.find(
-      (point) => point.recordedAt > (arrivedAt as Date) && !ownedBy(point, stop.id)
-    );
-    if (!departure) continue;
+    const since = arrivedAt as Date;
+    const firstOutside = points.find((point) => point.recordedAt > since && !ownedBy(point, stop.id));
+    if (!firstOutside) continue;
+
+    // Leaving needs the rider to have been seen there. An arrival can also be
+    // the rider's own tap ("GPS not detecting? Confirm Arrival",
+    // pinpointArrivalService), made precisely when no fix is inside the
+    // circle, and under the rule above the next fix outside it, seconds later,
+    // was taken as the rider leaving: a departure while they were still
+    // shopping, a dwell of a few seconds in the learning data, and an ETA
+    // promise frozen too early. So that rule holds only once a fix has placed
+    // the rider at this stop since they arrived.
+    const seenThere = await seenAtStopSince(errandId, stop, stops, points, ownedBy, since, firstOutside.recordedAt);
+
+    let departure: GeofencePoint | undefined = firstOutside;
+    if (!seenThere) {
+      // Never seen inside: the phone's position is off by more than the
+      // circle, and it is off in the same direction wherever the rider goes. So
+      // they have left when they have moved a full radius from where the phone
+      // put them at the moment of arrival.
+      const anchor = await trackPointRepository.findNearestInTime(errandId, since);
+      departure = anchor
+        ? points.find(
+            (point) =>
+              point.recordedAt > since &&
+              !ownedBy(point, stop.id) &&
+              haversineDistanceKm(point, anchor) * 1000 > radiusOf(stop)
+          )
+        : undefined;
+      if (!departure) continue;
+    }
 
     const dwellSeconds = Math.round(
       (departure.recordedAt.getTime() - (arrivedAt as Date).getTime()) / 1000
@@ -175,8 +212,13 @@ export async function applyGeofenceTransitions(
 
     // Guard against a duplicate observation if a retried batch re-derives the
     // same departure.
+    //
+    // Only a visit the GPS saw becomes a dwell observation. One that rests on a
+    // tap measures from whenever the tap reached the server, which an offline
+    // retry can put after the rider had already left, and these figures set
+    // every future customer's ETA for the category.
     const already = await dwellObservationRepository.existsForPinpoint(stop.id);
-    if (!already && dwellSeconds > 0) {
+    if (!already && dwellSeconds > 0 && seenThere) {
       // Whether this one ran long, decided as it is recorded.
       //
       // detectStalledStop already computes this while the rider is still inside
@@ -202,6 +244,41 @@ export async function applyGeofenceTransitions(
 
   return transitions;
 }
+
+/**
+ * Whether a fix has placed the rider at this stop (owned by it, as ownerOf
+ * decides) at any time from `since` up to `until`.
+ *
+ * The batch in hand is checked first, which settles the ordinary case with no
+ * query: an arrival the GPS made in this same batch is itself such a fix. Only
+ * when the batch has none is the stored trail asked, for an arrival made in an
+ * earlier batch, or by the rider's own tap.
+ */
+async function seenAtStopSince(
+  errandId: string,
+  stop: GeofenceStop,
+  stops: GeofenceStop[],
+  points: GeofencePoint[],
+  ownedBy: (point: GeofencePoint, stopId: number) => boolean,
+  since: Date,
+  until: Date
+): Promise<boolean> {
+  if (points.some((point) => point.recordedAt >= since && point.recordedAt < until && ownedBy(point, stop.id))) {
+    return true;
+  }
+  const radius = radiusOf(stop);
+  const latSpan = radius / METERS_PER_DEGREE_LATITUDE;
+  const lonSpan = radius / (METERS_PER_DEGREE_LATITUDE * Math.max(0.01, Math.cos((stop.latitude * Math.PI) / 180)));
+  const stored = await trackPointRepository.findInWindowNear(errandId, since, until, {
+    minLatitude: stop.latitude - latSpan,
+    maxLatitude: stop.latitude + latSpan,
+    minLongitude: stop.longitude - lonSpan,
+    maxLongitude: stop.longitude + lonSpan,
+  });
+  return stored.some((point) => ownerOf(point, stops) === stop.id);
+}
+
+const METERS_PER_DEGREE_LATITUDE = 111_320;
 
 /**
  * Notices a rider settling somewhere that is not any of the pinned stops.
@@ -281,6 +358,10 @@ export async function detectStopMismatch(
     `Errand ${errandId}: rider dwelled at "${observed.place.name}" but stop ${target.stop.id} is pinned to "${target.stop.storeName}" (${mismatch.metersFromPinnedStop} m away).`
   );
   eventPublisher.emitToErrand(errandId, "errand:stop_mismatch", { errandId, ...mismatch });
+  void notifyStaffAboutErrand("STOP_MISMATCH", errandId, (errand) => ({
+    title: `Rider at the wrong store: ${observed.place.name}`,
+    body: `${errand}: the rider stopped at ${observed.place.name}, ${mismatch.metersFromPinnedStop} m from the pinned ${target.stop.storeName ?? "store"}.`,
+  }), { onceKey: `pin:${target.stop.id}` });
 
   return mismatch;
 }

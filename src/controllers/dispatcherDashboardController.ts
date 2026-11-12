@@ -7,6 +7,7 @@ import * as exceptionService from "../services/exceptionService.js";
 export interface DashboardAttentionItem {
   id: string;
   errandId: string;
+  referenceNo: string | null;
   kind: "UNCLAIMED_STALE" | "STALLED_STOP" | "OVERAGE_DISPUTE" | "CANCELLED_AFTER_PURCHASE";
   title: string;
   detail: string;
@@ -105,6 +106,7 @@ export const getDispatcherDashboardSummary = asyncHandler<AuthenticatedRequest>(
         take: 5,
         select: {
           id: true,
+          referenceNo: true,
           category: true,
           pickupAddress: true,
           deliveryAddress: true,
@@ -127,6 +129,7 @@ export const getDispatcherDashboardSummary = asyncHandler<AuthenticatedRequest>(
         select: {
           id: true,
           errandId: true,
+          errand: { select: { referenceNo: true } },
           dwellSeconds: true,
           createdAt: true,
           pinpoint: {
@@ -154,6 +157,7 @@ export const getDispatcherDashboardSummary = asyncHandler<AuthenticatedRequest>(
         take: 5,
         select: {
           id: true,
+          referenceNo: true,
           status: true,
           overageEscalatedAt: true,
           updatedAt: true,
@@ -244,6 +248,7 @@ export const getDispatcherDashboardSummary = asyncHandler<AuthenticatedRequest>(
       attentionItems.push({
         id: `unclaimed-${e.id}`,
         errandId: e.id,
+        referenceNo: e.referenceNo,
         kind: "UNCLAIMED_STALE",
         title: `Unclaimed for ${elapsedMins}m (${storeLabel})`,
         detail: `Customer waiting in ${e.deliveryAddress || "Tacurong City"}`,
@@ -260,6 +265,7 @@ export const getDispatcherDashboardSummary = asyncHandler<AuthenticatedRequest>(
       attentionItems.push({
         id: `stalled-${d.id}`,
         errandId: d.errandId,
+        referenceNo: d.errand?.referenceNo ?? null,
         kind: "STALLED_STOP",
         title: `Stalled Stop at ${d.pinpoint?.storeName || "Store"} (${mins}m)`,
         detail: "Rider dwell time far exceeds typical store duration",
@@ -276,6 +282,7 @@ export const getDispatcherDashboardSummary = asyncHandler<AuthenticatedRequest>(
       attentionItems.push({
         id: `dispute-${disp.id}`,
         errandId: disp.id,
+        referenceNo: disp.referenceNo,
         kind: isCancelled ? "CANCELLED_AFTER_PURCHASE" : "OVERAGE_DISPUTE",
         title: isCancelled
           ? "Cancelled After Purchase (Goods bought)"

@@ -56,32 +56,101 @@ model User {
 
   expoPushToken String?
 
-  errandsAsRider          Errand[]                 @relation("RiderErrands")
-  trackPoints             ErrandTrackPoint[]       @relation("RiderTrackPoints")
-  dispatchLogs            DispatchLog[]            @relation("DispatcherLogs")
-  declinesMade            ErrandDeclineReason[]     @relation("DispatcherDeclines")
-  ratingsReceived         Rating[]
-  notifications           Notification[]
-  paymentEnabledErrands   Errand[]                 @relation("PaymentEnabledBy")
-  paymentsConfirmed       ErrandPayment[]          @relation("ErrandPaymentsConfirmed")
-  connectivityIncidents   ConnectivityIncident[]
-  settlements             SettlementRecord[]
-  proofImages             ErrandProofImage[]
-  commissions             RiderCommission[]
-  exceptionReviews        ExceptionReview[]        @relation("ExceptionReviews")
-  updatedByUser           User?                    @relation("UserUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
-  updatedRecords          User[]                   @relation("UserUpdatedBy")
-  riderLoginSessions      RiderLoginSession[]
-  riderStatusLogs         RiderStatusLog[]
-  accountModificationLogs AccountModificationLog[]
-  verificationCodes       EmailVerificationCode[]  @relation("UserVerificationCodes")
-  profilePhoto            RiderProfilePhoto?
-  presence                RiderPresence?
-  knownDevices            UserKnownDevice[]
-  feedbacksRead           CustomerFeedback[]       @relation("FeedbackReadBy")
-  routePicks              RoutePick[]
+  errandsAsRider                Errand[]                 @relation("RiderErrands")
+  trackPoints                   ErrandTrackPoint[]       @relation("RiderTrackPoints")
+  dispatchLogs                  DispatchLog[]            @relation("DispatcherLogs")
+  declinesMade                  ErrandDeclineReason[]    @relation("DispatcherDeclines")
+  ratingsReceived               Rating[]
+  notifications                 Notification[]
+  paymentEnabledErrands         Errand[]                 @relation("PaymentEnabledBy")
+  paymentsConfirmed             ErrandPayment[]          @relation("ErrandPaymentsConfirmed")
+  connectivityIncidents         ConnectivityIncident[]
+  settlements                   SettlementRecord[]
+  proofImages                   ErrandProofImage[]
+  commissions                   RiderCommission[]
+  exceptionReviews              ExceptionReview[]        @relation("ExceptionReviews")
+  updatedByUser                 User?                    @relation("UserUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  updatedRecords                User[]                   @relation("UserUpdatedBy")
+  riderLoginSessions            RiderLoginSession[]
+  riderStatusLogs               RiderStatusLog[]
+  accountModificationLogs       AccountModificationLog[]
+  verificationCodes             EmailVerificationCode[]  @relation("UserVerificationCodes")
+  profilePhoto                  RiderProfilePhoto?
+  presence                      RiderPresence?
+  knownDevices                  UserKnownDevice[]
+  feedbacksRead                 CustomerFeedback[]       @relation("FeedbackReadBy")
+  routePicks                    RoutePick[]
+  reportPrintLogs               ReportPrintLog[]
+  settlementAdjustmentsRecorded SettlementAdjustment[]   @relation("SettlementAdjustmentRecordedBy")
+  settlementAdjustmentsVoided   SettlementAdjustment[]   @relation("SettlementAdjustmentVoidedBy")
+  offerDeclines                 RiderOfferDecline[]
 
+  // Access group (RBAC). NULL means the built-in "Full access" group for the
+  // account's role, which is how every account created before groups existed
+  // keeps exactly the access it had. RESTRICT, not SET NULL: a deleted group
+  // must never drop its members to NULL, because NULL is full access.
+  accessGroupId       Int?
+  accessGroup         AccessGroup?             @relation(fields: [accessGroupId], references: [id], onDelete: Restrict)
+  permissionOverrides UserPermissionOverride[]
+
+  // Optimizes 20-second rider watch fleet poll (userRepository.findAllRiders)
+  @@index([role, status])
+  @@index([accessGroupId])
   @@map("users")
+}
+
+// 1a. Access groups (RBAC) for Admin (OWNER) and Dispatcher accounts.
+//
+// A group is a named set of permission keys from src/lib/permissions.ts, for
+// one role (scope). The built-in "Full access" groups are code, not rows: an
+// account with no group has every key of its role. Managing groups is the
+// Main Owner's alone (src/lib/mainOwner.ts), never a permission itself.
+// createdBy/updatedBy are plain ids: the audit trail is AccountModificationLog.
+model AccessGroup {
+  id          Int                     @id @default(autoincrement())
+  name        String                  @db.VarChar(60)
+  description String?                 @db.VarChar(255)
+  scope       RoleType
+  version     Int                     @default(1)
+  createdBy   Int?
+  updatedBy   Int?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  permissions AccessGroupPermission[]
+  members     User[]
+
+  @@unique([scope, name])
+  @@map("access_groups")
+}
+
+// 1b-i. One row per permission a group grants. Keys that leave the catalog are
+// ignored on read, so retiring a feature needs no migration here.
+model AccessGroupPermission {
+  groupId       Int
+  permissionKey String      @db.VarChar(64)
+  group         AccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, permissionKey])
+  @@map("access_group_permissions")
+}
+
+enum PermissionEffect {
+  GRANT
+  DENY
+}
+
+// 1b-ii. Per-account exceptions to the group: GRANT adds a key the group does
+// not have, DENY removes one it does. One row per account and key.
+model UserPermissionOverride {
+  userId        Int
+  permissionKey String           @db.VarChar(64)
+  effect        PermissionEffect
+  createdBy     Int?
+  createdAt     DateTime         @default(now())
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionKey])
+  @@map("user_permission_overrides")
 }
 
 // 1b. Staff Profile Photos (dedicated storage for OWNER/DISPATCHER/RIDER avatars)
@@ -115,9 +184,9 @@ model RiderProfilePhoto {
 // One row per rider, overwritten in place: this is current state, not history.
 // The breadcrumb trail in ErrandTrackPoint remains the audit record.
 model RiderPresence {
-  id        Int      @id @default(autoincrement())
-  riderId   Int      @unique
-  rider     User     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  id      Int  @id @default(autoincrement())
+  riderId Int  @unique
+  rider   User @relation(fields: [riderId], references: [id], onDelete: Cascade)
 
   latitude       Float?
   longitude      Float?
@@ -137,18 +206,16 @@ model RiderPresence {
 
   // Device clock at the fix, and server clock at receipt. Both, because the gap
   // between them is the only way to tell a slow network from a wrong clock.
-  recordedAt DateTime?
+  recordedAt   DateTime?
   lastBeaconAt DateTime?
   // Set only by an explicit shutdown beacon. Null means any absence is inferred.
-  shutdownAt DateTime?
+  shutdownAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("rider_presence")
 }
-
-
 
 // 1b. Customer Account Table (3NF: auth/identity only, split from operational `users`)
 model CustomerAccount {
@@ -163,7 +230,7 @@ model CustomerAccount {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  information             CustomerInformation?
+  information   CustomerInformation?
   // Expo push token for this customer's device.
   //
   // Customers had none, which is why the only thing that could reach them was
@@ -172,7 +239,7 @@ model CustomerAccount {
   // one since the rider app shipped; this is the same field for the other half
   // of the conversation. Nullable because a customer may decline the OS prompt,
   // and every push path treats a missing token as "skip", never as an error.
-  expoPushToken           String?
+  expoPushToken String?
 
   profilePhoto            CustomerProfilePhoto?
   transactions            CustomerTransaction[]
@@ -190,19 +257,19 @@ model CustomerAccount {
 
 // 1c. Customer Information Table (3NF: profile/contact details)
 model CustomerInformation {
-  id         Int             @id @default(autoincrement())
-  customerId Int             @unique
-  customer   CustomerAccount @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  firstName  String
-  middleName String?
-  lastName   String
+  id              Int             @id @default(autoincrement())
+  customerId      Int             @unique
+  customer        CustomerAccount @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  firstName       String
+  middleName      String?
+  lastName        String
   birthdate       DateTime?       @db.Date
   phone           String
   phoneVerified   Boolean         @default(false)
   phoneVerifiedAt DateTime?
   avatar          String?         @db.LongText
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@map("customer_information")
 }
@@ -236,6 +303,10 @@ model CustomerTransaction {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  // Optimizes customer transaction history
+  @@index([customerId, createdAt])
+  // Optimizes date-bounded financial reports (findBetween)
+  @@index([createdAt])
   @@map("customer_transactions")
 }
 
@@ -348,7 +419,17 @@ model PaymentMode {
 
 // 5. Errand Table (3NF: Foreign Key references to Customer, Rider, PaymentMode, Addresses)
 model Errand {
-  id                String       @id @default(uuid())
+  id                String  @id @default(uuid())
+  // What people read and say aloud: YYMMDD-KKKKK-NNNN, the Manila date the order
+  // was placed, the last 5 characters of id, and that day's order number (see
+  // lib/errandReference.ts). Display and search only; id stays the only key for
+  // routes, sockets and Firebase paths, since the number is guessable.
+  // Null only until src/scripts/backfillErrandReferences.ts has run on older rows.
+  referenceNo       String? @unique @db.VarChar(20)
+  // Stable identity of a customer's submission, retained for safe retries.
+  // NULL preserves creation by older clients without deduplicating their orders.
+  submissionId      String? @db.VarChar(80)
+  submissionHash    String? @db.Char(64)
   category          String
   description       String
   pickupAddress     String
@@ -364,11 +445,11 @@ model Errand {
   deliveryLandmark   String? @db.VarChar(200)
   deliveryNotes      String? @db.VarChar(300)
 
-  estimatedCost     Float        @default(0)
-  deliveryFee       Float        @default(50)
-  tip               Float        @default(0)
-  totalCost         Float        @default(50)
-  status            ErrandStatus @default(PENDING)
+  estimatedCost Float        @default(0)
+  deliveryFee   Float        @default(50)
+  tip           Float        @default(0)
+  totalCost     Float        @default(50)
+  status        ErrandStatus @default(PENDING)
 
   // Number of store categories selected at creation time (1-3). Deliberately
   // decoupled from pabiliDetails.length/pabiliItemRequests.length — those hold
@@ -510,6 +591,17 @@ model Errand {
   etaComputedAt DateTime?
   etaIsDegraded Boolean   @default(false)
 
+  // The delivery promise, frozen ONCE: the first properly routed ETA computed
+  // from the rider's live position after the last store is done (the leg the
+  // rider controls). etaHighAt above is recomputed about every minute right up
+  // to the door, so a delivery measured against it could never be late; Rider
+  // Performance's On Time is measured against etaPromisedHighAt instead.
+  // Written only while null (see errandRepository.freezeEtaPromise) and cleared
+  // when the errand is assigned to a rider, so a promise never follows a
+  // re-dispatch to someone else. Null on errands delivered before 2026-10-22.
+  etaPromisedAt     DateTime?
+  etaPromisedHighAt DateTime?
+
   // Stamped when the rider enters within 500m of customer delivery coordinates
   // during IN_TRANSIT, so proximity push/sound alert fires exactly once per errand.
   proximityAlertSentAt DateTime? @map("proximity_alert_sent_at")
@@ -519,22 +611,45 @@ model Errand {
 
   pabiliDetails         PabiliDetail[]
   pabiliItemRequests    PabiliItemRequest[]
-  declineReasons ErrandDeclineReason[]
+  declineReasons        ErrandDeclineReason[]
   dispatchLogs          DispatchLog[]
   pinpoints             ErrandPinpoint[]
   transaction           CustomerTransaction?
   paymentSelection      PaymentSelection?
-  payments         ErrandPayment[]
+  payments              ErrandPayment[]
   rating                Rating?
   connectivityIncidents ConnectivityIncident[]
   settlement            SettlementRecord?
   trackPoints           ErrandTrackPoint[]
   dwellObservations     DwellObservation[]
-  exceptionReviews ExceptionReview[]
+  exceptionReviews      ExceptionReview[]
   proofImages           ErrandProofImage[]
   commission            RiderCommission?
+  riderDeclines         RiderOfferDecline[]
 
+  // Optimizes Dispatcher Portal queue & active errand filtering
+  @@unique([customerId, submissionId])
+  @@index([status, createdAt])
+  // Optimizes 15-second background offer expiry cron job (offerExpiry.ts)
+  @@index([status, assignedAt])
+  // Optimizes active rider errand lookups & fleet status grouping (countActiveByRider)
+  @@index([status, riderId])
+  @@index([riderId, status])
+  // Optimizes customer errand history list (findByCustomerId)
+  @@index([customerId, createdAt])
+  // Optimizes owner dashboard financial & date range reports (aggregateBetween)
+  @@index([createdAt])
   @@map("errands")
+}
+
+// Per-day order counter behind Errand.referenceNo. One row per Manila day
+// (YYMMDD); `last` is the highest number handed out that day. Incremented inside
+// the errand's create transaction, so a failed create leaves no gap.
+model ErrandRefCounter {
+  day  String @id @db.Char(6)
+  last Int
+
+  @@map("errand_ref_counters")
 }
 
 // 6. Pabili Details Table (3NF: Separated itemized list)
@@ -576,6 +691,7 @@ model PabiliDetail {
   pinpointId Int?
   pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
 
+  @@index([errandId])
   @@index([pinpointId])
   @@map("pabili_details_tbl")
 }
@@ -607,6 +723,7 @@ model PabiliItemRequest {
   pinpointId Int?
   pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
 
+  @@index([errandId])
   @@index([pinpointId])
   @@map("pabili_item_requests_tbl")
 }
@@ -659,7 +776,9 @@ model ErrandPinpoint {
   items             PabiliDetail[]
   proofImages       ErrandProofImage[]
 
-  @@index([errandId])
+  // Replaces single @@index([errandId]) with composite covering sequence sort
+  // Optimizes ERRAND_INCLUDE: pinpoints orderBy sequence ASC
+  @@index([errandId, sequence])
   @@map("errand_pinpoints_tbl")
 }
 
@@ -690,6 +809,9 @@ model ExceptionReview {
 
   resolvedAt DateTime @default(now())
 
+  // Money recorded with this decision (Help Desk "What happened to the short?").
+  adjustments SettlementAdjustment[]
+
   // Deliberately NOT unique on (errandId, kind): an owner reviewing something a
   // dispatcher already closed writes a second row rather than overwriting the
   // first, so the sequence of who looked and what they concluded survives.
@@ -719,8 +841,12 @@ model DispatchLog {
   //
   // Null on every existing row, which is correct: nothing claimed before this
   // shipped went through a verification step.
-  verifiedAt   DateTime?
+  verifiedAt DateTime?
 
+  // Optimizes ERRAND_INCLUDE: dispatchLogs orderBy dispatchedAt DESC take 1
+  @@index([errandId, dispatchedAt])
+  // Optimizes findManyForDispatcher: dispatchLogs: { some: { dispatcherId } }
+  @@index([dispatcherId, errandId])
   @@map("dispatch_logs")
 }
 
@@ -739,13 +865,13 @@ model DispatchLog {
 // reopened and declined again, and losing the earlier reason would defeat the
 // point of recording it.
 model ErrandDeclineReason {
-  id           Int      @id @default(autoincrement())
+  id           Int    @id @default(autoincrement())
   errandId     String
-  errand       Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  errand       Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
   dispatcherId Int
-  dispatcher   User     @relation("DispatcherDeclines", fields: [dispatcherId], references: [id])
+  dispatcher   User   @relation("DispatcherDeclines", fields: [dispatcherId], references: [id])
 
-  reason String @db.VarChar(255)
+  reason   String  @db.VarChar(255)
   // True when the dispatcher typed a free-text reason instead of picking one of
   // the preset options, which is what makes the presets reviewable later: a
   // rising share of custom reasons means the preset list has gone stale.
@@ -922,11 +1048,38 @@ model UserKnownDevice {
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @default(now())
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, deviceId])
   @@index([userId])
   @@map("user_known_devices")
+}
+
+// 12e. MFA Trusted Devices Table
+// A device that passed the second sign-in factor. Its sign-ins skip the
+// challenge until `expiresAt`. Only the sha256 of the device's token is stored.
+// Polymorphic like user_sessions (staff and customer ids collide), so
+// `subjectType` ("USER" | "CUSTOMER") is part of every lookup. `credStamp`
+// fingerprints the password, status and contacts the trust was granted under:
+// a password reset or a changed phone or email ends it without a hook in every
+// path that can change them.
+model MfaTrustedDevice {
+  id          Int       @id @default(autoincrement())
+  subjectType String    @db.VarChar(16)
+  subjectId   Int
+  tokenHash   String    @unique @db.Char(64)
+  deviceId    String?   @db.VarChar(80)
+  credStamp   String    @db.Char(32)
+  method      String    @db.VarChar(8)
+  userAgent   String?   @db.VarChar(300)
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([subjectType, subjectId])
+  @@index([expiresAt])
+  @@map("mfa_trusted_devices")
 }
 
 model TokenBlocklist {
@@ -967,22 +1120,22 @@ model SysAdmin {
   lastLoginAt                DateTime?
 
   // Account lockout & brute-force defense
-  failedLoginAttempts        Int       @default(0)
-  lockedUntil                DateTime?
-  unlockTokenHash            String?   @db.VarChar(255)
-  unlockTokenExpiresAt       DateTime?
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  unlockTokenHash      String?   @db.VarChar(255)
+  unlockTokenExpiresAt DateTime?
 
   // Adaptive & Enforced 2FA Security
-  enforceTwoFactor           Boolean   @default(false)
-  twoFactorCodeHash          String?   @db.VarChar(255)
-  twoFactorExpiresAt         DateTime?
+  enforceTwoFactor   Boolean   @default(false)
+  twoFactorCodeHash  String?   @db.VarChar(255)
+  twoFactorExpiresAt DateTime?
 
   // Relations
-  trustedDevices             SysAdminTrustedDevice[]
-  passwordHistory            SysAdminPasswordHistory[]
-  blockedIps                 BlockedIp[]
-  whitelistedIps             WhitelistedIp[]
-  backups                    DatabaseBackup[]
+  trustedDevices  SysAdminTrustedDevice[]
+  passwordHistory SysAdminPasswordHistory[]
+  blockedIps      BlockedIp[]
+  whitelistedIps  WhitelistedIp[]
+  backups         DatabaseBackup[]
 
   @@map("tbl_sys_admin")
 }
@@ -990,17 +1143,17 @@ model SysAdmin {
 // 12c. SysAdmin Trusted Devices Table
 // Stores cryptographically hashed 30-day device tokens to bypass 2FA OTP for recognized devices.
 model SysAdminTrustedDevice {
-  id                String    @id @default(uuid())
+  id                String   @id @default(uuid())
   adminId           Int
-  deviceFingerprint String    @db.VarChar(128)
-  deviceTokenHash   String    @db.VarChar(255)
-  ipAddress         String    @db.VarChar(45)
-  userAgent         String    @db.Text
-  lastUsedAt        DateTime  @default(now())
+  deviceFingerprint String   @db.VarChar(128)
+  deviceTokenHash   String   @db.VarChar(255)
+  ipAddress         String   @db.VarChar(45)
+  userAgent         String   @db.Text
+  lastUsedAt        DateTime @default(now())
   expiresAt         DateTime
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime @default(now())
 
-  admin             SysAdmin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  admin SysAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
   @@index([deviceTokenHash])
@@ -1010,12 +1163,12 @@ model SysAdminTrustedDevice {
 // 12d. SysAdmin Password History Table
 // Enforces password policy by preventing reuse of the last 3 passwords.
 model SysAdminPasswordHistory {
-  id           Int       @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   adminId      Int
-  passwordHash String    @db.VarChar(255)
-  createdAt    DateTime  @default(now())
+  passwordHash String   @db.VarChar(255)
+  createdAt    DateTime @default(now())
 
-  admin        SysAdmin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  admin SysAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
   @@map("tbl_sys_admin_password_history")
@@ -1048,7 +1201,7 @@ model BlockedIp {
   banType      BanType        @default(AUTOMATIC)
   severity     ThreatSeverity @default(HIGH)
   status       BanStatus      @default(ACTIVE)
-  blockedUntil DateTime?      // NULL = Permanent ban; DateTime = Temporary ban
+  blockedUntil DateTime? // NULL = Permanent ban; DateTime = Temporary ban
   attackCount  Int            @default(1)
   lastSeenAt   DateTime       @default(now())
   bannedById   Int?
@@ -1148,7 +1301,7 @@ enum ErrandPaymentKind {
   // amount owed is a property of the PLAN, not of the payment.
   UPFRONT
   TOP_UP // an overage the customer agreed to after the receipt came in higher
-  FINAL  // the balance, collected in cash by the rider at the door
+  FINAL // the balance, collected in cash by the rider at the door
   REFUND // money returned, e.g. a cancellation after money had already arrived
 }
 
@@ -1219,34 +1372,34 @@ enum FeedbackStatus {
 
 // 14a. Customer Feedback Table (Direct communication channel to developers & management)
 model CustomerFeedback {
-  id              Int              @id @default(autoincrement())
-  refCode         String           @unique @db.VarChar(32)
-  customerId      Int?
-  customer        CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  category        FeedbackCategory @default(OTHER)
-  rating          Int              @default(5)
-  subject         String           @db.VarChar(120)
-  message         String           @db.Text
-  contactEmail    String?          @db.VarChar(120)
-  contactPhone    String?          @db.VarChar(30)
+  id           Int              @id @default(autoincrement())
+  refCode      String           @unique @db.VarChar(32)
+  customerId   Int?
+  customer     CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  category     FeedbackCategory @default(OTHER)
+  rating       Int              @default(5)
+  subject      String           @db.VarChar(120)
+  message      String           @db.Text
+  contactEmail String?          @db.VarChar(120)
+  contactPhone String?          @db.VarChar(30)
 
   // Diagnostic telemetry for developers
-  appVersion      String?          @db.VarChar(30)
-  platform        String?          @db.VarChar(20)
-  deviceModel     String?          @db.VarChar(100)
-  osVersion       String?          @db.VarChar(50)
+  appVersion  String? @db.VarChar(30)
+  platform    String? @db.VarChar(20)
+  deviceModel String? @db.VarChar(100)
+  osVersion   String? @db.VarChar(50)
 
   // Management & read verification
-  status          FeedbackStatus   @default(NEW)
-  readAt          DateTime?
-  readByUserId    Int?
-  readByUser      User?            @relation("FeedbackReadBy", fields: [readByUserId], references: [id], onDelete: SetNull)
-  developerNotes  String?          @db.Text
-  resolvedAt      DateTime?
+  status         FeedbackStatus @default(NEW)
+  readAt         DateTime?
+  readByUserId   Int?
+  readByUser     User?          @relation("FeedbackReadBy", fields: [readByUserId], references: [id], onDelete: SetNull)
+  developerNotes String?        @db.Text
+  resolvedAt     DateTime?
 
-  emailDispatched Boolean          @default(false)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  emailDispatched Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([status])
   @@index([category])
@@ -1280,6 +1433,34 @@ model EmailVerificationCode {
   @@map("email_verification_codes")
 }
 
+enum RiderDeclineKind {
+  DECLINED
+  EXPIRED
+}
+
+// 14b2. Rider Offer Declines (3NF: one row per offer a rider turned down or let
+// run out). declineErrand sets errands.riderId back to null, so without this
+// table the rider's connection to an offer they refused is erased, and the
+// Rider Performance report cannot count it. Never updated or deleted by the app.
+model RiderOfferDecline {
+  id         Int              @id @default(autoincrement())
+  riderId    Int
+  rider      User             @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  errandId   String
+  errand     Errand           @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  kind       RiderDeclineKind
+  reason     String?          @db.VarChar(500)
+  // When the offer was made (errands.assignedAt at the time), so a decline can
+  // be read beside how long the rider sat on it.
+  offeredAt  DateTime?
+  declinedAt DateTime         @default(now())
+
+  @@index([riderId, declinedAt])
+  @@index([errandId])
+  @@index([declinedAt])
+  @@map("rider_offer_declines")
+}
+
 // 14c. Connectivity Incidents Table (3NF: audit trail of rider device
 // connectivity loss — one row per incident, opened on disconnect,
 // `reconnectedAt` filled in when the device comes back online)
@@ -1302,11 +1483,11 @@ model ConnectivityIncident {
 // moment of settlement, collectedAmount is what the rider actually turned
 // in, variance/status capture the reconciliation outcome)
 model SettlementRecord {
-  id              Int      @id @default(autoincrement())
-  errandId        String   @unique
-  errand          Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  id              Int    @id @default(autoincrement())
+  errandId        String @unique
+  errand          Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
   riderId         Int
-  rider           User     @relation(fields: [riderId], references: [id])
+  rider           User   @relation(fields: [riderId], references: [id])
   expectedAmount  Float
   collectedAmount Float
   variance        Float
@@ -1318,7 +1499,7 @@ model SettlementRecord {
   // explanation is a number nobody can act on -- the difference between a
   // customer who paid what they had and a rider who kept the rest is exactly
   // what this line records, and it is the first thing an investigation asks.
-  shortReason     String?  @db.VarChar(300)
+  shortReason String? @db.VarChar(300)
 
   // The photo the rider took of the cash (or the GCash/Maya receipt, on a
   // ledger errand) that backs this settlement. @unique for the same reason as
@@ -1326,10 +1507,53 @@ model SettlementRecord {
   proofImageId Int?              @unique
   proofImage   ErrandProofImage? @relation(fields: [proofImageId], references: [id], onDelete: SetNull)
 
-  settledAt       DateTime @default(now())
+  settledAt DateTime @default(now())
+
+  // What happened to a short AFTER the handover. The row above is never edited.
+  adjustments SettlementAdjustment[]
 
   @@index([riderId])
   @@map("settlement_records")
+}
+
+// 14e. Settlement Adjustments (3NF: one row per amount that settled part of a
+// SHORT handover after the fact -- the rider paid it back, the customer paid it
+// by GCash, or the business wrote it off).
+//
+// The handover row (SettlementRecord) stays exactly as it was counted, because
+// it is the record of what happened at the door. What is still owed is derived:
+// the short, less every adjustment that has not been voided. Rows are never
+// edited or deleted; a mistake is voided (voidedAt/voidedById) by the person who
+// recorded it, within 10 minutes, so the trail of who recorded what survives.
+model SettlementAdjustment {
+  id           Int              @id @default(autoincrement())
+  settlementId Int
+  settlement   SettlementRecord @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  // RIDER_PAID_BACK | CUSTOMER_PAID_GCASH | WRITTEN_OFF. A string, like
+  // ExceptionReview.kind, so a new kind needs no migration.
+  kind      String  @db.VarChar(24)
+  amount    Float
+  // The GCash reference number. Required for CUSTOMER_PAID_GCASH.
+  reference String? @db.VarChar(40)
+  note      String? @db.VarChar(300)
+
+  // The Help Desk decision this was recorded with, when it came in through
+  // Resolve. Null for a payment recorded later from "Money still owed".
+  reviewId Int?
+  review   ExceptionReview? @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+
+  recordedById Int
+  recordedBy   User     @relation("SettlementAdjustmentRecordedBy", fields: [recordedById], references: [id])
+  recordedAt   DateTime @default(now())
+
+  voidedAt   DateTime?
+  voidedById Int?
+  voidedBy   User?     @relation("SettlementAdjustmentVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+
+  @@index([settlementId])
+  @@index([recordedAt])
+  @@map("settlement_adjustments")
 }
 
 enum ProofImageKind {
@@ -1377,21 +1601,21 @@ enum ImageClarityVerdict {
 // upload, so a receipt lands near 300 KB rather than the 5 MB the validator caps
 // at.
 model ErrandProofImage {
-  id       Int             @id @default(autoincrement())
-  errandId String
-  errand   Errand          @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  id         Int              @id @default(autoincrement())
+  errandId   String
+  errand     Errand           @relation(fields: [errandId], references: [id], onDelete: Cascade)
   // Which stop this receipt came from. Null for a delivery photo, which happens
   // at the customer's address rather than at any store.
   pinpointId Int?
-  pinpoint   ErrandPinpoint? @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
+  pinpoint   ErrandPinpoint?  @relation(fields: [pinpointId], references: [id], onDelete: SetNull)
   // Who captured this. Exactly one of the two is set.
   //
   // riderId was required, because every proof used to be a rider's: a receipt,
   // a handover photo. A customer's payment screenshot is evidence for the same
   // errand and belongs in the same table — same OCR path, same clarity scoring,
   // same viewing rules — but it has no rider behind it.
-  riderId  Int?
-  rider    User?           @relation(fields: [riderId], references: [id])
+  riderId    Int?
+  rider      User?            @relation(fields: [riderId], references: [id])
   customerId Int?
   customer   CustomerAccount? @relation(fields: [customerId], references: [id])
 
@@ -1410,7 +1634,7 @@ model ErrandProofImage {
 
   // Optional note from the rider explaining the stop or handover (e.g.
   // "Walang receipt tong mga items na toh", "Cash nalang daw").
-  riderNote  String?  @db.VarChar(500)
+  riderNote String? @db.VarChar(500)
 
   // Whether a machine read this, or a person asserted it.
   //
@@ -1438,6 +1662,7 @@ model ErrandProofImage {
   settlement SettlementRecord?
 
   @@index([errandId])
+  @@index([errandId, kind])
   @@index([riderId])
   @@map("errand_proof_images")
 }
@@ -1523,7 +1748,8 @@ model RiderCommission {
 
   computedAt DateTime @default(now())
 
-  @@index([riderId])
+  // Optimizes rider commission date-range reports (and covers riderId lookups via leftmost prefix)
+  @@index([riderId, computedAt])
   @@map("rider_commissions")
 }
 
@@ -1569,20 +1795,37 @@ model RiderStatusLog {
 // nullable FKs" constraint. Two nullable FKs (rather than one untyped
 // recipientId + a type discriminator) so both sides keep real referential
 // integrity, matching every other relation in this schema.)
+// How urgent a staff notification is (notificationCatalog.ts picks it per type).
+// Keep the declaration order: MySQL sorts an ENUM column by declaration index,
+// so ORDER BY priority DESC puts CRITICAL first. Reordering silently breaks the
+// "Priority" sort in the bell.
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
 model Notification {
-  id         Int              @id @default(autoincrement())
+  id         Int                  @id @default(autoincrement())
   userId     Int?
-  user       User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
   customerId Int?
-  customer   CustomerAccount? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   CustomerAccount?     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   type       String
   title      String
   body       String
-  isRead     Boolean          @default(false)
-  createdAt  DateTime         @default(now())
+  priority   NotificationPriority @default(NORMAL)
+  // What the row is about, `errand:<id>` or `rider:<id>`: the bell's link
+  // target, and the key a chat thread collapses into one unread row on.
+  refKey     String?              @db.VarChar(64)
+  isRead     Boolean              @default(false)
+  createdAt  DateTime             @default(now())
 
   @@index([userId])
   @@index([customerId])
+  @@index([userId, createdAt])
+  @@index([userId, type, refKey])
   @@map("notifications")
 }
 
@@ -1609,6 +1852,35 @@ model AccountModificationLog {
   @@index([role])
   @@index([createdAt])
   @@map("account_modification_logs")
+}
+
+// 16a. Report Print Logs Table (3NF: one row per Owner report sent to the print
+// screen, written by GET /reports/:reportType/pdf before the document is sent,
+// so no printout exists without its row). `printedByName` and `role` are a
+// snapshot of the account at print time: a renamed or deleted account must not
+// rewrite who signed an old printout. Read by System Admin > Audit Logs.
+model ReportPrintLog {
+  id            Int      @id @default(autoincrement())
+  userId        Int?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  printedByName String   @db.VarChar(200)
+  role          String   @db.VarChar(32)
+  // sales | rider-performance | commission | settlement | transactions | exceptions
+  reportType    String   @db.VarChar(32)
+  // DAILY | WEEKLY | MONTHLY | YEARLY | CUSTOM
+  period        String   @db.VarChar(16)
+  rangeStart    DateTime
+  // EXCLUSIVE, like every report window.
+  rangeEnd      DateTime
+  coverageLabel String   @db.VarChar(255)
+  ipAddress     String?  @db.VarChar(64)
+  userAgent     String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([reportType])
+  @@index([createdAt])
+  @@map("report_print_logs")
 }
 
 // 16b. Password Reset Attempts Table (3NF: one row per step of the customer
@@ -1674,8 +1946,8 @@ model VerifiedPlace {
 
   // Two relations to the same model, so both must be named: the place a
   // dispatcher pinned, and the place a rider was actually observed at.
-  pinpoints         ErrandPinpoint[]   @relation("PinnedPlace")
-  observedAt        ErrandPinpoint[]   @relation("ObservedPlace")
+  pinpoints         ErrandPinpoint[]      @relation("PinnedPlace")
+  observedAt        ErrandPinpoint[]      @relation("ObservedPlace")
   dwellObservations DwellObservation[]
   crawledItems      CrawledMerchantItem[]
 
@@ -1774,9 +2046,9 @@ model DwellObservation {
   // supermarket left no trace anyone could look at later. Stored so the pattern
   // is trendable, and deliberately kept OUT of any amount at risk: a long queue
   // is a judgement about time, not a claim about money.
-  stalled      Boolean  @default(false)
+  stalled Boolean @default(false)
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([categoryId, createdAt])
   @@index([placeId, createdAt])
@@ -1789,27 +2061,27 @@ model DwellObservation {
 // so the split between the two maps is measured rather than assumed. Written
 // by lib/routing/routePickLog.ts, never read on a request path.
 model RoutePick {
-  id        Int      @id @default(autoincrement())
-  riderId   Int
-  rider     User     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  id                    Int      @id @default(autoincrement())
+  riderId               Int
+  rider                 User     @relation(fields: [riderId], references: [id], onDelete: Cascade)
   // The Manila calendar day of the decision, the day the map was assigned for.
-  day       DateTime @db.Date
+  day                   DateTime @db.Date
   // Who named the map: "assigned" (the server, by rider and day), "app" (the
   // rider's app already shows one) or "winner" (assignment off: the map of
   // whichever path won).
-  mapSource String   @db.VarChar(10)
+  mapSource             String   @db.VarChar(10)
   // The map the line was asked to be drawn on ("osrm" | "google"); null for "winner".
-  mapAsked  String?  @db.VarChar(10)
+  mapAsked              String?  @db.VarChar(10)
   // Whose path won, and whose roads it is drawn on. drawnWith differs from
   // mapAsked only when the winner could not be redrawn on the asked map.
-  chosen    String   @db.VarChar(10)
-  drawnWith String   @db.VarChar(10)
+  chosen                String   @db.VarChar(10)
+  drawnWith             String   @db.VarChar(10)
   // Each engine's own answer; null when that engine gave none.
   osrmDurationSeconds   Int?
   osrmDistanceMeters    Int?
   googleDurationSeconds Int?
   googleDistanceMeters  Int?
-  createdAt DateTime @default(now())
+  createdAt             DateTime @default(now())
 
   @@index([day, mapSource])
   @@index([riderId, day])
@@ -1822,16 +2094,16 @@ model CrawledMerchantItem {
   verifiedPlaceId String?        @db.VarChar(36)
   verifiedPlace   VerifiedPlace? @relation(fields: [verifiedPlaceId], references: [id], onDelete: SetNull)
 
-  rawStoreName    String         @db.VarChar(150)
-  itemName        String         @db.VarChar(150)
-  categoryName    String         @db.VarChar(80)
-  sourceType      String         @db.VarChar(50) // "WEB_SCRAPE", "OCR_FLYER", "STAFF_CATALOGUED"
-  sourceUrl       String?        @db.VarChar(500)
+  rawStoreName String  @db.VarChar(150)
+  itemName     String  @db.VarChar(150)
+  categoryName String  @db.VarChar(80)
+  sourceType   String  @db.VarChar(50) // "WEB_SCRAPE", "OCR_FLYER", "STAFF_CATALOGUED"
+  sourceUrl    String? @db.VarChar(500)
 
-  isAvailable     Boolean        @default(true)
-  lastSeenAt      DateTime       @default(now())
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  isAvailable Boolean  @default(true)
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([itemName])
   @@index([rawStoreName])
@@ -1851,4 +2123,3 @@ model ProcessedOcrImage {
   @@index([sha256Hash])
   @@map("processed_ocr_images")
 }
-

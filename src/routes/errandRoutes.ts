@@ -5,6 +5,7 @@ import {
   listErrandsForUser,
   listErrandsForRider,
   createErrand,
+  getSubmissionStatus,
   claimErrand,
   verifyErrand,
   releaseErrand,
@@ -15,6 +16,7 @@ import {
   declineErrandReview,
   getDeclineReasons,
   setPinpoints,
+  markPinpointArrived,
   quotePinpoints,
   updateItems,
   updateItemFulfillmentStatus,
@@ -39,8 +41,13 @@ import { getPaymentSelection, confirmPaymentSelection } from "../controllers/pay
 import { getOpenExceptions, resolveException, suggestExceptionReason } from "../controllers/exceptionController.js";
 import { uploadTrackBatch, getTrack } from "../controllers/trackingController.js";
 import { getRating, submitRating } from "../controllers/ratingController.js";
-import { submitSettlement } from "../controllers/settlementController.js";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
+import {
+  listMoneyStillOwed,
+  recordSettlementAdjustment,
+  submitSettlement,
+  voidSettlementAdjustment,
+} from "../controllers/settlementController.js";
+import { authenticateToken, requireRole, requirePermission } from "../middleware/auth.js";
 import { userApiLimiter, readLimiter, trackingLimiter, itemTidyLimiter, itemStoreCheckLimiter } from "../middleware/rateLimiters.js";
 import {
   getPaymentLedger,
@@ -54,6 +61,9 @@ import { uploadPaymentProof, getPaymentProof } from "../controllers/paymentProof
 import { getDispatcherDashboardSummary } from "../controllers/dispatcherDashboardController.js";
 
 const router = Router();
+
+// Before /:id. Identity is always scoped to the authenticated customer.
+router.get("/submissions/:submissionId", authenticateToken, requireRole(["CUSTOMER"]), readLimiter, getSubmissionStatus);
 
 // POST /api/errands/quote - Price a draft errand before it is created.
 //
@@ -87,8 +97,43 @@ router.get(
   "/exceptions",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("exceptions.resolve"),
   readLimiter,
   getOpenExceptions
+);
+
+// GET /api/errands/settlements/owed - Help Desk "Money still owed": short cash
+// handovers with money still outstanding. Registered before "/:id" so the
+// literal path wins. Staff only, like the exception queue.
+router.get(
+  "/settlements/owed",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("settlements.adjust"),
+  readLimiter,
+  listMoneyStillOwed
+);
+
+// POST /api/errands/:id/settlement/adjustments - money that came in (or was
+// written off) after a short handover.
+router.post(
+  "/:id/settlement/adjustments",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("settlements.adjust"),
+  userApiLimiter,
+  recordSettlementAdjustment
+);
+
+// POST /api/errands/:id/settlement/adjustments/:adjustmentId/void - undo one,
+// by the person who recorded it, within 10 minutes.
+router.post(
+  "/:id/settlement/adjustments/:adjustmentId/void",
+  authenticateToken,
+  requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("settlements.adjust"),
+  userApiLimiter,
+  voidSettlementAdjustment
 );
 
 // POST /api/errands/:id/exceptions/resolve - record that a person cleared one.
@@ -99,6 +144,7 @@ router.post(
   "/:id/exceptions/resolve",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("exceptions.resolve"),
   userApiLimiter,
   resolveException
 );
@@ -109,6 +155,7 @@ router.get(
   "/:id/exceptions/reason-suggestion",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("exceptions.resolve"),
   readLimiter,
   suggestExceptionReason
 );
@@ -118,12 +165,13 @@ router.get(
   "/dispatcher-dashboard-summary",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("queue.view"),
   readLimiter,
   getDispatcherDashboardSummary
 );
 
 // GET /api/errands - Fetch all errands (Owner/Dispatcher view)
-router.get("/", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, listErrands);
+router.get("/", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), requirePermission("queue.view"), readLimiter, listErrands);
 
 // --- Photographic proof (receipts, transfers, delivery) ---------------------
 //
@@ -195,7 +243,7 @@ router.get("/rider/:riderId", authenticateToken, readLimiter, listErrandsForRide
 router.post("/", authenticateToken, userApiLimiter, createErrand);
 
 // PATCH /api/errands/:id/claim - Claim an errand (Dispatcher)
-router.patch("/:id/claim", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), claimErrand);
+router.patch("/:id/claim", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), requirePermission("errands.review"), claimErrand);
 
 // PATCH /api/errands/:id/verify - the dispatcher has checked the items with the
 // customer and is taking the order on. Distinct from the claim above, which now
@@ -205,6 +253,7 @@ router.patch(
   "/:id/verify",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   verifyErrand
 );
@@ -216,6 +265,7 @@ router.patch(
   "/:id/release",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   releaseErrand
 );
@@ -234,6 +284,7 @@ router.patch(
   "/:id/dispatcher-decline",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   declineErrandReview
 );
@@ -242,11 +293,15 @@ router.patch(
 // who owns the errand (enforced by the same object-level check as GET /:id).
 router.get("/:id/decline-reasons", authenticateToken, readLimiter, getDeclineReasons);
 
+// Independent arrival reporting when the breadcrumb queue has not reached us.
+router.patch('/:id/pinpoints/:pinpointId/arrived', authenticateToken, requireRole(['RIDER']), userApiLimiter, markPinpointArrived);
+
 // POST /api/errands/:id/pinpoints - Dispatcher sets/replaces store pinpoints (max 3)
 router.post(
   "/:id/pinpoints",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   setPinpoints
 );
@@ -257,6 +312,7 @@ router.post(
   "/:id/pinpoints/quote",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   quotePinpoints
 );
@@ -268,6 +324,7 @@ router.patch(
   "/:id/items",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   updateItems
 );
@@ -288,6 +345,7 @@ router.patch(
   "/:id/items/:itemId/status",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER", "RIDER"]),
+  requirePermission({ DISPATCHER: "errands.review" }),
   userApiLimiter,
   updateItemFulfillmentStatus
 );
@@ -298,6 +356,7 @@ router.post(
   "/:id/items/:itemId/suggest-substitutes",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.review"),
   userApiLimiter,
   suggestItemSubstitutes
 );
@@ -307,6 +366,7 @@ router.post(
   "/:id/items/:itemId/decline-substitute",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER", "ADMIN"]),
+  requirePermission({ DISPATCHER: "errands.review" }),
   userApiLimiter,
   declineItemSubstitute
 );
@@ -317,6 +377,7 @@ router.post(
   "/:id/enable-payment",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("payments.confirm"),
   userApiLimiter,
   enablePayment
 );
@@ -326,6 +387,7 @@ router.post(
   "/:id/assign-rider",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("errands.assign"),
   userApiLimiter,
   assignRider
 );
@@ -346,7 +408,10 @@ router.get("/:id/payment-selection", authenticateToken, readLimiter, getPaymentS
 // choice (the terminal step of the chat-embedded selection flow — see
 // PaymentModeSelectionModal.tsx in CustomerApp). Ownership + duplicate +
 // mode-availability checks all live in paymentSelectionService.ts.
-router.post("/:id/payment-selection", authenticateToken, userApiLimiter, confirmPaymentSelection);
+// The role gate stays here, though: that ownership check compares a bare id
+// with errand.customerId, and rider 9 or dispatcher 9 has the same number as
+// customer 9 (Codex security scan, 2026-11-02).
+router.post("/:id/payment-selection", authenticateToken, requireRole(["CUSTOMER"]), userApiLimiter, confirmPaymentSelection);
 
 // ── the 50% downpayment plan ─────────────────────────────────────────────
 //
@@ -399,6 +464,7 @@ router.post(
   "/:id/payments/upfront",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("payments.confirm"),
   userApiLimiter,
   confirmUpfrontPayment
 );
@@ -409,6 +475,7 @@ router.post(
   "/:id/payments/top-up",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("payments.confirm"),
   userApiLimiter,
   confirmTopUp
 );
@@ -420,6 +487,7 @@ router.post(
   "/:id/payments/balance",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("payments.confirm"),
   userApiLimiter,
   confirmBalancePayment
 );
@@ -429,6 +497,7 @@ router.post(
   "/:id/payments/refund",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("payments.refund"),
   userApiLimiter,
   recordRefund
 );
@@ -468,6 +537,7 @@ router.get(
   "/:id/track",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission({ OWNER: "tracking.view" }),
   readLimiter,
   getTrack
 );

@@ -10,12 +10,15 @@ export interface NotificationContent {
 // string-template a notification themselves. Extend this object with a new
 // method per trigger point as they're built (Open/Closed) — don't grow a
 // switch statement at each call site instead.
+//
+// `reference` is the errand number people read (lib/errandReference.ts
+// referenceLabel), never the raw id.
 export const notificationFactory = {
-  riderAssigned(errandId: string, pickupAddress: string): NotificationContent {
+  riderAssigned(reference: string, pickupAddress: string): NotificationContent {
     return {
       type: "ERRAND_ASSIGNED",
       title: "New Errand Assigned",
-      body: `Errand #${errandId.slice(0, 8)} — ${pickupAddress}`,
+      body: `Errand ${reference} — ${pickupAddress}`,
     };
   },
 
@@ -43,11 +46,11 @@ export const notificationFactory = {
     };
   },
 
-  feeUpdated(errandId: string, totalCost: number): NotificationContent {
+  feeUpdated(reference: string, totalCost: number): NotificationContent {
     return {
       type: "FEE_UPDATED",
       title: "Delivery Fee Updated",
-      body: `Errand #${errandId.slice(0, 8)}'s total is now ₱${totalCost.toFixed(2)}.`,
+      body: `Errand ${reference}'s total is now ₱${totalCost.toFixed(2)}.`,
     };
   },
 
@@ -115,11 +118,11 @@ export const notificationFactory = {
     };
   },
 
-  customerChat(errandId: string, customerName: string, snippet: string): NotificationContent {
+  customerChat(reference: string, customerName: string, snippet: string): NotificationContent {
     return {
       type: "CUSTOMER_CHAT_MESSAGE",
       title: `Message from ${customerName || "Customer"}`,
-      body: `Errand #${errandId.slice(0, 8)}: ${snippet ? (snippet.length > 80 ? snippet.slice(0, 77) + "..." : snippet) : "Sent a message"}`,
+      body: `Errand ${reference}: ${snippet ? (snippet.length > 80 ? snippet.slice(0, 77) + "..." : snippet) : "Sent a message"}`,
     };
   },
 };

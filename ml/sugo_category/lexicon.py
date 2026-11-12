@@ -318,6 +318,16 @@ CONTESTED_CONCEPTS: dict[str, list[str]] = {
         "milk tea shop", "bubble tea", "juice bar", "coffee shop",
         "coffee house", "milk tea", "wintermelon milk tea",
         "okinawa milk tea", "fruit tea", "iced coffee", "hot coffee",
+        # Prepared cafe drinks follow the beverage role when the owner splits
+        # it from fast food. Previously latte/americano/frappe remained fast
+        # food seeds even with Cafe active. Keep packaged/instant coffee in
+        # Grocery: a cafe vocabulary must not absorb the whole coffee aisle.
+        "cafe", "caffe", "coffeehouse", "espresso bar",
+        "latte", "americano", "frappe", "cappuccino", "espresso",
+        "macchiato", "mocha", "flat white", "cafe au lait",
+        "cold brew", "brewed coffee", "filter coffee", "pour over coffee",
+        "iced latte", "hot latte", "iced americano", "caramel macchiato",
+        "matcha latte", "chai latte", "espresso shot",
     ],
     # Produce currently files under Supermarket & Grocery, which is right for a
     # catalogue with no separate produce row. An owner who splits the palengke

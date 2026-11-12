@@ -1,5 +1,6 @@
 import { PrismaClient, RoleType } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedPassword } from "./lib/seedPassword.js";
 
 const prisma = new PrismaClient();
 
@@ -7,11 +8,13 @@ async function main() {
   console.log("🌱 Seeding database with core accounts...");
 
   // 2. User Accounts (Owner only)
-  const hashedOwnerPass = await bcrypt.hash("owner123", 10);
+  const hashedOwnerPass = await bcrypt.hash(seedPassword("OWNER_SEED_PASSWORD"), 10);
 
   const owner = await prisma.user.upsert({
     where: { username: "owner" },
-    update: { passwordHash: hashedOwnerPass },
+    // An existing owner keeps the password they chose; this seeder used to
+    // reset it to the seed value on every run.
+    update: {},
     create: {
       username: "owner",
       passwordHash: hashedOwnerPass,

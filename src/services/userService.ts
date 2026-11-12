@@ -15,6 +15,12 @@ import { riderPhotoRepository } from "../repositories/riderPhotoRepository.js";
 import type { RiderPhotoUploadInput } from "../validators/riderPhotoValidators.js";
 import * as userPresenceStore from "../lib/userPresenceStore.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
+import * as notificationService from "./notificationService.js";
+import * as sessionService from "./sessionService.js";
+import { disconnectAccount, notifySessionRevoked } from "../lib/socket.js";
+import { dispatcherRef } from "./notificationCatalog.js";
+import { logger } from "../lib/logger.js";
+import * as accessService from "./accessService.js";
 
 function sanitize<T extends { passwordHash: string }>(user: T) {
   const { passwordHash: _, ...rest } = user;
@@ -22,10 +28,13 @@ function sanitize<T extends { passwordHash: string }>(user: T) {
 }
 
 export async function listUsers() {
-  const users = await userRepository.findMany();
+  const [users, access] = await Promise.all([userRepository.findMany(), accessService.directoryAccess()]);
   return users.map((u) => ({
     ...withFullName(sanitize(u)),
     isOnline: userPresenceStore.isOnline(u.id),
+    // For the Users screen: the Main Owner badge and the Group column.
+    isMainOwner: u.id === access.mainOwnerId,
+    accessGroup: u.accessGroupId ? { id: u.accessGroupId, name: access.groupNames.get(u.accessGroupId) ?? null } : null,
   }));
 }
 
@@ -35,7 +44,9 @@ export function getUserPresence() {
   };
 }
 
-export async function createUser(input: CreateUserInput) {
+export async function createUser(input: CreateUserInput, actingUserId?: number) {
+  // Admin accounts are the Main Owner's to create (accessService).
+  await accessService.assertCanManageAccount(actingUserId, null, input.role);
   try {
     const createData = await buildUserCreateData(input);
     const newUser = await userRepository.create(createData);
@@ -56,6 +67,11 @@ export async function updateUser(userId: number, input: UpdateUserInput, actingU
   if (!existingUser) {
     throw new ServiceError(404, "User not found");
   }
+  // Admin accounts, the Main Owner's own and every move into or out of the
+  // Admin role are the Main Owner's (accessService.assertCanManageAccount).
+  const nextRole =
+    input.role !== undefined && input.role.toUpperCase() !== existingUser.role ? input.role.toUpperCase() : undefined;
+  await accessService.assertCanManageAccount(actingUserId, existingUser, nextRole);
 
   const updateData: Record<string, unknown> = {};
   // Canonicalised on update as well as on create — otherwise renaming a user to
@@ -106,6 +122,30 @@ export async function updateUser(userId: number, input: UpdateUserInput, actingU
         latest: latest ? withFullName(sanitize(latest)) : null,
       });
     }
+    // A demotion or a deactivation takes effect now, not when the account's
+    // 30-day session runs out. Refresh refuses the old role anyway; ending the
+    // sessions also closes the live socket and tells the app why (Codex
+    // security scan, 2026-11-02). The update itself has landed, so a failure
+    // here is logged rather than reported as a failed edit.
+    const roleChanged = input.role !== undefined && input.role.toUpperCase() !== existingUser.role;
+    const deactivated = input.status !== undefined && input.status !== "Active";
+    // An access group belongs to one role, so it does not follow the account.
+    if (roleChanged) {
+      await accessService
+        .onRoleChanged(userId)
+        .catch((err) => logger.error(`Failed to clear the access group of user ${userId} after a role change:`, err));
+    }
+    if (roleChanged || deactivated) {
+      await sessionService
+        .revokeAllSubjectSessions(userId, "USER", roleChanged ? "ROLE_CHANGED_BY_OWNER" : "ACCOUNT_DEACTIVATED_BY_OWNER")
+        .catch((err) => logger.error(`Failed to revoke sessions of user ${userId} after an owner edit:`, err));
+      notifySessionRevoked(userId, {
+        reason: roleChanged
+          ? "Your role was changed by the owner. Please sign in again."
+          : "Your account was deactivated by the owner.",
+      });
+      disconnectAccount(userId);
+    }
     const updatedUser = await userRepository.findById(userId);
     return withFullName(sanitize(updatedUser!));
   } catch (err: unknown) {
@@ -120,6 +160,13 @@ export async function updateUser(userId: number, input: UpdateUserInput, actingU
   }
 }
 
+// For an Admin editing another account through the profile route.
+export async function assertCanEditAccount(actingUserId: number | undefined, targetUserId: number) {
+  const target = await userRepository.findById(targetUserId);
+  if (!target) throw new ServiceError(404, "User not found");
+  await accessService.assertCanManageAccount(actingUserId, target);
+}
+
 export async function updateProfile(targetUserId: number, input: ProfileUpdateInput) {
   const existingUser = await userRepository.findById(targetUserId);
   if (!existingUser) {
@@ -128,14 +175,36 @@ export async function updateProfile(targetUserId: number, input: ProfileUpdateIn
 
   const newFirstName = input.firstName && input.firstName !== "" ? input.firstName : existingUser.firstName;
   const newLastName = input.lastName && input.lastName !== "" ? input.lastName : existingUser.lastName;
-  const newEmail = input.email && input.email !== "" ? input.email : existingUser.email;
+  const newEmail = input.email && input.email !== "" ? normalizeEmail(input.email) : existingUser.email;
   const newPhone = input.phone && input.phone !== "" ? input.phone : existingUser.phone;
+
+  // A changed address or number is unproven, exactly as in updateUser. Here it
+  // matters more: this route needs only a bearer token, and password reset
+  // sends its code to a VERIFIED email or phone, so keeping the old proof let
+  // anyone holding a stolen access token point reset at their own mailbox and
+  // take the account for good (Codex security scan, 2026-11-02). The next
+  // sign-in proves the new channel through the OTP gate.
+  const contactProof: {
+    emailVerified?: false;
+    emailVerifiedAt?: null;
+    phoneVerified?: false;
+    phoneVerifiedAt?: null;
+  } = {};
+  if (newEmail.toLowerCase() !== (existingUser.email || "").toLowerCase()) {
+    contactProof.emailVerified = false;
+    contactProof.emailVerifiedAt = null;
+  }
+  if (newPhone.trim() !== (existingUser.phone || "").trim()) {
+    contactProof.phoneVerified = false;
+    contactProof.phoneVerifiedAt = null;
+  }
 
   const updatedUser = await userRepository.update(targetUserId, {
     firstName: newFirstName,
     lastName: newLastName,
     email: newEmail,
     phone: newPhone,
+    ...contactProof,
   });
 
   return withFullName(sanitize(updatedUser));
@@ -310,6 +379,19 @@ export async function notifyRiderChatMessage(
   const bodyText = text
     ? (text.length > 120 ? `${text.slice(0, 117)}...` : text)
     : "Sent a photo";
+
+  // Saved too (2026-10-22): one unread row per dispatcher conversation in the
+  // rider's notification screen, bumped with the latest line.
+  try {
+    await notificationService.deliverToRider(
+      riderId,
+      "DISPATCHER_CHAT",
+      { title: `Message from ${name}`, body: bodyText },
+      dispatcherRef(dispatcherId)
+    );
+  } catch (error) {
+    logger.error(`Could not save the dispatcher chat notification for rider ${riderId}:`, error);
+  }
 
   if (rider.expoPushToken) {
     await sendPushNotification(rider.expoPushToken, {

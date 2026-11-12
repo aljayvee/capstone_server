@@ -14,6 +14,8 @@ const { db, suggestItemPlacements, checkStoreLocation } = vi.hoisted(() => ({
     ],
     /** The crawler's review sheet, or null for an install without one. */
     crawl: null as string | null,
+    /** The owner's rate card; only maxAdditionalStores is read here. */
+    rateConfig: { maxAdditionalStores: 2 } as any,
   },
   suggestItemPlacements: vi.fn(),
   checkStoreLocation: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock("node:fs/promises", () => ({
 }));
 vi.mock("../src/services/itemPlacementService.js", () => ({ suggestItemPlacements }));
 vi.mock("../src/services/storeLocationGuard.js", () => ({ checkStoreLocation }));
+vi.mock("../src/lib/rateConfigCache.js", () => ({ getCachedRateConfig: vi.fn(async () => db.rateConfig) }));
 
 import {
   forgetStorePredictionMemory,
@@ -67,6 +70,7 @@ const noCategory = (names: string[]) =>
 
 beforeEach(() => {
   forgetStorePredictionMemory();
+  db.rateConfig = { maxAdditionalStores: 2 };
   db.errand = {
     id: "e-now",
     deliveryLatitude: 6.688,
@@ -201,6 +205,23 @@ describe("predictStores", () => {
     db.filings = stores.map((s, i) => filing(`e-${i}`, `thing${i}`, s));
     const result = await predictStores("e-now");
     expect(result.stores).toHaveLength(3);
+    expect(result.uncovered).toHaveLength(1);
+  });
+
+  it("follows the owner's Max Additional Stores Allowed, not a fixed three (2026-10-25)", async () => {
+    db.rateConfig = { maxAdditionalStores: 4 };
+    const stores = [0, 1, 2, 3, 4, 5].map((i) => ({
+      storeName: `Shop ${String.fromCharCode(65 + i)}`,
+      latitude: 6.68 + i * 0.005,
+      longitude: 124.67,
+      placeId: null,
+      categoryId: 3,
+    }));
+    db.pins = stores.map(pin);
+    db.errand.pabiliItemRequests = stores.map((_, i) => ({ itemName: `thing${i}` }));
+    db.filings = stores.map((s, i) => filing(`e-${i}`, `thing${i}`, s));
+    const result = await predictStores("e-now");
+    expect(result.stores).toHaveLength(5);
     expect(result.uncovered).toHaveLength(1);
   });
 });

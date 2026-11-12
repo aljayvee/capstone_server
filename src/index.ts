@@ -20,11 +20,13 @@ import { scheduleNightlyBackupJob } from "./jobs/nightlyBackup.js";
 import { scheduleRiderShiftJobs } from "./jobs/riderShiftJobs.js";
 import { scheduleCategoryRetrainingJob } from "./jobs/categoryRetraining.js";
 import { scheduleRiderWatchReconcileJob } from "./jobs/riderWatchReconcile.js";
+import { startRiderChatWatch } from "./services/riderChatWatchService.js";
 import { scheduleOfferExpiryJob } from "./jobs/offerExpiry.js";
 import { threatInterceptor } from "./middleware/threatInterceptor.js";
 import { sysAdminThreatService } from "./services/sysAdminThreatService.js";
 import apiRoutes from "./routes/index.js";
 import { TRUSTED_PROXIES } from "./lib/trustedProxies.js";
+import { rememberPublicOrigin } from "./lib/publicOrigin.js";
 
 const app = express();
 
@@ -60,6 +62,8 @@ app.use(
       "X-Total-Chunks",
       "X-Chunk-Size",
       "X-Total-Size",
+      // The notification bell's "Load more" (notificationController.listNotifications).
+      "X-Total-Count",
       // Rate limits: the portal's sign-in screen counts down the real wait and
       // warns before the lock (middleware/rateLimiters.ts, reportLoginAllowance)
       "Retry-After",
@@ -157,7 +161,8 @@ app.get("/api/health/stream", (req, res) => {
 });
 
 // All domain routes (auth, users, errands, riders, customer-locations, merchant-categories, rate-config)
-app.use("/api", apiRoutes);
+// rememberPublicOrigin: lets services build absolute image links (customer photos).
+app.use("/api", rememberPublicOrigin, apiRoutes);
 
 // Centralized error handler — MUST be registered last, after all routes.
 app.use(errorHandler);
@@ -170,6 +175,7 @@ scheduleRiderShiftJobs();
 scheduleCategoryRetrainingJob();
 scheduleRiderWatchReconcileJob();
 scheduleOfferExpiryJob();
+startRiderChatWatch();
 
 // Start HTTP Server (which includes Express and Socket.IO)
 httpServer.listen(Number(PORT), "0.0.0.0", () => {

@@ -43,12 +43,28 @@ export function getClientIp(req: Request): string {
 export const threatInterceptor = (req: Request, res: Response, next: NextFunction): void => {
   const clientIp = getClientIp(req);
 
-  // 1. Whitelist Check (Immune priority bypass)
+  // 1. Node2Shell / CVE-2026-111497 Brotli Decompression Invariant Guard
+  // Strictly reject incoming requests attempting Brotli content encoding ('br' or 'brotli').
+  // This shields Express and Node's native zlib Brotli decoder from crafted out-of-bounds payloads.
+  // Enforced universally across ALL IPs (including whitelisted and loopback callers).
+  const rawContentEncoding = (req.headers["content-encoding"] || "").toLowerCase();
+  if (rawContentEncoding.includes("br") || rawContentEncoding.includes("brotli")) {
+    logger.warn(
+      `[ThreatInterceptor] Blocked Brotli content-encoding probe (Node2Shell / CVE-2026-111497) from ${clientIp} on ${req.method} ${req.path}`
+    );
+    res.status(415).json({
+      error: "Unsupported Media Type",
+      message: "Brotli request content-encoding ('br') is rejected for system security (CVE-2026-111497).",
+    });
+    return;
+  }
+
+  // 2. Whitelist Check (Immune priority bypass)
   if (sysAdminThreatService.isIpWhitelisted(clientIp)) {
     return next();
   }
 
-  // 2. Blacklist Check (Instant drop)
+  // 3. Blacklist Check (Instant drop)
   const banStatus = sysAdminThreatService.checkIpBlocked(clientIp);
   if (banStatus.isBlocked) {
     logger.warn(`[ThreatInterceptor] Blocked banned request from ${clientIp} to ${req.path}`);
@@ -61,7 +77,7 @@ export const threatInterceptor = (req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  // 3. Directory Probe & Vulnerability Scanner Heuristics
+  // 4. Directory Probe & Vulnerability Scanner Heuristics
   const normalizedPath = req.path.toLowerCase();
   const isMaliciousProbe = MALICIOUS_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath));
 

@@ -34,6 +34,7 @@ const WITH_REPORT_DETAILS = {
   errand: {
     select: {
       id: true,
+      referenceNo: true,
       status: true,
       pickupAddress: true,
       deliveryAddress: true,
@@ -56,6 +57,18 @@ const WITH_REPORT_DETAILS = {
           extraction: { select: { confirmedTotal: true } },
         },
       },
+      settlement: {
+        select: {
+          id: true,
+          expectedAmount: true,
+          collectedAmount: true,
+          variance: true,
+          adjustments: {
+            where: { voidedAt: null },
+            select: { kind: true, amount: true, voidedAt: true },
+          },
+        },
+      },
       // The confirmed ledger row (UPFRONT/FINAL/TOP_UP/REFUND) and, where one
       // exists, the exact photo that justified it — the customer's own upload,
       // or a rider's door-side RIDER_BALANCE_PROOF. Lets the report show a
@@ -69,6 +82,8 @@ const WITH_REPORT_DETAILS = {
           confirmedBy: { select: { firstName: true, lastName: true } },
           proofImage: {
             select: {
+              // So the report can open the photo itself (owner, 2026-10-27).
+              id: true,
               riderId: true,
               customerId: true,
               capturedAt: true,
@@ -125,9 +140,10 @@ export const customerTransactionRepository = {
     }
   },
 
-  findBetween(start: Date, end: Date) {
+  findBetween(start: Date, end: Date, riderId?: number) {
     return prisma.customerTransaction.findMany({
-      where: { createdAt: { gte: start, lt: end } },
+      // riderId: the Transaction Summary's one-rider view; other callers omit it.
+      where: { createdAt: { gte: start, lt: end }, ...(riderId ? { errand: { riderId } } : {}) },
       include: WITH_REPORT_DETAILS,
       orderBy: { createdAt: "desc" },
     });

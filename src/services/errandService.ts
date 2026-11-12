@@ -15,11 +15,14 @@ import { fareAfterAgreement } from "./patterns/agreedFare.js";
 import { GEOFENCE_RADIUS_METERS } from "./geofenceService.js";
 import { decodePolyline, encodePolyline } from "../lib/routing/polyline.js";
 import { rateConfigRepository } from "../repositories/rateConfigRepository.js";
+import { getCachedRateConfig } from "../lib/rateConfigCache.js";
+import { assertWithinStoreLimit } from "../lib/storeLimit.js";
 import { customerTransactionRepository } from "../repositories/customerTransactionRepository.js";
 import { syncTransactionStatusQuietly } from "./transactionStatusService.js";
 import { userRepository } from "../repositories/userRepository.js";
 import { customerRepository } from "../repositories/customerRepository.js";
 import { errandDeclineRepository } from "../repositories/errandDeclineRepository.js";
+import { riderOfferDeclineRepository, type RiderDeclineKindValue } from "../repositories/riderOfferDeclineRepository.js";
 import { PRESET_DECLINE_REASONS } from "../validators/errandDeclineValidators.js";
 import { paymentSelectionRepository } from "../repositories/paymentSelectionRepository.js";
 import { ServiceError } from "./ServiceError.js";
@@ -29,6 +32,8 @@ import { grantRiderWatch, isWatchable, scheduleRiderWatchReconcile } from "../li
 import * as notificationService from "./notificationService.js";
 import { notificationRepository } from "../repositories/notificationRepository.js";
 import { notificationFactory } from "./patterns/notificationFactory.js";
+import { errandRef } from "./notificationCatalog.js";
+import { referenceLabel } from "../lib/errandReference.js";
 import { normalizeStatus, assertValidTransition, type ErrandStatusValue } from "./patterns/errandStateMachine.js";
 import { defaultPricingStrategy } from "./patterns/pricingStrategy.js";
 import { totalRouteDistanceKm, haversineDistanceKm } from "../lib/geo.js";
@@ -39,7 +44,15 @@ import * as riderPositionStore from "../lib/riderPositionStore.js";
 import * as riderBeaconService from "./riderBeaconService.js";
 import { describeReason, STATUS_LABEL } from "../lib/riderAvailability.js";
 import * as routingProvider from "../lib/routing/resilientRoutingService.js";
-import { isWithinServiceArea, isWithinServiceBuffer, isServiceAreaConfigured } from "../lib/serviceArea.js";
+import {
+  isWithinServiceBuffer,
+  isServiceAreaConfigured,
+  validateIntraZone,
+  detectServiceZone,
+  serviceZoneName,
+  CROSS_ZONE_MESSAGE,
+} from "../lib/serviceArea.js";
+import { dispatchTargetPoint, errandServiceZone, namedRiderZoneConflict, riderMayTakeZone } from "./dispatchZone.js";
 import { POSITION_FRESHNESS_MS } from "./etaService.js";
 import * as commissionService from "./commissionService.js";
 // Namespace import, deliberately: errandPaymentService calls back into
@@ -57,6 +70,7 @@ import { buildRiderEarnings, type EarningErrand } from "./patterns/riderEarnings
 import { whereRiderBecomesFree, dispatchCostSeconds } from "./patterns/dispatchCost.js";
 import type { GeoPoint } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
+import { submissionHash, assertSubmissionContents } from "./patterns/submissionIdentity.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import * as deliveryReminders from "./deliveryReminderService.js";
 import * as deliveryHolds from "./deliveryHoldService.js";
@@ -340,8 +354,9 @@ export async function quoteErrand(input: {
   const tip = Math.max(0, Number(input.tip) || 0);
   const storeCount = Math.max(1, Math.round(Number(input.storeCount) || 1));
   const isCod = input.isCod !== false;
+  await assertWithinStoreLimit(storeCount);
 
-  const rateConfig = await rateConfigRepository.findFirst();
+  const rateConfig = await getCachedRateConfig();
   if (!rateConfig) {
     throw new ServiceError(503, "Pricing is not configured yet. Please try again shortly.");
   }
@@ -378,11 +393,14 @@ export async function quoteErrand(input: {
   });
 }
 
-export async function listErrands(requestingUser?: { id: number; role: string }) {
+export async function listErrands(
+  requestingUser?: { id: number; role: string },
+  opts: { take?: number; skip?: number } = {}
+) {
   const errands =
     requestingUser?.role === "DISPATCHER"
-      ? await errandRepository.findManyForDispatcher(requestingUser.id)
-      : await errandRepository.findMany();
+      ? await errandRepository.findManyForDispatcher(requestingUser.id, opts)
+      : await errandRepository.findMany(opts);
   return errands.map(attachErrandNames);
 }
 
@@ -394,6 +412,15 @@ export async function getErrandById(id: string) {
   // cannot be read, so a client's copy keeps what it last knew.
   const deliveryHold = await deliveryHolds.deliveryHoldOf(errand).catch(() => undefined);
   return { ...attachErrandNames(errand), ...(deliveryHold !== undefined ? { deliveryHold } : {}) };
+}
+
+/** The rider carrying a held order: shop for the same customer's other one first. */
+function tellRiderHeld(errandId: string, riderId: number | null | undefined) {
+  if (!riderId) return;
+  void notificationService.notifyErrandRider(errandId, "DELIVERY_HELD_RIDER", (label) => ({
+    title: "Hold this delivery",
+    body: `${label} waits for the same customer's other order. Shop for that one first, then deliver both together.`,
+  }), { riderId });
 }
 
 /**
@@ -415,6 +442,7 @@ async function refreshDeliveryHolds(errand: Parameters<typeof deliveryHolds.boug
     etaService.recomputeInBackground(errandId, { force: true });
     if (announcedBy && heldFor?.id === announcedBy) {
       deliveryReminders.inBackground(deliveryReminders.notifyDeliveryHeld(errandId), "delivery-held push");
+      tellRiderHeld(errandId, full.riderId);
     }
   }
   return neighbours;
@@ -437,6 +465,7 @@ async function afterItemsPurchased(errandId: string) {
       deliveryHold: { errandId: heldFor.id },
     });
     await deliveryReminders.notifyDeliveryHeld(errandId);
+    tellRiderHeld(errandId, errand.riderId);
     return;
   }
   const released = neighbours.filter((n) => !n.heldFor).length;
@@ -470,6 +499,7 @@ export async function listErrandsForRider(riderId: number) {
 }
 
 export interface CreateErrandInput {
+  submissionId?: string;
   customerId?: string | number;
   category?: string;
   description?: string;
@@ -580,6 +610,36 @@ export function customerStoreFiling(pins: CustomerPin[], index: number | undefin
 }
 
 export async function createErrand(fallbackCustomerId: number, input: CreateErrandInput) {
+  if (!input.submissionId) return createNewErrand(fallbackCustomerId, input);
+  const customerId = input.customerId ? parseInt(String(input.customerId), 10) : fallbackCustomerId;
+  const hash = submissionHash(input);
+  const replay = async () => {
+    const existing = await errandRepository.findBySubmission(customerId, input.submissionId!);
+    if (!existing) return null;
+    assertSubmissionContents(existing.submissionHash, hash);
+    return attachErrandNames(existing);
+  };
+  const existing = await replay();
+  if (existing) return existing;
+  try {
+    return await createNewErrand(fallbackCustomerId, input, hash);
+  } catch (error) {
+    // The database is the arbiter across workers/processes. A losing concurrent
+    // create rolls back its errand, items, receipt and reference counter.
+    if ((error as { code?: string })?.code === "P2002") {
+      const winner = await replay();
+      if (winner) return winner;
+    }
+    throw error;
+  }
+}
+
+export async function getSubmissionForCustomer(customerId: number, submissionId: string) {
+  const errand = await errandRepository.findBySubmission(customerId, submissionId);
+  return errand ? attachErrandNames(errand) : null;
+}
+
+async function createNewErrand(fallbackCustomerId: number, input: CreateErrandInput, hash?: string) {
   const {
     customerId,
     category = "Pabili",
@@ -602,7 +662,7 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
       if (!isWithinServiceBuffer({ latitude: dLat, longitude: dLng }, 0.1)) {
         throw new ServiceError(
           422,
-          "Delivery address is outside Tacurong City service area. SUGO Express currently operates exclusively within Tacurong City."
+          "Delivery address is outside all supported service areas. SUGO Express currently delivers within Tacurong City and Banga."
         );
       }
     }
@@ -616,6 +676,8 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
   // Stores the customer picked themselves become the errand's first pins, so
   // they arrive pinned in the dispatcher's Stage 1. Resolved before anything is
   // written (see resolveCustomerStores).
+  // 1 + the owner's Max Additional Stores Allowed, read from the rate card.
+  await assertWithinStoreLimit(Math.max(input.stores?.length ?? 0, Math.round(Number(input.storeCount) || 0)));
   const customerPins = input.stores?.length ? await resolveCustomerStores(input.stores) : [];
   // The working copy is filed under those stops by number. The customer's own
   // request keeps the plain category name: the handling fee is decided from it
@@ -650,7 +712,7 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
       : input.storeCount && input.storeCount > 0
         ? Math.round(input.storeCount)
         : distinctStoreCategories(pabiliItems);
-  const rateConfig = await rateConfigRepository.findFirst();
+  const rateConfig = await getCachedRateConfig();
 
   // Same categories the quote was priced against, so the errand a customer
   // creates matches the figure they just agreed to. Recomputed properly once the
@@ -677,6 +739,16 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
   const totalCost = breakdown.totalCost;
 
   const newErrand = await errandRepository.create({
+    ...(input.submissionId ? {
+      submissionId: input.submissionId,
+      submissionHash: hash,
+      // This receipt must commit with the order, not in a second transaction.
+      transaction: { create: {
+        customerId: finalCustomerId,
+        amount: totalCost,
+        paymentMethod: input.paymentMethod || "PENDING",
+      } },
+    } : {}),
     category,
     description,
     pickupAddress,
@@ -741,7 +813,9 @@ export async function createErrand(fallbackCustomerId: number, input: CreateErra
     },
   });
 
-  await customerTransactionRepository.create(finalCustomerId, newErrand.id, totalCost, input.paymentMethod || "PENDING");
+  if (!input.submissionId) {
+    await customerTransactionRepository.create(finalCustomerId, newErrand.id, totalCost, input.paymentMethod || "PENDING");
+  }
   // Before the reply, so the customer's chat opens the moment the app shows it.
   await grantCustomerChat(newErrand.id, finalCustomerId);
 
@@ -854,6 +928,7 @@ async function priceForStops(
       isCod,
       categoryModes,
       quotedHandlingCeiling: errand.quotedHandlingFee,
+      quotedHandlingBasket: errand.quotedHandlingBasket,
       handlingEvidence,
     },
     rateConfig
@@ -879,19 +954,36 @@ async function priceForStops(
   });
 
   const fareIsAgreed = fare.frozen;
-  const effectiveDeliveryFee = fare.deliveryFee;
-  const effectiveTotalCost = fare.totalCost;
+
+  // When an errand was agreed without a priced basket (quotedHandlingBasket <= 0 or null),
+  // the agreed fare only covered the transit ride (base + distance + multi-store).
+  // Once items are purchased and a real basket is priced, the purchase handling fee (grocery fee)
+  // and non-COD fee must dynamically trigger and be added to the delivery fee.
+  const unpricedHandlingTriggered =
+    fareIsAgreed &&
+    (errand.quotedHandlingBasket ?? 0) <= 0 &&
+    (breakdown.groceryFee > 0 || breakdown.nonCodFee > 0);
+
+  const effectiveDeliveryFee = unpricedHandlingTriggered
+    ? Math.round(fare.deliveryFee + breakdown.groceryFee + breakdown.nonCodFee)
+    : fare.deliveryFee;
+
+  const effectiveTotalCost = unpricedHandlingTriggered
+    ? Math.round((errand.estimatedCost + effectiveDeliveryFee + errand.tip) * 100) / 100
+    : fare.totalCost;
 
   // Components are kept as stamped rather than recomputed, because they are the
   // account of the agreed fare — a freshly derived set would explain a bill the
   // customer was never charged, and the four are documented to sum to it.
   const components = fareIsAgreed
     ? {
-        multiStoreFee: errand.multiStoreFee,
-        groceryFee: errand.groceryFee,
-        nonCodFee: errand.nonCodFee,
-        distanceFee: errand.distanceFee,
-        handlingFeeDecision: errand.handlingFeeDecision as Prisma.InputJsonValue,
+        multiStoreFee: errand.multiStoreFee ?? breakdown.multiStoreFee,
+        groceryFee: unpricedHandlingTriggered ? breakdown.groceryFee : errand.groceryFee,
+        nonCodFee: unpricedHandlingTriggered ? breakdown.nonCodFee : errand.nonCodFee,
+        distanceFee: errand.distanceFee ?? breakdown.distanceFee,
+        handlingFeeDecision: (unpricedHandlingTriggered
+          ? breakdown.handlingDecision
+          : errand.handlingFeeDecision) as Prisma.InputJsonValue,
       }
     : {
         multiStoreFee: breakdown.multiStoreFee,
@@ -910,7 +1002,7 @@ export async function recalculateFee(errandId: string) {
     throw new ServiceError(404, "Errand not found");
   }
 
-  const rateConfig = await rateConfigRepository.findFirst();
+  const rateConfig = await getCachedRateConfig();
   if (!rateConfig) {
     return attachErrandNames(errand);
   }
@@ -992,10 +1084,11 @@ export async function quotePinpoints(errandId: string, pins: PinpointInput[]) {
   if (!errand) {
     throw new ServiceError(404, "Errand not found");
   }
-  const rateConfig = await rateConfigRepository.findFirst();
+  const rateConfig = await getCachedRateConfig();
   if (!rateConfig) {
     throw new ServiceError(503, "Pricing is not configured yet.");
   }
+  await assertWithinStoreLimit(pins.length, errand.pinpoints?.length ?? 0);
 
   for (const pin of pins) {
     const verdict = await checkStoreLocation({ latitude: pin.latitude, longitude: pin.longitude });
@@ -1003,6 +1096,7 @@ export async function quotePinpoints(errandId: string, pins: PinpointInput[]) {
       throw new ServiceError(422, `${pin.storeName ? `${pin.storeName}: ` : ""}${verdict.message}`);
     }
   }
+  assertStopsInDeliveryZone(errand, pins);
 
   const categoryModes = await resolveCategoryModes(
     errandId,
@@ -1234,6 +1328,28 @@ export async function assignRider(
   // else would be worse than telling them the rider is full.
   const candidates: number[] = riderId ? [riderId] : [];
 
+  // Dual-zone isolation (2026-11-09): the errand's zone comes from its
+  // coordinates, and automatic dispatch offers it only to riders whose fresh fix
+  // is in that same zone (dispatchZone.ts). A Banga rider never receives a
+  // Tacurong errand, and the other way round.
+  const zoneGate = isServiceAreaConfigured();
+  const errandZone = errandServiceZone(errand);
+  // Available riders automatic dispatch passed over for being in another zone
+  // (or none), so an empty queue can say why.
+  let ridersOutsideZone = 0;
+
+  // A rider the dispatcher named is refused only on proof: a last known fix in
+  // the other zone. No fix, or one outside every zone, stays their call.
+  if (riderId && zoneGate) {
+    const conflict = namedRiderZoneConflict(riderPositionStore.get(riderId)?.point, errandZone);
+    if (conflict && errandZone) {
+      throw new ServiceError(
+        409,
+        `This rider is working in ${serviceZoneName(conflict)} and this errand is in ${serviceZoneName(errandZone)}. Riders take errands only in their own service area.`
+      );
+    }
+  }
+
   // Automated "Assign Rider Now" algorithm when riderId is not explicitly provided
   if (candidates.length === 0) {
     // 1. Repeat-customer priority (capped at 3 active/queued per customer).
@@ -1278,7 +1394,8 @@ export async function assignRider(
       const repeatRider = activeRiders.find(
         (rider) =>
           (countByRider.get(rider.id) ?? 0) < MAX_ACTIVE_ERRANDS_PER_RIDER &&
-          repeatAvailability.get(rider.id)?.dispatchable === true
+          repeatAvailability.get(rider.id)?.dispatchable === true &&
+          riderMayTakeZone(riderPositionStore.getFresh(rider.id, POSITION_FRESHNESS_MS)?.point, errandZone)
       );
       // Preferred, not exclusive: proximity ranking still runs below and fills in
       // behind them, so a repeat rider who turns out to be full falls through to
@@ -1296,12 +1413,8 @@ export async function assignRider(
     // travel time on the road network rather than straight-line distance: a
     // rider 500 m away across the river is not the nearest rider.
     {
-      const store1 = errand.pinpoints && errand.pinpoints.length > 0 ? errand.pinpoints[0] : null;
-      const targetPoint = store1
-        ? { latitude: Number(store1.latitude), longitude: Number(store1.longitude) }
-        : errand.deliveryLatitude != null && errand.deliveryLongitude != null
-          ? { latitude: errand.deliveryLatitude, longitude: errand.deliveryLongitude }
-          : null;
+      // The first store, else the drop-off.
+      const targetPoint = dispatchTargetPoint(errand);
 
       if (!targetPoint) {
         throw new ServiceError(
@@ -1378,8 +1491,17 @@ export async function assignRider(
       // Only riders whose last known position is recent enough to mean anything,
       // using the same 60s threshold the dashboard uses to paint a rider as
       // "signal lost" — so the map and dispatch can never disagree about who is
-      // reachable. Riders outside the service area are excluded too: the routing
+      // reachable. Riders outside the errand's zone are excluded too: the other
+      // zone's riders must never get it, and outside every zone the routing
       // graph has no roads for them and any travel time would be invented.
+      //
+      // The same rule bounds the fallbacks below. Without it the least-loaded
+      // and back-of-queue fallbacks would hand a Banga errand to a Tacurong
+      // rider whenever no Banga rider was ranked.
+      const zonedRiders = eligibleRiders.filter((rider) =>
+        riderMayTakeZone(riderPositionStore.getFresh(rider.id, POSITION_FRESHNESS_MS)?.point, errandZone)
+      );
+      ridersOutsideZone = eligibleRiders.length - zonedRiders.length;
       const now = Date.now();
       const located = eligibleRiders
         .map((rider) => {
@@ -1401,14 +1523,15 @@ export async function assignRider(
           (entry): entry is typeof entry & { free: { point: GeoPoint } & typeof entry.free } =>
             entry.position !== undefined &&
             entry.free.point !== null &&
-            isWithinServiceArea(entry.free.point)
+            riderMayTakeZone(entry.position.point, errandZone) &&
+            riderMayTakeZone(entry.free.point, errandZone)
         );
 
       if (located.length === 0) {
         // No usable positions: fall back to the least-loaded rider rather than
         // failing the dispatch, but say so plainly instead of pretending a
         // proximity decision was made.
-        const byLoad = [...eligibleRiders].sort(
+        const byLoad = [...zonedRiders].sort(
           (a, b) => a.errandsAsRider.length - b.errandsAsRider.length
         );
         if (byLoad.length > 0) {
@@ -1464,13 +1587,26 @@ export async function assignRider(
 
       // Riders with no usable position still belong at the BACK of the queue, so
       // a dispatch never fails while a willing rider is standing by unranked.
-      candidates.push(...eligibleRiders.map((r) => r.id));
+      // In the errand's zone only (see zonedRiders above).
+      candidates.push(...zonedRiders.map((r) => r.id));
     }
   }
 
   // Deduped, order preserved: proximity and least-loaded can both nominate the
   // same rider, and retrying one who just refused a slot only wastes a round trip.
   const orderedCandidates = [...new Set(candidates)];
+  if (orderedCandidates.length === 0 && !riderId && zoneGate) {
+    const elsewhere =
+      ridersOutsideZone > 0
+        ? ` ${ridersOutsideZone} available rider${ridersOutsideZone === 1 ? " is" : "s are"} elsewhere or without a recent location.`
+        : "";
+    throw new ServiceError(
+      404,
+      errandZone
+        ? `No rider is currently available in the ${serviceZoneName(errandZone)} service area.${elsewhere}`
+        : "This errand's stores and drop-off are outside every service area, so no rider can be matched to it."
+    );
+  }
   if (orderedCandidates.length === 0) {
     throw new ServiceError(
       404,
@@ -1559,7 +1695,7 @@ export async function declineErrand(
   errandId: string,
   riderId: number,
   reason?: string,
-  options: { reassign?: boolean } = {}
+  options: { reassign?: boolean; kind?: RiderDeclineKindValue } = {}
 ) {
   const errand = await errandRepository.findStatusAndRiderById(errandId);
   if (!errand) {
@@ -1579,6 +1715,24 @@ export async function declineErrand(
   if (released === 0) {
     throw new ServiceError(409, "This offer is no longer open. It was accepted, cancelled or has already expired.");
   }
+
+  // The permanent record. releaseOffer has just cleared riderId, so this row is
+  // the only place left that says this rider was offered this errand and did
+  // not take it. The rider app sends OFFER_EXPIRED_REASON when its own countdown
+  // runs out, which is a lapse, not a refusal. A failed write is logged, not
+  // thrown: the offer is already released and must still go to the next rider.
+  try {
+    await riderOfferDeclineRepository.create({
+      riderId,
+      errandId,
+      kind: options.kind ?? (reason?.trim() === OFFER_EXPIRED_REASON ? "EXPIRED" : "DECLINED"),
+      reason: reason?.trim().slice(0, 500) || null,
+      offeredAt: errand.assignedAt ?? null,
+    });
+  } catch (recordErr) {
+    logger.error(`Could not record rider ${riderId}'s decline of errand ${errandId}:`, recordErr);
+  }
+
   const updatedErrand = await errandRepository.findById(errandId);
   if (!updatedErrand) {
     throw new ServiceError(404, "Errand not found");
@@ -1597,6 +1751,20 @@ export async function declineErrand(
   if (options.reassign !== false) {
     try {
       const reassigned = await assignRider(errandId, undefined, [riderId]);
+      void (async () => {
+        const [label, name] = await Promise.all([
+          notificationService.errandLabel(errandId),
+          notificationService.riderName(riderId),
+        ]);
+        await notificationService.notifyStaff(
+          "RIDER_DECLINED",
+          {
+            title: `${name} declined an errand`,
+            body: `${label} was offered to the next rider${reason ? `. Reason: ${reason}` : "."}`,
+          },
+          { errandId }
+        );
+      })().catch(() => undefined);
       return reassigned;
     } catch (_reRouteErr) {
       // Falls through to the dispatcher alert below.
@@ -1607,6 +1775,16 @@ export async function declineErrand(
     errandId,
     reason: reason || "All eligible riders declined or timed out",
   });
+  void (async () => {
+    await notificationService.notifyStaff(
+      "ALL_RIDERS_DECLINED",
+      {
+        title: "No rider took an errand",
+        body: `${await notificationService.errandLabel(errandId)} has no rider. ${reason || "All eligible riders declined or timed out"}. Assign one by hand.`,
+      },
+      { errandId }
+    );
+  })().catch(() => undefined);
   return errandWithNames;
 }
 
@@ -1621,6 +1799,13 @@ export async function declineErrand(
  * not the server, normally has the last word.
  */
 export const OFFER_EXPIRY_MS = 60_000;
+
+/**
+ * The reason sent with an offer nobody answered, by this server's expiry job and,
+ * word for word, by the rider app when its own countdown ends (useRiderMission).
+ * declineErrand reads it to record a lapse rather than a refusal.
+ */
+export const OFFER_EXPIRED_REASON = "Offer expired with no answer from the rider";
 
 /**
  * Past this, an expired offer goes back to the dispatcher instead of straight
@@ -1638,10 +1823,22 @@ export async function expireStaleOffers(now = new Date()): Promise<number> {
     if (offer.riderId === null) continue;
     const ageMs = now.getTime() - (offer.assignedAt?.getTime() ?? 0);
     try {
-      await declineErrand(offer.id, offer.riderId, "Offer expired with no answer from the rider", {
+      await declineErrand(offer.id, offer.riderId, OFFER_EXPIRED_REASON, {
         reassign: ageMs <= OFFER_REASSIGN_WINDOW_MS,
+        kind: "EXPIRED",
       });
       expired += 1;
+      // Told to the rider whose offer lapsed: releaseOffer has already taken
+      // them off the errand, so no errand event reaches them any more.
+      void notificationService.notifyErrandRider(
+        offer.id,
+        "OFFER_EXPIRED",
+        (errand) => ({
+          title: "Offer expired",
+          body: `${errand} was not accepted in time, so it went back to dispatch.`,
+        }),
+        { riderId: offer.riderId }
+      );
     } catch (error) {
       // 409: the rider accepted or declined in the same instant. Their answer stands.
       if (!(error instanceof ServiceError && error.status === 409)) {
@@ -1703,6 +1900,12 @@ export async function confirmOrder(errandId: string, customerId: number) {
   const errandWithNames = attachErrandNames(confirmed);
   publishToErrand("order:confirmed", errandWithNames, { errandId, customerId, confirmedAt: new Date() });
   publishToErrand("order:updated", errandWithNames);
+  if (confirmed.riderId) {
+    void notificationService.notifyErrandRider(errandId, "ITEMS_CONFIRMED", (label) => ({
+      title: "Items approved",
+      body: `${label}: the customer approved the list. You can buy the items.`,
+    }), { riderId: confirmed.riderId });
+  }
   return errandWithNames;
 }
 
@@ -1725,6 +1928,30 @@ function continuesStop(
   );
 }
 
+/**
+ * Dual-zone isolation (2026-11-09): the stops and the drop-off must all be in
+ * ONE zone, Tacurong or Banga. HTTP 400, the same refusal createErrandSchema
+ * gives at checkout. A point in no zone is left to the location checks that
+ * already refuse it with their own words, so only a real cross-zone set is
+ * refused here.
+ */
+function assertStopsInDeliveryZone(
+  errand: { deliveryLatitude: number | null; deliveryLongitude: number | null },
+  pins: Array<{ latitude: number; longitude: number }>
+): void {
+  if (!isServiceAreaConfigured()) return;
+  const points: GeoPoint[] = [
+    ...(errand.deliveryLatitude != null && errand.deliveryLongitude != null
+      ? [{ latitude: Number(errand.deliveryLatitude), longitude: Number(errand.deliveryLongitude) }]
+      : []),
+    ...pins.map((pin) => ({ latitude: Number(pin.latitude), longitude: Number(pin.longitude) })),
+  ].filter((point) => detectServiceZone(point) !== null);
+  const verdict = validateIntraZone(points);
+  if (verdict.reason === "CROSS_ZONE") {
+    throw new ServiceError(400, verdict.error ?? CROSS_ZONE_MESSAGE);
+  }
+}
+
 // Dispatcher sets/replaces the store pinpoints (waypoints) a rider must follow for
 // this errand. Persisted as structured data (not just an ephemeral chat message) so
 // both the rider's live map and any GIS routing have a single source of truth.
@@ -1734,14 +1961,15 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
     throw new ServiceError(404, "Errand not found");
   }
 
-  // Any store outside the Tacurong City service area (> 100m buffer) or off
-  // the loaded road graph is strictly rejected with HTTP 422.
+  // Any store outside every service area (> 100m buffer) or off the loaded
+  // road graph is strictly rejected with HTTP 422.
   for (const pin of pins) {
     const verdict = await checkStoreLocation({ latitude: pin.latitude, longitude: pin.longitude });
     if (verdict.status === "blocked") {
       throw new ServiceError(422, `${pin.storeName ? `${pin.storeName}: ` : ""}${verdict.message}`);
     }
   }
+  assertStopsInDeliveryZone(errand, pins);
 
   // A stop the rider has already filed a receipt against is kept, not deleted
   // and recreated. Replace-all used to run unconditionally, so re-pinning
@@ -1749,6 +1977,7 @@ export async function savePinpoints(errandId: string, pins: PinpointInput[]) {
   // dwell observations (2026-10-09). Such a stop must still be in the new list;
   // a stop with no receipt (a closed store the rider only reached) can go.
   const existingStops = await pinpointRepository.findWithProofCounts(errandId);
+  await assertWithinStoreLimit(pins.length, existingStops.length);
   const withReceipts = existingStops.filter((stop) => stop._count.proofImages > 0);
   if (withReceipts.length === 0) {
     await pinpointRepository.replaceForErrand(errandId, pins);
@@ -1856,6 +2085,12 @@ export async function updateItems(errandId: string, items: PabiliDetailInput[]) 
   const updatedErrand = await errandRepository.findById(errandId);
   const errandWithNames = attachErrandNames(updatedErrand!);
   publishToErrand("order:updated", errandWithNames);
+  if (updatedErrand?.riderId) {
+    void notificationService.notifyErrandRider(errandId, "ITEMS_UPDATED", (label) => ({
+      title: "Items list changed",
+      body: `${label}: dispatch changed the items. Check the list before you buy.`,
+    }), { riderId: updatedErrand.riderId });
+  }
   return errandWithNames;
 }
 
@@ -2063,10 +2298,13 @@ export async function updateItemFulfillmentStatus(
       const oosNotification = notificationFactory.itemOutOfStock(itemLabel, storeName);
       const latestLog = errandWithNames.dispatchLogs?.[0];
       if (latestLog?.dispatcherId) {
-        void notificationRepository.create({
-          userId: latestLog.dispatcherId,
-          ...oosNotification,
-        });
+        // Priority and refKey from the catalog; the bell's "Open Stage 2" reads refKey.
+        void notificationService.deliverToStaff(
+          [latestLog.dispatcherId],
+          "ITEM_OUT_OF_STOCK",
+          oosNotification,
+          errandRef(errandId)
+        ).catch((error) => logger.error(`Could not write out-of-stock notification for ${errandId}:`, error));
       }
       eventPublisher.emitToRole("DISPATCHER", "errand:item_out_of_stock", {
         errandId,
@@ -2132,6 +2370,13 @@ export async function declineItemSubstitute(
       itemName: formatItemLabel(itemRow.itemName, itemRow.size),
     }
   );
+  if (existing.riderId) {
+    const item = formatItemLabel(itemRow.itemName, itemRow.size);
+    void notificationService.notifyErrandRider(errandId, "SUBSTITUTE_ANSWERED", (label) => ({
+      title: `No substitute: ${item}`,
+      body: `${label}: skip ${item}. The customer does not want a replacement.`,
+    }), { riderId: existing.riderId });
+  }
 
   const errandWithNames = await getErrandById(errandId);
   return { success: true, item: itemRow, errand: errandWithNames };
@@ -2223,6 +2468,44 @@ export async function applyReceiptTotal(errandId: string, riderId: number, recei
 // occurredAt lets a rider report when they actually accepted, not when their
 // phone regained signal to say so. Same queue-then-flush pattern the
 // connectivity-incident endpoint already uses (see connectivityIncidentService).
+/** What a rider is told when the errand they are on is cancelled. */
+function riderCancelledCopy(errand: string) {
+  return {
+    title: "Errand cancelled",
+    body: `${errand} was cancelled. Stop work on it. If you already bought items, message dispatch.`,
+  };
+}
+
+/**
+ * An order milestone the customer hears about (user, 2026-10-21): a saved row
+ * linked to the errand, plus a push. In the background and never throws, so a
+ * status change never fails because the customer could not be told.
+ */
+function tellCustomer(
+  errandId: string,
+  type: "RIDER_ASSIGNED" | "ERRAND_DELIVERED" | "ERRAND_CANCELLED",
+  build: (facts: { reference: string; riderName: string; stores: string }) => { title: string; body: string }
+) {
+  void (async () => {
+    const errand = await errandRepository.findById(errandId);
+    if (!errand?.customerId) return;
+    const customer = await customerRepository.findById(errand.customerId);
+    if (!customer) return;
+    const stores = ((errand as { pinpoints?: Array<{ storeName?: string | null }> }).pinpoints ?? [])
+      .map((pin) => pin.storeName?.trim())
+      .filter(Boolean)
+      .join(" & ");
+    const riderName = (errand as { rider?: { firstName?: string | null } | null }).rider?.firstName?.trim() || "Your rider";
+    const content = build({ reference: await referenceLabel(errandId), riderName, stores });
+    await notificationService.notifyCustomer(
+      { id: customer.id, expoPushToken: customer.expoPushToken },
+      type,
+      content,
+      errandId
+    );
+  })().catch((error) => logger.error(`Could not tell the customer ${type} for errand ${errandId}:`, error));
+}
+
 export async function acceptErrand(errandId: string, riderId: number, occurredAt?: Date) {
   const errand = await errandRepository.findStatusAndRiderById(errandId);
   if (!errand) {
@@ -2268,6 +2551,12 @@ export async function acceptErrand(errandId: string, riderId: number, occurredAt
 
   const errandWithNames = attachErrandNames(updatedErrand);
   publishToErrand("order:updated", errandWithNames);
+  tellCustomer(errandId, "RIDER_ASSIGNED", ({ riderName, stores }) => ({
+    title: `${riderName} is on your errand`,
+    body: stores
+      ? `${riderName} is heading to ${stores} now. You can follow them on the map.`
+      : `${riderName} is heading to the store now. You can follow them on the map.`,
+  }));
   // The rider is now en route, so an ETA becomes meaningful for the first time.
   etaService.recomputeInBackground(errandId, { force: true });
   // The same customer's order already bought and on its way to the same door
@@ -2343,6 +2632,29 @@ export async function updateStatus(
 
   const errandWithNames = attachErrandNames(updatedErrand);
   publishToErrand("order:updated", errandWithNames);
+
+  // Customers cannot change a status on this route, so a cancellation here is
+  // staff's or a rider's. "Passing by" (closed without an order) is not one the
+  // customer placed, so it is not news to them.
+  if (normalized === "DELIVERED") {
+    tellCustomer(errandId, "ERRAND_DELIVERED", ({ reference, riderName }) => ({
+      title: "Your order was delivered",
+      body: `Errand ${reference} was delivered by ${riderName}. Tap to see the details.`,
+    }));
+  } else if (normalized === "CANCELLED" && String(rawStatus).trim().toUpperCase() !== "PASSING BY") {
+    tellCustomer(errandId, "ERRAND_CANCELLED", ({ reference }) => ({
+      title: "Your errand was cancelled",
+      body: `Errand ${reference} was cancelled. Ask us in the chat if you did not expect this, or place it again any time.`,
+    }));
+  }
+  if (normalized === "CANCELLED") {
+    // The rider on it, unless they are the one who cancelled.
+    void notificationService.notifyErrandRider(errandId, "RIDER_ERRAND_CANCELLED", riderCancelledCopy, {
+      riderId: errand.riderId,
+      exceptRiderId: caller.role === "RIDER" ? caller.id : null,
+      push: { urgent: true },
+    });
+  }
   return errandWithNames;
 }
 
@@ -2383,6 +2695,11 @@ export async function declineErrandReview(
   const errandWithNames = attachErrandNames(updated);
   publishToErrand("order:updated", errandWithNames);
   publishToErrand("errand:declined", errandWithNames, { errandId, reason: trimmed, customerId: errand.customerId });
+  // A rider can already be on it when a dispatcher ends it here.
+  void notificationService.notifyErrandRider(errandId, "RIDER_ERRAND_CANCELLED", riderCancelledCopy, {
+    riderId: errand.riderId,
+    push: { urgent: true },
+  });
 
   void (async () => {
     try {
@@ -2437,14 +2754,19 @@ export async function notifyCustomerChatMessage(
   // Truncate to ~120 characters with ellipsis
   const truncated = text.length > 120 ? `${text.slice(0, 117)}...` : text;
 
-  // 1. Instant Socket.io delivery to active customer session (zero-latency in-app heads-up alert)
-  eventPublisher.emitToCustomer(customer.id, "notification:new", {
-    type: "CHAT_MESSAGE",
-    title: `Message from ${name}`,
-    body: truncated,
-    errandId,
-    createdAt: new Date().toISOString(),
-  });
+  // 1. Saved, one unread row per errand chat ("(N new)", latest line), so the
+  // conversation shows in the customer's notification list. The repository
+  // emits it to the customer's session, linked to the errand.
+  try {
+    await notificationService.deliverToCustomer(
+      customer.id,
+      "CHAT_MESSAGE",
+      { title: `Message from ${name}`, body: truncated },
+      errandId
+    );
+  } catch (error) {
+    logger.error(`Could not save the chat notification for errand ${errandId}:`, error);
+  }
 
   // 2. Deliver remote Expo FCM push notification for background / locked device
   if (customer.expoPushToken) {

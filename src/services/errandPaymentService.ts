@@ -17,6 +17,8 @@ import { notificationRepository } from "../repositories/notificationRepository.j
 import { notificationFactory } from "./patterns/notificationFactory.js";
 import * as errandService from "./errandService.js";
 import { syncTransactionStatusQuietly } from "./transactionStatusService.js";
+import * as notificationService from "./notificationService.js";
+import { referenceLabel } from "../lib/errandReference.js";
 
 /**
  * The money on any errand the customer does not pay in cash.
@@ -166,7 +168,55 @@ export async function publishPaymentUpdate(
     "errand:payment_updated",
     { errandId, reason, ledger: view, at: new Date().toISOString() }
   );
+  if (parties?.customerId) {
+    void tellCustomerAboutPayment(errandId, reason, view, {
+      id: parties.customerId,
+      expoPushToken: parties.customerPushToken,
+    });
+  }
   return view;
+}
+
+/** The customer's row for a payment milestone (user, 2026-10-21). Never throws. */
+async function tellCustomerAboutPayment(
+  errandId: string,
+  reason: PaymentUpdateReason,
+  view: PaymentLedgerView,
+  customer: { id: number; expoPushToken: string | null }
+) {
+  try {
+    const kind = reason === "balance_confirmed" ? "FINAL" : reason === "overage_resolved" ? "TOP_UP" : "REFUND";
+    const latest = [...(view.entries ?? [])]
+      .filter((entry) => entry.kind === kind)
+      .sort((a, b) => new Date(b.confirmedAt).getTime() - new Date(a.confirmedAt).getTime())[0];
+    const amount = latest ? `₱${Number(latest.amount).toFixed(2)}` : null;
+    const errand = `Errand ${await referenceLabel(errandId)}`;
+
+    const content =
+      reason === "balance_confirmed"
+        ? {
+            type: "PAYMENT_CONFIRMED" as const,
+            title: "Payment received",
+            body: amount ? `${errand}: we received your ${amount}. Thank you.` : `${errand}: your payment was received. Thank you.`,
+          }
+        : reason === "overage_resolved"
+          ? {
+              type: "EXTRA_CHARGE_RESOLVED" as const,
+              title: "Extra charge settled",
+              body: amount
+                ? `${errand}: the ${amount} for items that cost more than expected is settled. Your rider can hand them over.`
+                : `${errand}: the extra charge for items that cost more than expected is settled.`,
+            }
+          : {
+              type: "PAYMENT_REFUNDED" as const,
+              title: "Refund sent",
+              body: amount ? `${errand}: ${amount} was refunded to you.` : `${errand}: your refund was sent.`,
+            };
+
+    await notificationService.notifyCustomer(customer, content.type, content, errandId);
+  } catch (error) {
+    logger.error(`Could not tell the customer about ${reason} on errand ${errandId}:`, error);
+  }
 }
 
 function assertHasLedger(selection: Parameters<typeof hasPaymentLedger>[0]) {
@@ -345,6 +395,12 @@ export async function confirmBalancePayment(
   const view = await getPaymentLedger(errandId);
   eventPublisher.emitToErrand(errandId, "errand:balance_confirmed", view);
   await publishPaymentUpdate(errandId, "balance_confirmed", view);
+  // Confirmed by staff, so news to the rider: nothing left to collect at the
+  // door. (A balance read from the rider's own proof photo is not told back.)
+  void notificationService.notifyErrandRider(errandId, "RIDER_PAYMENT_CONFIRMED", (errand) => ({
+    title: "Payment confirmed",
+    body: `${errand}: the customer's ₱${input.amount.toFixed(2)} is confirmed. Nothing to collect, hand the items over.`,
+  }));
   return view;
 }
 
@@ -401,6 +457,10 @@ export async function confirmTopUp(
   const view = await getPaymentLedger(errandId);
   eventPublisher.emitToErrand(errandId, "errand:overage_resolved", view);
   await publishPaymentUpdate(errandId, "overage_resolved", view);
+  void notificationService.notifyErrandRider(errandId, "RIDER_EXTRA_CHARGE_SETTLED", (errand) => ({
+    title: "Extra charge settled",
+    body: `${errand}: the customer settled the extra ₱${input.amount.toFixed(2)}. You can hand the items over.`,
+  }));
   logger.info(
     `Errand ${errandId}: overage topped up by ₱${input.amount} (user ${confirmedByUserId}); goods released.`
   );

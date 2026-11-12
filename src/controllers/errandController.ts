@@ -5,23 +5,44 @@ import * as errandService from "../services/errandService.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { ServiceError } from "../services/ServiceError.js";
 import { parseOrThrow } from "../validators/validate.js";
-import { createErrandSchema, assignRiderSchema, declineErrandSchema, errandQuoteSchema } from "../validators/errandValidators.js";
+import { createErrandSchema, assignRiderSchema, declineErrandSchema, errandQuoteSchema, submissionIdSchema } from "../validators/errandValidators.js";
 import { pinpointsBodySchema } from "../validators/pinpointValidators.js";
 import { pabiliItemsBodySchema } from "../validators/pabiliItemValidators.js";
 import { itemTidyBodySchema, itemStoreCheckBodySchema } from "../validators/itemTidyValidators.js";
 import { tidyItemLines } from "../services/itemTidyService.js";
 import { inferItemCategories } from "../services/categoryInferenceService.js";
 import { occurredAtSchema } from "../validators/trackingValidators.js";
+import { assertCallerPermission } from "../lib/permissionCache.js";
 import {
   proofImageUploadSchema,
   proofImageConfirmSchema,
   proofImageScanSchema,
 } from "../validators/proofImageValidators.js";
 import * as proofImageService from "../services/proofImageService.js";
+import * as pinpointArrivalService from "../services/pinpointArrivalService.js";
+import { z } from "zod";
+
+const pinpointArrivalParams = z.object({
+  id: z.string().uuid(),
+  pinpointId: z.coerce.number().int().positive().max(2147483647),
+});
+
+export const markPinpointArrived = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const { id, pinpointId } = parseOrThrow(pinpointArrivalParams, req.params);
+  res.json(await pinpointArrivalService.markPinpointArrived(id, pinpointId, req.user!.id));
+});
 
 export const listErrands = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const callerRole = String(req.user?.role || "").toUpperCase();
-  const errands = await errandService.listErrands({ id: req.user!.id, role: callerRole });
+  const take = req.query.take ? parseInt(String(req.query.take), 10) : undefined;
+  const skip = req.query.skip ? parseInt(String(req.query.skip), 10) : undefined;
+  const errands = await errandService.listErrands(
+    { id: req.user!.id, role: callerRole },
+    {
+      take: typeof take === "number" && !Number.isNaN(take) ? take : undefined,
+      skip: typeof skip === "number" && !Number.isNaN(skip) ? skip : undefined,
+    }
+  );
   res.json(errands);
 });
 
@@ -108,6 +129,11 @@ export const createErrand = asyncHandler<AuthenticatedRequest>(async (req, res: 
   // was taken for a customer's. Only the owner's tooling may name a customer.
   const role = String(req.user!.role ?? "").toUpperCase();
   if (role === "CUSTOMER") {
+    // A delayed request may be replayed by token refresh after an account
+    // switch. Never file a saved basket under the newly signed-in account.
+    if (input.submissionId && input.customerId !== undefined && input.customerId !== req.user!.id) {
+      throw new ServiceError(403, "This saved request belongs to another account. Sign in with the account that submitted it.");
+    }
     input.customerId = undefined;
   } else if (role !== "OWNER") {
     throw new ServiceError(403, "Only a customer can place an order.");
@@ -116,6 +142,12 @@ export const createErrand = asyncHandler<AuthenticatedRequest>(async (req, res: 
   }
   const errand = await errandService.createErrand(req.user!.id, input);
   res.status(201).json(errand);
+});
+
+export const getSubmissionStatus = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const submissionId = parseOrThrow(submissionIdSchema, req.params.submissionId);
+  const errand = await errandService.getSubmissionForCustomer(req.user!.id, submissionId);
+  res.json({ submissionId, status: errand ? "CONFIRMED" : "NOT_FOUND", errand });
 });
 
 // Prices a draft before it is created, so the customer's checkout shows a figure
@@ -194,6 +226,17 @@ export const assignRider = asyncHandler<AuthenticatedRequest>(async (req, res: R
 
 export const updateStatus = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const callerRole = String(req.user?.role || "").toUpperCase();
+  // One route carries every move, so the access group is checked here rather
+  // than on the route: ending an order (CANCELLED, or "PASSING BY", which the
+  // service closes as cancelled) is its own permission, and every other move
+  // is part of reviewing orders. Admins and riders are not grouped this way.
+  if (callerRole === "DISPATCHER") {
+    const target = String(req.body?.status ?? "").trim().toUpperCase();
+    await assertCallerPermission(
+      req.user,
+      target === "CANCELLED" || target === "PASSING BY" ? "errands.cancel" : "errands.review"
+    );
+  }
   if (req.user?.id) {
     await errandService.verifyDispatcherAccess(req.params.id, req.user.id, callerRole);
   }
@@ -303,6 +346,11 @@ export const confirmOrder = asyncHandler<AuthenticatedRequest>(async (req, res: 
 // Separate from the rider's POST /:id/decline, which bounces an assignment back
 // to the pool. This one ends the errand and requires a reason.
 export const declineErrandReview = asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  // The same claim guard as every other dispatcher mutation: without it any
+  // dispatcher could cancel an errand another dispatcher had claimed
+  // (Codex security scan, 2026-11-02).
+  const callerRole = String(req.user?.role || "").toUpperCase();
+  await errandService.verifyDispatcherAccess(req.params.id, req.user!.id, callerRole);
   const input = parseOrThrow(declineErrandReviewSchema, req.body);
   const result = await errandService.declineErrandReview(
     req.params.id,

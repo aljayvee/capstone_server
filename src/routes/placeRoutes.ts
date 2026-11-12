@@ -2,7 +2,7 @@ import { Router } from "express";
 import { placeController } from "../controllers/placeController.js";
 import { checkStoreLocationHandler } from "../controllers/storeLocationController.js";
 import { popularEstablishmentsHandler, searchEstablishmentsHandler } from "../controllers/establishmentController.js";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { authenticateToken, requireRole, requirePermission } from "../middleware/auth.js";
 import { establishmentSearchLimiter, readLimiter, userApiLimiter } from "../middleware/rateLimiters.js";
 
 const router = Router();
@@ -66,12 +66,12 @@ router.get(
 // GET /api/places/google?q= | ?categoryId= - the owner portal's search of
 // Google Maps for stores to register (2026-10-13); each result says whether it
 // is registered already. Billed Google requests, so the store search's limiter.
-router.get("/google", authenticateToken, requireRole(["OWNER"]), establishmentSearchLimiter, (req, res) =>
+router.get("/google", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), establishmentSearchLimiter, (req, res) =>
   placeController.googleSearch(req, res)
 );
 
 // GET /api/places/google/:googlePlaceId - one Google Maps place to fill the form.
-router.get("/google/:googlePlaceId", authenticateToken, requireRole(["OWNER"]), establishmentSearchLimiter, (req, res) =>
+router.get("/google/:googlePlaceId", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), establishmentSearchLimiter, (req, res) =>
   placeController.googleDetails(req, res)
 );
 
@@ -102,32 +102,32 @@ router.post(
 
 // POST /api/places/restore - bring several retired stores back (Owner only).
 // Each unlinked one is linked to Google Maps on the way when Google has it.
-router.post("/restore", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+router.post("/restore", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), userApiLimiter, (req, res) =>
   placeController.restore(req, res)
 );
 
 // POST /api/places - create a verified place (Owner only)
-router.post("/", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+router.post("/", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), userApiLimiter, (req, res) =>
   placeController.create(req, res)
 );
 
 // PUT /api/places/:id - update a verified place (Owner only)
-router.put("/:id", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+router.put("/:id", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), userApiLimiter, (req, res) =>
   placeController.update(req, res)
 );
 
 // PUT /api/places/:id/photo - set the storefront photo (Owner only)
-router.put("/:id/photo", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+router.put("/:id/photo", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), userApiLimiter, (req, res) =>
   placeController.uploadPhoto(req, res)
 );
 
 // DELETE /api/places/:id/photo - remove the storefront photo (Owner only)
-router.delete("/:id/photo", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+router.delete("/:id/photo", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), userApiLimiter, (req, res) =>
   placeController.deletePhoto(req, res)
 );
 
 // DELETE /api/places/:id - remove a verified place (Owner only)
-router.delete("/:id", authenticateToken, requireRole(["OWNER"]), userApiLimiter, (req, res) =>
+router.delete("/:id", authenticateToken, requireRole(["OWNER"]), requirePermission("merchants.manage"), userApiLimiter, (req, res) =>
   placeController.delete(req, res)
 );
 

@@ -12,8 +12,10 @@ export const listLocations = asyncHandler<AuthenticatedRequest>(async (req, res:
     throw new ServiceError(400, "Invalid customer ID.");
   }
 
+  // An allowlist, not "reject other customers": a rider or dispatcher whose id
+  // happens to equal the customer's must not pass either.
   const callerRole = String(req.user?.role || "").toUpperCase();
-  if (callerRole === "CUSTOMER" && req.user?.id !== customerId) {
+  if (callerRole !== "CUSTOMER" || req.user?.id !== customerId) {
     throw new ServiceError(403, "Access denied: You can only view your own saved locations.");
   }
 

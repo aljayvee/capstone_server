@@ -27,7 +27,13 @@ vi.mock("../src/repositories/customerRepository.js", () => ({ customerRepository
 vi.mock("../src/repositories/notificationRepository.js", () => ({
   notificationRepository: { create: createNotification },
 }));
-vi.mock("../src/services/notificationService.js", () => ({ notifyRiderNearby: notifyNearby }));
+// deliverToCustomer writes the linked row (and emits it); routed into createNotification so the
+// assertions below read the row the customer gets.
+vi.mock("../src/services/notificationService.js", () => ({
+  notifyRiderNearby: notifyNearby,
+  deliverToCustomer: (customerId: number, type: string, content: { title: string; body: string }, errandId: string) =>
+    createNotification({ customerId, type, ...content, refKey: `errand:${errandId}` }),
+}));
 vi.mock("../src/lib/eventPublisher.js", () => ({
   eventPublisher: { emitToCustomer: vi.fn(), emitToErrand: vi.fn() },
 }));
@@ -42,6 +48,7 @@ import {
   onRiderPosition,
   reminderDue,
 } from "../src/services/deliveryReminderService.js";
+import { eventPublisher } from "../src/lib/eventPublisher.js";
 
 const CUSTOMER = { latitude: 6.6834683, longitude: 124.663931 };
 const errand = (overrides: Record<string, unknown> = {}) => ({
@@ -114,6 +121,13 @@ describe("notifyOnTheWay", () => {
     expect(createNotification).toHaveBeenCalledTimes(1);
   });
 
+  it("links the row to its errand and lets the repository emit it, once", async () => {
+    vi.mocked(eventPublisher.emitToCustomer).mockClear();
+    await notifyOnTheWay("e-1");
+    expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({ refKey: "errand:e-1" }));
+    expect(eventPublisher.emitToCustomer).not.toHaveBeenCalled();
+  });
+
   it("still tells the customer when the rider's position is not known", async () => {
     getFresh.mockReturnValue(undefined);
     await notifyOnTheWay("e-1");
@@ -160,6 +174,12 @@ describe("onDeliveryEta", () => {
       body: "About 9 min away. Please get ready to receive your order.",
       tag: "delivery-e-1",
     });
+    // Not saved: the app rings for it but must not list a row with no id.
+    expect(eventPublisher.emitToCustomer).toHaveBeenCalledWith(
+      9,
+      "notification:new",
+      expect.objectContaining({ type: "RIDER_ETA_REMINDER", ephemeral: true, category: "DELIVERY" })
+    );
   });
 
   it("says nothing while the rider is still shopping", async () => {

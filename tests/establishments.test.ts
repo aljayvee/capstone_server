@@ -71,6 +71,8 @@ vi.mock("../src/services/categoryInferenceService.js", () => ({
 }));
 vi.mock("../src/lib/serviceArea.js", () => ({
   isWithinServiceBuffer: (p: { latitude: number }) => p.latitude > 6.6 && p.latitude < 6.8,
+  // One zone, the same box: text searches are scoped to the searcher's zone (2026-11-09).
+  detectServiceZone: (p: { latitude: number }) => (p.latitude > 6.6 && p.latitude < 6.8 ? "TACURONG" : null),
   isWithinServiceArea: () => true,
   serviceAreaEnvelope: () => ({ minLat: 6.6, maxLat: 6.8, minLng: 124.6, maxLng: 124.8 }),
   SERVICE_AREA_CENTRE: { latitude: 6.671, longitude: 124.6644 },
@@ -995,7 +997,7 @@ describe("popular stores", () => {
       vi.mocked(searchPlacesByText).mockClear();
 
       const customResult = await popularEstablishments({ near, categoryId: 10 });
-      expect(searchPlacesByText).toHaveBeenCalledWith("Water Refilling", { includeRatings: true });
+      expect(searchPlacesByText).toHaveBeenCalledWith("Water Refilling", expect.objectContaining({ includeRatings: true }));
       expect(customResult.items.map((e) => [e.name, e.categoryId, e.categoryName])).toEqual([
         ["Aquabest Water Station", 10, "Water Refilling"],
         ["Crystal Water Refilling Mart", 10, "Water Refilling"],
@@ -1011,7 +1013,7 @@ describe("popular stores", () => {
       vi.mocked(searchPlacesByText).mockClear();
 
       const fallbackResult = await popularEstablishments({ near, categoryId: 3 });
-      expect(searchPlacesByText).toHaveBeenCalledWith("Pharmacy", { includeRatings: true });
+      expect(searchPlacesByText).toHaveBeenCalledWith("Pharmacy", expect.objectContaining({ includeRatings: true }));
       expect(fallbackResult.items.map((e) => [e.name, e.categoryId, e.categoryName])).toEqual([
         ["Watsons Pharmacy", 3, "Pharmacy"],
       ]);
@@ -1077,7 +1079,7 @@ describe("a merchant category's stores (2026-10-10)", () => {
     vi.mocked(searchPlacesByText).mockClear();
     const result = await searchEstablishments({ query: "mercury", near, categoryId: 3 });
 
-    expect(searchPlacesByText).toHaveBeenCalledWith("mercury");
+    expect(searchPlacesByText).toHaveBeenCalledWith("mercury", { zone: "TACURONG" });
     expect(result.items.map((e) => e.name)).toEqual(["Mercury Drug"]);
   });
 
@@ -1109,7 +1111,7 @@ describe("a merchant category's stores (2026-10-10)", () => {
     vi.mocked(inferStoreCategory).mockClear();
     const result = await searchEstablishments({ near, categoryId: 8 });
 
-    expect(searchPlacesByText).toHaveBeenCalledWith("Pasalubong");
+    expect(searchPlacesByText).toHaveBeenCalledWith("Pasalubong", { zone: "TACURONG" });
     expect(result.items.map((e) => [e.name, e.categoryName])).toEqual([["Tacurong Pasalubong Center", "Pasalubong"]]);
     // Its category is known: no model call to guess one.
     expect(inferStoreCategory).not.toHaveBeenCalled();
@@ -1122,7 +1124,7 @@ describe("a merchant category's stores (2026-10-10)", () => {
     vi.mocked(searchPlacesByText).mockClear();
     const result = await searchEstablishments({ near, categoryId: 3 });
 
-    expect(searchPlacesByText).toHaveBeenCalledWith("Pharmacy");
+    expect(searchPlacesByText).toHaveBeenCalledWith("Pharmacy", { zone: "TACURONG" });
     expect(result).toMatchObject({ google: "ok", items: [expect.objectContaining({ name: "Mercury Drug" })] });
   });
 

@@ -47,6 +47,9 @@ vi.mock("../src/lib/serviceArea.js", () => ({
   isServiceAreaConfigured: () => true,
   isWithinServiceArea: () => area.inside,
   isWithinServiceBuffer: () => area.inside,
+  // One zone throughout: these tests are about the stores, not the zones (2026-11-09).
+  detectServiceZone: () => (area.inside ? "TACURONG" : null),
+  validateIntraZone: () => ({ valid: true, zone: "TACURONG" }),
 }));
 vi.mock("../src/services/storeLocationGuard.js", () => ({
   checkStoreLocation: vi.fn(async (point: { latitude: number }) =>
@@ -152,7 +155,7 @@ describe("picked stores on a new errand", () => {
 describe("the picked-stores request", () => {
   it("refuses a store outside the city", () => {
     area.inside = false;
-    expect(() => order({ deliveryLatitude: undefined })).toThrow(/outside Tacurong/);
+    expect(() => order({ deliveryLatitude: undefined })).toThrow(/outside all supported service areas/);
   });
 
   it("refuses an item filed under a store that was not picked", () => {

@@ -325,3 +325,21 @@ export const itemStoreCheckLimiter = rateLimit({
     error: "Too many store checks in a short time. Your items are still on your list.",
   },
 });
+
+/**
+ * 9. Owner Copilot Chat Limiter (POST /api/owner/copilot/chat)
+ * Protects Gemini quota and server analytical query capacity.
+ * 20 requests per minute per owner account / IP.
+ */
+export const ownerCopilotLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: isDev ? 120 : 20,
+  keyGenerator: smartKeyGenerator,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: "Too many copilot requests. Please wait a minute before asking Kuya Sugo again.",
+  },
+});
+

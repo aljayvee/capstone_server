@@ -54,6 +54,13 @@ describe("the heartbeat over the beacon", () => {
     expect(a.riderStatus).toBe("AVAILABLE_ONLINE");
   });
 
+  it("uses newer background beacons when the pause frame was lost", async () => {
+    live.value = { lastHeartbeatAt: NOW - 90_000, lost: true };
+    expect((await availabilityForRiders([3], NOW)).get(3)!.riderStatus).toBe("AVAILABLE_ONLINE");
+    // Still expires by the normal beacon rules if the phone stops reporting.
+    expect((await availabilityForRiders([3], NOW + 80_000)).get(3)!.riderStatus).toBe("AVAILABLE_SIGNAL_LOST");
+  });
+
   it("never makes an off-duty rider look online", async () => {
     row.value.onDuty = false;
     live.value = { lastHeartbeatAt: NOW - 400, lost: false };

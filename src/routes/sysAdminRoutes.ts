@@ -25,6 +25,7 @@ import {
   getModificationAuditLogs,
   getSecurityAuditLogs,
   getSystemActivityLogs,
+  getReportPrintLogs,
 } from "../controllers/sysAdminAuditController.js";
 import {
   getTrafficSummaryHandler,
@@ -48,6 +49,8 @@ import {
   toggleServerErrorHandler,
   getDispatcherAiSuggestionsHandler,
   toggleDispatcherAiSuggestionsHandler,
+  getKuyaSugoHandler,
+  toggleKuyaSugoHandler,
 } from "../controllers/sysAdminDevOpsController.js";
 import {
   requestProfileOtpHandler,
@@ -131,6 +134,7 @@ router.get("/sysadmin/audit/auth", authenticateToken, requireRole("SYSADMIN"), r
 router.get("/sysadmin/audit/modifications", authenticateToken, requireRole("SYSADMIN"), readLimiter, getModificationAuditLogs);
 router.get("/sysadmin/audit/security", authenticateToken, requireRole("SYSADMIN"), readLimiter, getSecurityAuditLogs);
 router.get("/sysadmin/audit/system-activity", authenticateToken, requireRole("SYSADMIN"), readLimiter, getSystemActivityLogs);
+router.get("/sysadmin/audit/report-prints", authenticateToken, requireRole("SYSADMIN"), readLimiter, getReportPrintLogs);
 
 // ── GoAccess Web Traffic Monitoring ──────────────────────────────────────────
 router.get("/sysadmin/traffic/summary", authenticateToken, requireRole("SYSADMIN"), readLimiter, getTrafficSummaryHandler);
@@ -153,6 +157,7 @@ router.get("/sysadmin/devops/alerts/status", authenticateToken, requireRole("SYS
 router.post("/sysadmin/devops/alerts/test", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, sendTestAlertHandler);
 router.post("/sysadmin/devops/server-error", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleServerErrorHandler);
 router.post("/sysadmin/devops/dispatcher-ai-suggestions", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleDispatcherAiSuggestionsHandler);
+router.post("/sysadmin/devops/kuya-sugo", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleKuyaSugoHandler);
 
 // ── Security Threat Center & IP Defense (Dual-Tier) ──────────────────────────
 router.get("/sysadmin/threats/overview", authenticateToken, requireRole("SYSADMIN"), readLimiter, getThreatOverviewHandler);
@@ -171,6 +176,9 @@ router.get("/system/server-error-status", getServerErrorStatusHandler);
 
 // ── Dispatcher AI Suggestions Status (Read by the dispatcher portal) ─────────
 router.get("/system/dispatcher-ai-suggestions", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), readLimiter, getDispatcherAiSuggestionsHandler);
+
+// ── Kuya Sugo Status (Read by the owner portal to show/hide the copilot) ────
+router.get("/system/kuya-sugo", authenticateToken, requireRole(["OWNER", "SYSADMIN"]), readLimiter, getKuyaSugoHandler);
 
 // ── App Releases & APK Deployment (Sugo Express & Sugo Rider) ────────────────
 router.get("/sysadmin/app-releases", authenticateToken, requireRole("SYSADMIN"), readLimiter, getSysAdminReleasesHandler);

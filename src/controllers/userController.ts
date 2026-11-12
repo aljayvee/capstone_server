@@ -5,6 +5,7 @@ import { createUserSchema, updateUserSchema, profileUpdateSchema, changePassword
 import * as userService from "../services/userService.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { ServiceError } from "../services/ServiceError.js";
+import { assertCallerPermission } from "../lib/permissionCache.js";
 
 export const listUsers = asyncHandler(async (req, res) => {
   const users = await userService.listUsers();
@@ -16,9 +17,9 @@ export const getUserPresence = asyncHandler(async (req, res) => {
   res.json(presence);
 });
 
-export const createUser = asyncHandler(async (req, res) => {
+export const createUser = asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const input = parseOrThrow(createUserSchema, req.body);
-  const user = await userService.createUser(input);
+  const user = await userService.createUser(input, req.user?.id);
   res.status(201).json(user);
 });
 
@@ -42,6 +43,12 @@ export const updateProfile = asyncHandler<AuthenticatedRequest>(async (req, res:
   const callerId = req.user?.id;
   if (callerRole !== "OWNER" && callerId !== targetUserId) {
     throw new ServiceError(403, "Access denied: Users can only edit their own profile.");
+  }
+  // An Admin editing someone else's profile is doing the Users screen's job,
+  // so it takes the same permission, and Admin accounts stay the Main Owner's.
+  if (callerId !== targetUserId) {
+    await assertCallerPermission(req.user, "users.manage");
+    await userService.assertCanEditAccount(callerId, targetUserId);
   }
 
   const input = parseOrThrow(profileUpdateSchema, req.body);

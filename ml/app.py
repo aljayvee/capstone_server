@@ -37,10 +37,10 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from sugo_category.gemma import MAX_NAME_CHARS, GemmaAdvisor, GemmaSettings, context_for, model_label
+from sugo_category.gemma import MAX_NORMALIZE_CHARS, GemmaAdvisor, GemmaSettings, context_for, model_label
 from sugo_category.item_search import ItemCatalogue
 from sugo_category.model import (
     DEFAULT_MIN_CONFIDENCE,
@@ -48,6 +48,7 @@ from sugo_category.model import (
     CategoryModel,
     SecondOpinion,
 )
+from sugo_category.training_quality import prepare_training_quality
 
 MODEL_DIR = Path(os.environ.get("SUGO_MODEL_DIR", Path(__file__).parent / "models"))
 # Retrained models go in runs/<stamp>/, and `current` names the one in use, so a
@@ -236,6 +237,7 @@ def health() -> dict:
                 else {k: model.report.deep.get(k) for k in ("parameters", "epochs_run", "best_epoch", "transferred_from")},
                 "excluded_as_mislabelled": model.report.excluded_as_mislabelled,
                 "teacher_rows": model.report.teacher_rows,
+                "training_quality": model.report.training_quality,
             }
             for kind, model in _models.items()
         },
@@ -394,7 +396,10 @@ def normalize_items(req: NormalizeRequest) -> dict:
     (gemma.parse_normalized), so a line comes back either faithfully
     rearranged or not at all, and a line not answered is sent as typed.
     """
-    lines = [" ".join(line.split())[:MAX_NAME_CHARS] for line in req.lines]
+    # Never silently remove the end of a customer's instruction.
+    if any(not line.strip() or len(line) > MAX_NORMALIZE_CHARS for line in req.lines):
+        raise HTTPException(status_code=422, detail="Each shopping line must contain 1 to 500 characters.")
+    lines = [" ".join(line.split()) for line in req.lines]
     found = _gemma.normalize(lines, timeout=req.timeout_ms / 1000)
     if found is None:
         status = _gemma.status()
@@ -538,9 +543,21 @@ def _train_once(job: dict) -> dict:
     # Gemma's surest cached answers, taught to the local model (distillation):
     # the names it had to ask about last time, it knows by itself next time.
     teacher = {kind: _gemma.teacher_rows(kind, job["categories"]) for kind in ("store", "item")}
+    # Review new names before training, separately from category predictions.
+    # Persist review decisions beside the existing external-model cache so a
+    # container replacement does not spend quota reviewing the same names.
+    quality_cache = (_gemma.settings.cache_path.parent / "training-quality.jsonl"
+                     if _gemma.settings.cache_path else MODEL_DIR / "training-quality.jsonl")
+    quality = prepare_training_quality(
+        job["stores"], job["items"], job["categories"], job.get("descriptions") or {},
+        _gemma, quality_cache,
+        enabled=os.environ.get("TRAINING_QUALITY_ENABLED", "0").lower() in ("1", "true", "on"),
+    )
+    (run / "quality-audit.json").write_text(json.dumps(quality, ensure_ascii=False, indent=2), encoding="utf-8")
     export.write_text(
         json.dumps({"exported_at": stamp, "categories": job["categories"], "descriptions": job.get("descriptions") or {},
-                    "stores": job["stores"], "items": job["items"], "teacher": teacher},
+                    "stores": job["stores"], "items": job["items"], "teacher": teacher,
+                    "training_quality": quality},
                    ensure_ascii=False),
         encoding="utf-8",
     )
@@ -575,6 +592,7 @@ def _train_once(job: dict) -> dict:
         "seconds": round(time.time() - started, 1),
         "finished_at": time.time(),
         "rows": {"stores": len(job["stores"]), "items": len(job["items"])},
+        "training_quality": quality["summary"],
         "log": result.stdout[-1200:],
     }
 

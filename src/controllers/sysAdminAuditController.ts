@@ -4,6 +4,7 @@ import {
   listAccountModificationLogs,
   listSecurityThreatLogs,
   listSystemActivityLogs,
+  listReportPrintLogs,
 } from "../services/sysAdminAuditService.js";
 import { ServiceError } from "../services/ServiceError.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
@@ -84,6 +85,25 @@ export async function getSystemActivityLogs(req: AuthenticatedRequest, res: Resp
       return res.status(err.status).json({ error: err.message });
     }
     const message = err instanceof Error ? err.message : "Failed to fetch system activity logs.";
+    return res.status(500).json({ error: message });
+  }
+}
+
+export async function getReportPrintLogs(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { reportType, search, page, limit } = req.query;
+    const result = await listReportPrintLogs({
+      reportType: typeof reportType === "string" ? reportType : undefined,
+      search: typeof search === "string" ? search : undefined,
+      page: page ? parseInt(String(page), 10) : 1,
+      limit: limit ? parseInt(String(limit), 10) : 25,
+    });
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    if (err instanceof ServiceError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    const message = err instanceof Error ? err.message : "Failed to fetch report print logs.";
     return res.status(500).json({ error: message });
   }
 }

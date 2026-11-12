@@ -419,6 +419,7 @@ class TrainingReport:
     examples: dict | None = None
     # Gemma's cached answers taught to this model (distillation), if any.
     teacher_rows: int = 0
+    training_quality: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -506,6 +507,8 @@ class CategoryModel:
         exclude_from_training: Iterable[str] | None = None,
         pretrained: "CategoryModel | None" = None,
         teacher_rows: Iterable[tuple[str, str]] | None = None,
+        excluded_training_names: Iterable[str] | None = None,
+        training_quality: dict | None = None,
     ) -> "CategoryModel":
         """
         `real_rows` are `(text, category)` pairs read from the database.
@@ -565,9 +568,10 @@ class CategoryModel:
         # Transfer learning: the store model's network starts this one.
         source = _deep_member(pretrained.pipeline) if pretrained is not None and settings.cnn_transfer_from_store else None
         trainable_extra = [row for row in extra if row[0] not in excluded]
+        quality_excluded = {normalize(name) for name in (excluded_training_names or ()) if normalize(name)}
         # Gemma's answers: a dispatcher's or owner's filing of the same name
         # outranks them, and a name flagged as mislabelled teaches nothing.
-        filed = {t for t, _ in real} | excluded
+        filed = {t for t, _ in real} | excluded | quality_excluded
         teacher = list(dict.fromkeys(
             (normalize(text), permitted.resolve(cat))
             for text, cat in (teacher_rows or [])
@@ -587,6 +591,10 @@ class CategoryModel:
             [(synthetic, settings.seed_weight), (real, settings.real_weight), (trainable_extra, settings.osm_weight),
              (teacher, settings.teacher_weight)]
         )
+        # Quality decisions apply only to fitting. Do not remove or relabel a
+        # held-out row because another model disliked it: that would let the
+        # reviewer change its own exam and inflate the reported accuracy.
+        everything = [row for row in everything if row[0] not in quality_excluded]
         if len({c for _, c, _ in everything}) < 2:
             raise ValueError(
                 f"{kind}: need at least two categories to train, got {sorted({c for _, c, _ in everything})}"
@@ -620,13 +628,20 @@ class CategoryModel:
                 real_train, real_test = real, []
                 if len(real) >= 40:
                     real_train, _, real_test = group_split(real, val=0.0, test=0.2, seed=20260923)
-                development = triples([(synthetic, settings.seed_weight), (real_train, settings.real_weight)])
+                # A real test name may also be a seed phrase. Excluding it
+                # from real_train alone still lets the probe memorize it via
+                # the lexicon (or even use it to choose its temperature).
+                # Final serving models still train on everything below.
+                test_names = {normalize(t) for t, _ in real_test}
+                development_seeds = [(t, c) for t, c in synthetic if normalize(t) not in test_names]
+                development = triples([(development_seeds, settings.seed_weight), (real_train, settings.real_weight)])
                 train_rows, validation, _ = group_split(development, val=0.15, test=0.0, seed=20260925)
                 val_rows = [(t, c) for t, c, _ in validation]
                 test_rows = real_test
                 train_rows = train_rows + triples([(teacher_outside(val_rows, test_rows), settings.teacher_weight)])
                 held_out = "production's own item names, split by name"
 
+            train_rows = [row for row in train_rows if row[0] not in quality_excluded]
             probe = _fit_predictor(settings, train_rows, val_rows, pretrained=source)
             classes = list(probe.classes_)
             index = {c: i for i, c in enumerate(classes)}
@@ -659,7 +674,7 @@ class CategoryModel:
         report = TrainingReport(
             kind=kind,
             rows=len(texts),
-            real_rows=len(real),
+            real_rows=sum(name not in quality_excluded for name, _ in real),
             synthetic_rows=len(synthetic),
             classes=sorted({c for _, c, _ in everything}),
             holdout_accuracy=accuracy,
@@ -674,6 +689,7 @@ class CategoryModel:
             descriptions={c: permitted.descriptions.get(c, "") for c in sorted({c for _, c, _ in everything})},
             examples=_examples_by_class(real, synthetic, trainable_extra),
             teacher_rows=len(teacher),
+            training_quality=training_quality,
             deep=None
             if deep_member is None
             else {

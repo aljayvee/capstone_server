@@ -18,11 +18,15 @@ import sysAdminRoutes from "./sysAdminRoutes.js";
 import categoryInferenceRoutes from "./categoryInferenceRoutes.js";
 import catalogRoutes from "./catalogRoutes.js";
 import feedbackRoutes from "./feedbackRoutes.js";
+import ownerCopilotRoutes from "./ownerCopilotRoutes.js";
+import accessRoutes from "./accessRoutes.js";
 
 const router = Router();
 
 router.use("/", authRoutes);
 router.use("/", sysAdminRoutes);
+// GET /account/permissions and the Main Owner's /access/* (access groups).
+router.use("/", accessRoutes);
 router.use("/users", userRoutes);
 router.use("/customers", customerRoutes);
 router.use("/errands", errandRoutes);
@@ -40,5 +44,6 @@ router.use("/places", placeRoutes);
 router.use("/category-inference", categoryInferenceRoutes);
 router.use("/catalog", catalogRoutes);
 router.use("/feedback", feedbackRoutes);
+router.use("/owner/copilot", ownerCopilotRoutes);
 
 export default router;

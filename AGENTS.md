@@ -4,11 +4,16 @@ This file contains the server-side rules and instructions for Antigravity 2.0 / 
 
 ---
 
-## 🌐 Dual-Agent Tunnel Invariant (Always Active in All Sessions)
+## 🌐 Tri-Agent Distributed Peer Protocol (Claude Code ◄► OpenAI Codex ◄► Antigravity)
+> **ALWAYS ACTIVE IN ALL SESSIONS**: Claude Code, OpenAI Codex, and Antigravity operate as an autonomous, distributed full-stack engineering team.
 1. **Boot-Time Handshake Check (Step 0)**: In every session, ALWAYS inspect `AGENT_HANDSHAKE.md` before making changes to server code.
-2. **Locked Contract Invariant**: Respect all locked Prisma models, API routes, and auth tokens specified by Claude.
-3. **Execution & Verification**: After making edits, verify with `npx tsc --noEmit` and update the execution ledger in `AGENT_HANDSHAKE.md`.
-4. **Gemini Non-Autonomous Execution & Claude Cognitive Alignment**: Gemini models (Gemini 3.x Pro, Gemini 3.8 Flash High) MUST NOT act autonomously or execute sweeping unilateral changes. Gemini must strictly adopt the 6-stage Claude Cognitive Thinking Process (Context Grounding -> Hypothesis & Trade-offs -> User Consultation Gate -> Surgical Delta -> Defensive Rigor -> Empirical Verification).
+2. **Distributed Peer Ownership ("You Touch It, You Own It")**: Every agent is an autonomous full-stack peer. Whichever agent initiates or modifies code MUST complete the full end-to-end lifecycle (context grounding, surgical delta, defensive checks, CARE clean-up, and `tsc` verification).
+3. **Locked Contract Invariant**: Respect all locked Prisma models, API routes, and auth tokens specified in `AGENT_HANDSHAKE.md`.
+4. **Universal "CARE" Code-Hygiene Invariant**:
+   - **Phase 1 (Make It Work)**: Apply surgical, minimal deltas. Never overwrite entire files.
+   - **Phase 2 (Make It Right / Clean-Up)**: Prune dead imports, unreferenced queries, and console logs. Validate input validation filters and verify with `npx tsc --noEmit`. Never mark a task complete without passing Phase 2.
+5. **Session Handoff & Async Peer Review**: After making edits, verify with `npx tsc --noEmit` and update the execution ledger in `AGENT_HANDSHAKE.md` for peer review.
+6. **Gemini Non-Autonomous Execution & Claude Cognitive Alignment**: Gemini models (Gemini 3.x Pro, Gemini 3.8 Flash High) MUST NOT act autonomously or execute sweeping unilateral changes. Gemini must strictly adopt the 6-stage Claude Cognitive Thinking Process (Context Grounding -> Hypothesis & Trade-offs -> User Consultation Gate -> Surgical Delta -> Defensive Rigor -> Empirical Verification).
 
 ---
 

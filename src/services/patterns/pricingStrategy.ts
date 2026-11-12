@@ -50,6 +50,8 @@ export interface PricingInput {
    * means no ceiling, which is the behaviour that existed before ceilings did.
    */
   quotedHandlingCeiling?: number | null;
+  /** The basket total the customer was quoted on, if any. */
+  quotedHandlingBasket?: number | null;
   /** Which basket figure this pricing run is working from. */
   handlingEvidence?: HandlingFeeEvidence;
 }
@@ -233,6 +235,8 @@ export interface HandlingFeeInput {
    * and until they do, this holds the bill where the customer left it.
    */
   quotedCeiling?: number | null;
+  /** The basket total the customer agreed to at quote time, if any. */
+  quotedBasket?: number | null;
   evidence?: HandlingFeeEvidence;
 }
 
@@ -336,7 +340,17 @@ export function decideHandlingFee(input: HandlingFeeInput): HandlingFeeDecision 
 
   // The ceiling is the last word, because it is the only input here the customer
   // themselves agreed to.
-  if (quotedCeiling !== null && computed > quotedCeiling) {
+  //
+  // An unpriced quote (quotedCeiling === 0 from an unpriced basket <= 0) is NOT
+  // an agreed ceiling of ₱0 — it was merely unpriced. An agreed ceiling only binds
+  // if the customer was quoted on a real basket (quotedBasket > 0 or quotedCeiling > 0).
+  const hasValidAgreedCeiling =
+    quotedCeiling !== null &&
+    (input.quotedBasket !== undefined && input.quotedBasket !== null
+      ? input.quotedBasket > 0
+      : quotedCeiling > 0);
+
+  if (hasValidAgreedCeiling && computed > quotedCeiling) {
     return {
       ...base,
       basket,
@@ -379,8 +393,9 @@ export class StandardPricingStrategy implements PricingStrategy {
     const { estimatedCost, tip, storeCount, distanceKm, isCod } = input;
     const itemUnits = input.itemUnits ?? 0;
 
-    // Every store beyond the first, capped at maxAdditionalStores (matches
-    // ErrandFormScreen.tsx's 3-category cap: 1 base store + up to 2 more).
+    // Every store beyond the first, capped at maxAdditionalStores (the same
+    // limit lib/storeLimit.ts enforces on every store list: 1 base store + up
+    // to maxAdditionalStores more).
     const additionalStores = Math.min(Math.max(storeCount - 1, 0), rateConfig.maxAdditionalStores);
     const multiStoreFee = additionalStores * rateConfig.multiStoreFeePerStore;
 
@@ -390,6 +405,7 @@ export class StandardPricingStrategy implements PricingStrategy {
       categoryModes: input.categoryModes,
       rateConfig,
       quotedCeiling: input.quotedHandlingCeiling,
+      quotedBasket: input.quotedHandlingBasket,
       evidence: input.handlingEvidence,
     });
     const groceryFee = handlingDecision.fee;

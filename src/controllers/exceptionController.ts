@@ -1,4 +1,5 @@
 import { Response } from "express";
+import * as settlementAdjustmentService from "../services/settlementAdjustmentService.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { parseOrThrow } from "../validators/validate.js";
 import { resolveExceptionSchema, reasonSuggestionQuerySchema } from "../validators/exceptionValidators.js";
@@ -28,6 +29,23 @@ export const getOpenExceptions = asyncHandler<AuthenticatedRequest>(async (req, 
 /** Records that a person considered an exception, and what they concluded. */
 export const resolveException = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const input = parseOrThrow(resolveExceptionSchema, req.body);
+  const outcome = input.cashOutcome;
+
+  if (outcome && outcome.kind !== "NOT_PAID_YET") {
+    if (input.kind !== "CASH_VARIANCE") {
+      throw new ServiceError(400, "Money can only be recorded against a cash short.");
+    }
+    // The decision and the money, saved together.
+    const review = await settlementAdjustmentService.resolveCashShort({
+      errandId: req.params.id,
+      reviewerId: req.user!.id,
+      reason: input.reason,
+      amountAtRisk: input.amountAtRisk,
+      outcome: { kind: outcome.kind, amount: outcome.amount ?? 0, reference: outcome.reference },
+    });
+    res.status(201).json(review);
+    return;
+  }
 
   const review = await exceptionService.resolveException({
     errandId: req.params.id,

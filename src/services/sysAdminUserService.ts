@@ -3,7 +3,7 @@ import { ServiceError } from "./ServiceError.js";
 import * as sessionService from "./sessionService.js";
 import * as userPresenceStore from "../lib/userPresenceStore.js";
 import * as riderPresenceStore from "../lib/riderPresenceStore.js";
-import { notifySessionRevoked } from "../lib/socket.js";
+import { disconnectAccount, notifySessionRevoked } from "../lib/socket.js";
 import type { RoleType } from "@prisma/client";
 
 export interface MonitoredAccount {
@@ -322,6 +322,9 @@ export async function updateAccountStatus(
     if (newStatus === "Suspended" || newStatus === "Locked") {
       await sessionService.revokeAllSubjectSessions(accountId, "CUSTOMER", `ACCOUNT_${newStatus.toUpperCase()}_BY_SYSADMIN`);
     }
+    // Any status but Active ends live connections too; refresh now refuses
+    // the account's sessions, but an open socket is never asked again.
+    if (newStatus !== "Active") disconnectAccount(accountId, "CUSTOMER");
   } else {
     const user = await prisma.user.findUnique({ where: { id: accountId } });
     if (!user) throw new ServiceError(404, "Operational staff account not found.");
@@ -338,6 +341,7 @@ export async function updateAccountStatus(
         reason: `Your account was ${newStatus.toLowerCase()} by System Administrator (@${adminNickname}): ${reason || "Security policy review"}.`,
       });
     }
+    if (newStatus !== "Active") disconnectAccount(accountId);
   }
 
   // Record audit log

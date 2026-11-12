@@ -9,6 +9,7 @@ import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 import { sysAdminAlertService } from "./sysAdminAlertService.js";
 import fs from "fs";
+import { isIP } from "net";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -165,6 +166,13 @@ export const sysAdminThreatService = {
   }): Promise<any> {
     const normalizedIp = params.ipAddress.replace(/^::ffff:/, "").trim();
 
+    // Every active ban is written into nginx as `deny <ip>;`. Anything but a
+    // plain address could smuggle in directives, and a line nginx -t rejects
+    // would fail every later sync while the row stays ACTIVE.
+    if (!isIP(normalizedIp)) {
+      throw new Error("Enter a single IPv4 or IPv6 address.");
+    }
+
     if (this.isIpWhitelisted(normalizedIp)) {
       throw new Error(`Cannot ban IP ${normalizedIp}: This IP is on the whitelist or has immunity.`);
     }
@@ -309,6 +317,9 @@ export const sysAdminThreatService = {
     createdById?: number;
   }): Promise<any> {
     const normalizedIp = params.ipAddress.replace(/^::ffff:/, "").trim();
+    if (!isIP(normalizedIp)) {
+      throw new Error("Enter a single IPv4 or IPv6 address.");
+    }
 
     const record = await prisma.whitelistedIp.upsert({
       where: { ipAddress: normalizedIp },
@@ -368,6 +379,12 @@ export const sysAdminThreatService = {
       content += "# =============================================================================\n\n";
 
       for (const ban of activeBans) {
+        // Rows saved before blockIp validated addresses: one bad line would
+        // make nginx -t refuse the whole file, every sync, so skip it.
+        if (!isIP(ban.ipAddress)) {
+          logger.warn(`[ThreatEngine] Skipped a ban with an invalid address: ${JSON.stringify(ban.ipAddress)}`);
+          continue;
+        }
         const safeReason = ban.reason.replace(/[\r\n]/g, " ");
         content += `deny ${ban.ipAddress}; # ${safeReason}\n`;
       }

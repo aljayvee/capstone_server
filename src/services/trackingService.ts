@@ -114,6 +114,7 @@ export async function ingestBatch(
 
   const newest = rows[rows.length - 1];
   riderPositionStore.record(riderId, {
+    speedMps: newest.speedMps ?? null,
     point: { latitude: newest.latitude, longitude: newest.longitude },
     recordedAt: newest.recordedAt.getTime(),
     accuracyMeters: newest.accuracyMeters ?? null,

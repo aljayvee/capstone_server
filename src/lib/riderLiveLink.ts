@@ -139,9 +139,9 @@ export function registerRiderLiveLink(): void {
         links.delete(riderId);
         return;
       }
-      // A transport failure is exactly what this exists to catch, and usually
-      // arrives before the watchdog would notice.
-      if (!link.paused) markLost(riderId, link);
+      // A cell handover or Android suspending the app can close the transport.
+      // Keep the last heartbeat and let the watchdog apply the SAME grace
+      // period as silence. A reconnect within it must not announce a loss.
     });
   });
 

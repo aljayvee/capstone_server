@@ -90,7 +90,7 @@ export function generateSetupToken(adminId: number): string {
 
 export function verifySetupToken(token: string): number {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { adminId: number; purpose: string };
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as { adminId: number; purpose: string };
     if (!decoded || decoded.purpose !== "SYSADMIN_SETUP" || !decoded.adminId) {
       throw new ServiceError(401, "Invalid or expired setup token.");
     }
@@ -624,7 +624,7 @@ export async function updateAdminProfile(
   // 1. Verify the short-lived change token from OTP verification
   let decoded: { adminId: number; purpose: string };
   try {
-    decoded = jwt.verify(changeToken, JWT_SECRET) as { adminId: number; purpose: string };
+    decoded = jwt.verify(changeToken, JWT_SECRET, { algorithms: ["HS256"] }) as { adminId: number; purpose: string };
   } catch {
     throw new ServiceError(401, "Profile change token is invalid or expired. Start the process again.");
   }
@@ -727,7 +727,7 @@ export async function verifySysAdmin2Fa(
 ) {
   let decoded: { adminId: number; purpose: string };
   try {
-    decoded = jwt.verify(challengeToken, JWT_SECRET) as { adminId: number; purpose: string };
+    decoded = jwt.verify(challengeToken, JWT_SECRET, { algorithms: ["HS256"] }) as { adminId: number; purpose: string };
   } catch {
     throw new ServiceError(401, "Two-factor verification session expired. Please sign in again.");
   }
@@ -833,7 +833,7 @@ export async function resendSysAdmin2Fa(
 ) {
   let decoded: { adminId: number; purpose: string };
   try {
-    decoded = jwt.verify(challengeToken, JWT_SECRET) as { adminId: number; purpose: string };
+    decoded = jwt.verify(challengeToken, JWT_SECRET, { algorithms: ["HS256"] }) as { adminId: number; purpose: string };
   } catch {
     throw new ServiceError(401, "Two-factor session expired. Please sign in again.");
   }
@@ -917,7 +917,7 @@ export async function refreshSysAdminSession(
 
   let decoded: { id: number; username: string; email: string; role: string; sid?: string };
   try {
-    decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as any;
+    decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET, { algorithms: ["HS256"] }) as any;
   } catch {
     throw new ServiceError(401, "Invalid or expired refresh token. Please sign in again.");
   }

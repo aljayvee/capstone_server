@@ -85,6 +85,8 @@ export function isMoneyException(kind: ExceptionKind): boolean {
 
 export interface ErrandException {
   errandId: string;
+  /** The errand's YYMMDD-KKKKK-NNNN number, for display only. */
+  referenceNo?: string | null;
   kind: ExceptionKind;
   /** Always non-negative. Zero for conduct kinds, which risk no money. */
   amountAtRisk: number;
@@ -93,6 +95,13 @@ export interface ErrandException {
   riderId: number | null;
   riderName: string | null;
   occurredAt: Date;
+  /** When the errand was created: the day the owner's period breakdown counts it on. */
+  orderPlacedAt?: Date;
+  /**
+   * CASH_VARIANCE only: the handover's figures and how much of a short is still
+   * owed after anything paid back or written off since (settlementBalance).
+   */
+  cash?: { expected: number; collected: number; short: number; stillOwed: number };
   /** Set once someone has cleared it — see ExceptionReview. */
   resolvedAt: Date | null;
   resolvedBy: string | null;

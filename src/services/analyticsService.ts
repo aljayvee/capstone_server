@@ -2,7 +2,7 @@ import { errandRepository } from "../repositories/errandRepository.js";
 import * as riderBeaconService from "./riderBeaconService.js";
 import type { AvailabilityResult, RiderAvailability } from "../lib/riderAvailability.js";
 import { userRepository } from "../repositories/userRepository.js";
-import { getPeriodStrategy, type ReportPeriodStrategy } from "./patterns/reportPeriodStrategy.js";
+import { getPeriodStrategy, type ReportPeriodStrategy, type ReportPeriod } from "./patterns/reportPeriodStrategy.js";
 import { formatRangeLabel, spanInDays } from "./patterns/dateRangeResolver.js";
 import { splitCommission } from "./patterns/commissionSplit.js";
 
@@ -77,23 +77,29 @@ export async function getDashboardSummary(
     riders: summarizeRiders(riders, availability),
     errands: summarizeErrandStatus(statusCounts),
     revenue: summarizeRevenue(revenueRows),
-    trend: buildTrend(revenueRows, start, end, range ? null : frequency),
+    trend: buildTrend(
+      revenueRows.map((r) => ({ createdAt: r.createdAt, sales: salesValue(r) })),
+      start,
+      end,
+      range ? null : frequency
+    ),
   };
 }
 
 function frequencyRange(frequency: DashboardFrequency, now: Date): { start: Date; end: Date } {
-  const strategyByFrequency: Record<Exclude<DashboardFrequency, "TODAY">, ReportPeriodStrategy> = {
+  const strategyByFrequency: Record<DashboardFrequency, ReportPeriodStrategy> = {
+    TODAY: getPeriodStrategy("DAILY"),
     WEEK: getPeriodStrategy("WEEKLY"),
     MONTH: getPeriodStrategy("MONTHLY"),
     YEAR: getPeriodStrategy("YEARLY"),
   };
-  if (frequency === "TODAY") return getPeriodStrategy("DAILY").range(now);
   return strategyByFrequency[frequency].range(now);
 }
 
 /** The preset's window, named the way the report headers name theirs. */
 function frequencyLabel(frequency: DashboardFrequency, now: Date): string {
-  const period = frequency === "TODAY" ? "DAILY" : frequency === "WEEK" ? "WEEKLY" : frequency === "MONTH" ? "MONTHLY" : "YEARLY";
+  const period: ReportPeriod =
+    frequency === "TODAY" ? "DAILY" : frequency === "WEEK" ? "WEEKLY" : frequency === "MONTH" ? "MONTHLY" : "YEARLY";
   return getPeriodStrategy(period).label(now);
 }
 
@@ -149,8 +155,9 @@ function summarizeErrandStatus(statusCounts: Array<{ status: string; _count: { _
   };
 }
 
-// `gross` is total order value — what customers paid, including the money for the
-// goods themselves. The split beside it is deliberately NOT taken on that figure:
+// `gross` is total order value, the items plus the delivery fee: the same figure
+// as the Sales report's Total sales (reportService salesValue), tip left out.
+// The split beside it is deliberately NOT taken on that figure:
 // item cost is company money fronted for the purchase and carried by the rider,
 // never earned by either party, so only the service fees are divided (see
 // patterns/commissionSplit.ts).
@@ -160,7 +167,7 @@ function summarizeErrandStatus(statusCounts: Array<{ status: string; _count: { _
 function summarizeRevenue(
   rows: Array<{ totalCost: number; deliveryFee: number; tip: number; estimatedCost: number }>
 ) {
-  const gross = rows.reduce((sum, r) => sum + r.totalCost, 0);
+  const gross = rows.reduce((sum, r) => sum + salesValue(r), 0);
   const { riderShare, businessShare } = splitCommission({
     deliveryFee: rows.reduce((sum, r) => sum + r.deliveryFee, 0),
     tip: rows.reduce((sum, r) => sum + r.tip, 0),
@@ -174,70 +181,154 @@ function summarizeRevenue(
   };
 }
 
-/**
- * Bucket size for a range nobody named.
- *
- * A frequency preset carries its own answer (a week charts by day, a year by
- * month). An arbitrary range has to derive one from its length, or a 3-day
- * window would draw a single monthly bar and an 11-month window would draw 330
- * daily ones — both unreadable, in opposite directions.
- */
-function bucketStrategyForSpan(days: number): ReportPeriodStrategy {
-  if (days <= 31) return getPeriodStrategy("DAILY");
-  if (days <= 180) return getPeriodStrategy("WEEKLY");
-  return getPeriodStrategy("MONTHLY");
-}
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const MONTH_SHORT_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 function buildTrend(
-  rows: Array<{ createdAt: Date; totalCost: number }>,
+  rows: Array<{ createdAt: Date; sales: number }>,
   rangeStart: Date,
   rangeEnd: Date,
   frequency: DashboardFrequency | null
 ): TrendPoint[] {
-  // A single-day custom range charts by hour for the same reason TODAY does:
-  // one daily bar is not a trend.
+  // 1. Daily: Sun, Mon, Tue, Wed, Thu, Fri, Sat
+  if (frequency === "TODAY") {
+    return bucketByDayOfWeek(rows, rangeStart);
+  }
+
+  // 2. Weekly: Week 1, Week 2, Week 3, Week 4
+  if (frequency === "WEEK") {
+    return bucketByFourWeeks(rows, rangeStart);
+  }
+
+  // 3. Monthly: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
+  if (frequency === "MONTH") {
+    return bucketByTwelveMonths(rows, rangeStart);
+  }
+
+  // 4. Yearly: Years (5 years)
+  if (frequency === "YEAR") {
+    return bucketByFiveYears(rows, rangeEnd);
+  }
+
+  // Custom date range picked via calendar picker:
   const days = spanInDays({ start: rangeStart, end: rangeEnd });
-  if (frequency === "TODAY" || (frequency === null && days <= 1)) {
-    return bucketByHour(rows, rangeStart);
+  if (days <= 7) {
+    return bucketByDailyDates(rows, rangeStart, rangeEnd);
   }
+  if (days <= 31) {
+    return bucketByFourWeeks(rows, rangeStart);
+  }
+  if (days <= 365) {
+    return bucketByTwelveMonths(rows, rangeStart);
+  }
+  return bucketByFiveYears(rows, rangeEnd);
+}
 
-  const bucketStrategy =
-    frequency === null
-      ? bucketStrategyForSpan(days)
-      : getPeriodStrategy(frequency === "WEEK" ? "DAILY" : frequency === "MONTH" ? "WEEKLY" : "MONTHLY");
+function bucketByDayOfWeek(
+  rows: Array<{ createdAt: Date; sales: number }>,
+  weekStart: Date
+): TrendPoint[] {
   const points: TrendPoint[] = [];
-  let cursor = rangeStart;
+  for (let i = 0; i < 7; i++) {
+    const dayStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i);
+    const dayEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i + 1);
+    const revenue = rows
+      .filter((r) => r.createdAt >= dayStart && r.createdAt < dayEnd)
+      .reduce((sum, r) => sum + r.sales, 0);
+    points.push({ label: DAY_LABELS[i], revenue: round2(revenue) });
+  }
+  return points;
+}
+
+function bucketByFourWeeks(
+  rows: Array<{ createdAt: Date; sales: number }>,
+  monthStart: Date
+): TrendPoint[] {
+  const y = monthStart.getFullYear();
+  const m = monthStart.getMonth();
+  const nextMonth = new Date(y, m + 1, 1);
+  const weekWindows = [
+    { label: "Week 1", start: new Date(y, m, 1), end: new Date(y, m, 8) },
+    { label: "Week 2", start: new Date(y, m, 8), end: new Date(y, m, 15) },
+    { label: "Week 3", start: new Date(y, m, 15), end: new Date(y, m, 22) },
+    { label: "Week 4", start: new Date(y, m, 22), end: nextMonth },
+  ];
+
+  return weekWindows.map((w) => {
+    const revenue = rows
+      .filter((r) => r.createdAt >= w.start && r.createdAt < w.end)
+      .reduce((sum, r) => sum + r.sales, 0);
+    return { label: w.label, revenue: round2(revenue) };
+  });
+}
+
+function bucketByTwelveMonths(
+  rows: Array<{ createdAt: Date; sales: number }>,
+  yearStart: Date
+): TrendPoint[] {
+  const y = yearStart.getFullYear();
+  const points: TrendPoint[] = [];
+  for (let m = 0; m < 12; m++) {
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 1);
+    const revenue = rows
+      .filter((r) => r.createdAt >= start && r.createdAt < end)
+      .reduce((sum, r) => sum + r.sales, 0);
+    points.push({ label: MONTH_SHORT_NAMES[m], revenue: round2(revenue) });
+  }
+  return points;
+}
+
+function bucketByFiveYears(
+  rows: Array<{ createdAt: Date; sales: number }>,
+  rangeEnd: Date
+): TrendPoint[] {
+  const endYear = rangeEnd.getFullYear() - 1;
+  const startYear = endYear - 4;
+  const points: TrendPoint[] = [];
+  for (let y = startYear; y <= endYear; y++) {
+    const start = new Date(y, 0, 1);
+    const end = new Date(y + 1, 0, 1);
+    const revenue = rows
+      .filter((r) => r.createdAt >= start && r.createdAt < end)
+      .reduce((sum, r) => sum + r.sales, 0);
+    points.push({ label: String(y), revenue: round2(revenue) });
+  }
+  return points;
+}
+
+function bucketByDailyDates(
+  rows: Array<{ createdAt: Date; sales: number }>,
+  rangeStart: Date,
+  rangeEnd: Date
+): TrendPoint[] {
+  const points: TrendPoint[] = [];
+  let cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
   while (cursor < rangeEnd) {
-    const { start, end } = bucketStrategy.range(cursor);
-    const bucketEnd = end < rangeEnd ? end : rangeEnd;
+    const nextDay = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    const dayEnd = nextDay < rangeEnd ? nextDay : rangeEnd;
     const revenue = rows
-      .filter((r) => r.createdAt >= start && r.createdAt < bucketEnd)
-      .reduce((sum, r) => sum + r.totalCost, 0);
-    points.push({ label: bucketStrategy.label(cursor), revenue: round2(revenue) });
-    cursor = bucketStrategy.next(cursor);
+      .filter((r) => r.createdAt >= cursor && r.createdAt < dayEnd)
+      .reduce((sum, r) => sum + r.sales, 0);
+    const dayLabel = cursor.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" });
+    points.push({ label: dayLabel, revenue: round2(revenue) });
+    cursor = nextDay;
   }
   return points;
 }
 
-function bucketByHour(rows: Array<{ createdAt: Date; totalCost: number }>, dayStart: Date): TrendPoint[] {
-  const now = new Date();
-  const isToday = dayStart.toDateString() === now.toDateString();
-  const lastHour = isToday ? now.getHours() : 23;
-
-  const points: TrendPoint[] = [];
-  for (let hour = 0; hour <= lastHour; hour++) {
-    const revenue = rows
-      .filter((r) => r.createdAt.getHours() === hour)
-      .reduce((sum, r) => sum + r.totalCost, 0);
-    points.push({ label: formatHourLabel(hour), revenue: round2(revenue) });
-  }
-  return points;
-}
-
-function formatHourLabel(hour: number): string {
-  const period = hour < 12 ? "AM" : "PM";
-  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-  return `${displayHour} ${period}`;
+/**
+ * An errand's sales: `totalCost` (items + delivery fee + tip) without the tip.
+ * The business takes no tips, but 100 delivered errands on prod carry tip 20
+ * (PHP 2,000), which made this tile and the trend PHP 2,000 higher than the
+ * Sales report. Kept identical to reportService's salesValue.
+ */
+function salesValue(r: { totalCost: number; tip: number }): number {
+  return round2(r.totalCost - (r.tip ?? 0));
 }
 
 function round2(value: number): number {

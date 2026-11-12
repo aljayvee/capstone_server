@@ -1,4 +1,8 @@
 import { prisma } from "../lib/prisma.js";
+import {
+  ADJUSTMENT_SELECT,
+  settlementAdjustmentRepository,
+} from "./settlementAdjustmentRepository.js";
 
 export interface CreateSettlementData {
   errandId: string;
@@ -33,11 +37,14 @@ export const settlementRepository = {
    * labels the two sections with their basis rather than merging them, because
    * silently mixed windows read as missing money.
    */
-  findBetweenWithRider(start: Date, end: Date) {
+  findBetweenWithRider(start: Date, end: Date, riderId?: number) {
     return prisma.settlementRecord.findMany({
-      where: { settledAt: { gte: start, lt: end } },
+      // riderId: the Settlement report's one-rider view; other callers omit it.
+      where: { settledAt: { gte: start, lt: end }, ...(riderId ? { riderId } : {}) },
       select: {
+        id: true,
         errandId: true,
+        errand: { select: { referenceNo: true } },
         riderId: true,
         expectedAmount: true,
         collectedAmount: true,
@@ -46,8 +53,14 @@ export const settlementRepository = {
         shortReason: true,
         settledAt: true,
         rider: { select: { firstName: true, lastName: true } },
+        // What has happened to a short since, as of now (not as of the window).
+        adjustments: { select: ADJUSTMENT_SELECT, orderBy: { recordedAt: "asc" } },
       },
       orderBy: { settledAt: "desc" },
     });
+  },
+
+  findRepaymentsBetweenWithSettlement(start: Date, end: Date, riderId?: number) {
+    return settlementAdjustmentRepository.findRepaymentsBetweenWithSettlement(start, end, riderId);
   },
 };

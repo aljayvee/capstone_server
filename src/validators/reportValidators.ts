@@ -75,7 +75,14 @@ export function checkRange(q: RangeShape, ctx: z.RefinementCtx): void {
   if (violation) ctx.addIssue({ code: z.ZodIssueCode.custom, message: violation });
 }
 
-export const reportQuerySchema = z.object(rangeFields).superRefine(checkRange);
+export const reportQuerySchema = z
+  .object({
+    ...rangeFields,
+    // Rider Performance and Commission: narrows the report (and its printout)
+    // to one rider. The other four reports ignore it.
+    riderId: z.coerce.number().int().positive().optional(),
+  })
+  .superRefine(checkRange);
 
 export type ReportQuery = z.infer<typeof reportQuerySchema>;
 

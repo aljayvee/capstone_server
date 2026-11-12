@@ -2,7 +2,13 @@ import { prisma } from "../lib/prisma.js";
 import { normalizeUsername, normalizeEmail, looksLikeEmail } from "../lib/identity.js";
 import type { Prisma } from "@prisma/client";
 
-const WITH_INFORMATION = { information: true, profilePhoto: true } as const;
+// The photo's bytes stay out: every login, refresh and profile read loads this,
+// and the photo itself (up to 740 KB of base64) is served by its own signed
+// link, GET /api/customers/:id/photo (customerPhotoLink.ts).
+const WITH_INFORMATION = {
+  information: true,
+  profilePhoto: { select: { id: true, mimeType: true, fileSize: true, fileName: true, updatedAt: true } },
+} as const;
 
 export interface CustomerCreateData {
   username: string;

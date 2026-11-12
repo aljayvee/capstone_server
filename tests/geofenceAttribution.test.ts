@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pinpointRepository } from '../src/repositories/pinpointRepository.js';
 
 // Real catalogue coordinates. The distances between them are the whole point of
 // these tests, so they are not rounded or invented.
@@ -50,13 +51,20 @@ function dwellAt(at: { latitude: number; longitude: number }, minutes = 5) {
 }
 
 beforeEach(() => {
-  markArrived.mockReset().mockResolvedValue(undefined);
+  markArrived.mockReset().mockResolvedValue({ count: 1 });
   markDeparted.mockReset().mockResolvedValue(undefined);
   existsForPinpoint.mockReset().mockResolvedValue(false);
   createObservation.mockReset().mockResolvedValue(undefined);
 });
 
 describe("geofence attribution with overlapping radii", () => {
+  it('uses an explicit arrival that wins a race without announcing it twice', async () => {
+    const points = dwellAt(JOLLIBEE_MAIN);
+    markArrived.mockResolvedValue({ count: 0 });
+    vi.mocked(pinpointRepository.findByErrandId).mockResolvedValue([{ id: 1, arrivedAt: points[1].recordedAt }] as any);
+    const transitions = await applyGeofenceTransitions('errand-race', [stop(1, JOLLIBEE_MAIN)], points);
+    expect(transitions).toEqual([]);
+  });
   it("gives a contested fix to exactly one stop — the nearer", async () => {
     // Jollibee Main and Greenwich are ~89 m apart, so their 75 m circles overlap
     // and a rider between them is genuinely inside both. Before nearest-wins,

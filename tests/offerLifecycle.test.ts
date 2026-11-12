@@ -20,9 +20,16 @@ const { state, groupBy } = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/lib/prisma.js", () => ({ prisma: { errand: { groupBy } } }));
+vi.mock("../src/repositories/riderOfferDeclineRepository.js", () => ({
+  riderOfferDeclineRepository: { create: vi.fn(async () => ({})) },
+}));
 vi.mock("../src/repositories/errandRepository.js", () => ({
   errandRepository: {
-    findStatusAndRiderById: vi.fn(async () => ({ status: state.errand.status, riderId: state.errand.riderId })),
+    findStatusAndRiderById: vi.fn(async () => ({
+      status: state.errand.status,
+      riderId: state.errand.riderId,
+      assignedAt: state.errand.assignedAt ?? null,
+    })),
     findById: vi.fn(async () => state.errand),
     countInTransitForRider: vi.fn(async () => 0),
     acceptOffer: vi.fn(async () => state.acceptCount),
@@ -39,8 +46,10 @@ vi.mock("../src/lib/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { acceptErrand, declineErrand, expireStaleOffers, OFFER_EXPIRY_MS } = await import("../src/services/errandService.js");
+const { acceptErrand, declineErrand, expireStaleOffers, OFFER_EXPIRY_MS, OFFER_EXPIRED_REASON } = await import("../src/services/errandService.js");
 const { errandRepository } = await import("../src/repositories/errandRepository.js");
+const { riderOfferDeclineRepository } = await import("../src/repositories/riderOfferDeclineRepository.js");
+const { logger } = await import("../src/lib/logger.js");
 
 const NOW = new Date("2026-10-09T12:00:00Z");
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
@@ -95,6 +104,41 @@ describe("declineErrand", () => {
   });
 });
 
+// The permanent record (2026-10-25): releaseOffer clears riderId, so this row
+// is the only thing left that ties the rider to the offer they refused.
+describe("declineErrand records the decline", () => {
+  it("keeps who declined, which errand, the reason and when it was offered", async () => {
+    const offeredAt = ago(20_000);
+    state.errand = { ...state.errand, assignedAt: offeredAt };
+    await declineErrand("ERR-1", 7, "  flat tyre  ");
+    expect(riderOfferDeclineRepository.create).toHaveBeenCalledWith({
+      riderId: 7,
+      errandId: "ERR-1",
+      kind: "DECLINED",
+      reason: "flat tyre",
+      offeredAt,
+    });
+  });
+
+  it("records nothing when the offer was no longer open", async () => {
+    state.releaseCount = 0;
+    await expect(declineErrand("ERR-1", 7, "busy")).rejects.toMatchObject({ status: 409 });
+    expect(riderOfferDeclineRepository.create).not.toHaveBeenCalled();
+  });
+
+  it("records the rider app's own countdown running out as a lapse, not a refusal", async () => {
+    await declineErrand("ERR-1", 7, OFFER_EXPIRED_REASON);
+    expect(riderOfferDeclineRepository.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "EXPIRED" }));
+  });
+
+  it("still hands the offer on when the record cannot be written", async () => {
+    vi.mocked(riderOfferDeclineRepository.create).mockRejectedValueOnce(new Error("db down"));
+    await declineErrand("ERR-1", 7, "busy");
+    expect(logger.error).toHaveBeenCalled();
+    expect(groupBy).toHaveBeenCalled();
+  });
+});
+
 describe("expireStaleOffers", () => {
   it("looks for offers older than the expiry window", async () => {
     await expireStaleOffers(NOW);
@@ -106,6 +150,14 @@ describe("expireStaleOffers", () => {
     expect(await expireStaleOffers(NOW)).toBe(1);
     expect(errandRepository.releaseOffer).toHaveBeenCalledWith("ERR-1", 7);
     expect(groupBy).toHaveBeenCalledTimes(1);
+  });
+
+  it("records an expired offer as a lapse against the rider", async () => {
+    state.stale = [{ id: "ERR-1", riderId: 7, assignedAt: ago(75_000) }];
+    await expireStaleOffers(NOW);
+    expect(riderOfferDeclineRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ riderId: 7, errandId: "ERR-1", kind: "EXPIRED" })
+    );
   });
 
   it("returns an hours-old ghost offer to the dispatcher instead of sending a rider out on it", async () => {

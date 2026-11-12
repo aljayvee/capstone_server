@@ -2,6 +2,7 @@ import rateLimit from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma.js";
+import { logRefusal } from "../lib/authzLog.js";
 import type { AuthenticatedRequest } from "./auth.js";
 
 const isDev = process.env.NODE_ENV === "development" || !process.env.NODE_ENV;
@@ -86,6 +87,7 @@ export function verifySysAdminCsrf(req: Request, res: Response, next: NextFuncti
   // 1. Client header verification
   const clientHeader = req.headers["x-sysadmin-client"];
   if (clientHeader !== "sugo-sysadmin-web") {
+    logRefusal(req, 403, "CSRF check: missing or wrong X-SysAdmin-Client header");
     return res.status(403).json({
       error: "CSRF protection: Missing or invalid X-SysAdmin-Client header.",
     });
@@ -107,11 +109,13 @@ export function verifySysAdminCsrf(req: Request, res: Response, next: NextFuncti
         (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
       );
       if (!isAllowed) {
+        logRefusal(req, 403, `CSRF check: origin ${parsed.origin} is not allowed`);
         return res.status(403).json({
           error: `CSRF protection: Unauthorized origin '${parsed.origin}'.`,
         });
       }
     } catch {
+      logRefusal(req, 403, "CSRF check: malformed Origin/Referer");
       return res.status(403).json({ error: "CSRF protection: Malformed origin header." });
     }
   }
@@ -149,6 +153,7 @@ export function blockTorAndProxies(req: Request, res: Response, next: NextFuncti
 
   for (const header of suspiciousProxyHeaders) {
     if (headers[header]) {
+      logRefusal(req, 403, `anonymous-proxy header ${header}`);
       return res.status(403).json({
         error: "Access denied: Connecting through known Tor exit nodes or anonymous proxies is restricted for the administrative portal.",
       });
@@ -166,11 +171,13 @@ export async function verifyStepUpPassword(req: AuthenticatedRequest, res: Respo
   try {
     const adminId = req.user?.id;
     if (!adminId) {
+      logRefusal(req, 401, "no signed-in admin at a step-up check");
       return res.status(401).json({ error: "Authentication required." });
     }
 
     const password = req.body?.stepUpPassword || req.headers["x-step-up-password"];
     if (!password || typeof password !== "string") {
+      logRefusal(req, 403, "no step-up password");
       return res.status(403).json({
         error: "Step-up re-authentication required. Please provide your current administrator password to confirm this action.",
         stepUpRequired: true,
@@ -183,11 +190,13 @@ export async function verifyStepUpPassword(req: AuthenticatedRequest, res: Respo
     });
 
     if (!admin || admin.status !== "Active") {
+      logRefusal(req, 401, "admin account missing or not Active at a step-up check");
       return res.status(401).json({ error: "Administrative session invalid or suspended." });
     }
 
     const isValid = await bcrypt.compare(password, admin.passwordHash);
     if (!isValid) {
+      logRefusal(req, 403, "wrong step-up password");
       return res.status(403).json({
         error: "Step-up re-authentication failed: incorrect administrator password.",
         stepUpRequired: true,

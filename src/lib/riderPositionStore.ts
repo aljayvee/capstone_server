@@ -20,6 +20,7 @@ export interface RiderPosition {
   recordedAt: number;
   accuracyMeters: number | null;
   headingDeg: number | null;
+  speedMps?: number | null;
 }
 
 const positions = new Map<number, RiderPosition>();

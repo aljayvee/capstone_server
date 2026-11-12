@@ -82,6 +82,20 @@ export const JWT_CHALLENGE_SECRET =
 // it is carrying.
 export const LOGIN_CHALLENGE_EXPIRES_IN_SECONDS = 10 * 60;
 
+// Sign-in audiences (WEB_PORTAL, RIDER_APP, CUSTOMER_APP) whose every sign-in on
+// an untrusted device must pass a second factor (see mfaTrustService). Empty by
+// default, so the server can ship before the clients that answer the challenge;
+// each audience is switched on once its client is out.
+export const MFA_ENFORCED_AUDIENCES: ReadonlySet<string> = new Set(
+  (process.env.MFA_ENFORCED_AUDIENCES || "")
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+);
+
+// How long a device that passed MFA is trusted before it is asked again.
+export const MFA_TRUST_DAYS = Number(process.env.MFA_TRUST_DAYS) > 0 ? Number(process.env.MFA_TRUST_DAYS) : 30;
+
 // Signs the password-reset token handed out after a customer proves ownership
 // of their mailbox with the emailed code. Separate from JWT_SECRET for exactly
 // the reason spelled out above — a reset token that doubled as a bearer token

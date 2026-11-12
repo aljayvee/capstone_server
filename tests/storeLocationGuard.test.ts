@@ -35,15 +35,24 @@ describe("checkStoreLocation", () => {
     const verdict = await checkStoreLocation(TANTANGAN_ROAD);
     expect(verdict.status).toBe("blocked");
     expect(verdict.reason).toBe("outside_border");
-    expect(verdict.kmBeyondBorder).toBeGreaterThan(5);
-    expect(verdict.message).toMatch(/outside Tacurong City/);
+    // Measured to the NEAREST zone: since Banga became a zone (2026-11-09) that
+    // is Banga's northern tip, about 3.8 km away, not Tacurong's edge.
+    expect(verdict.kmBeyondBorder).toBeGreaterThan(3);
+    expect(verdict.message).toMatch(/outside all supported service areas/);
+  });
+
+  it("passes a store inside Banga, the second service zone, and names it", async () => {
+    nearestRoadMeters.mockResolvedValue(15);
+    const verdict = await checkStoreLocation({ latitude: 6.4232, longitude: 124.7762 });
+    expect(verdict.status).toBe("inside");
+    expect(verdict.message).toBe("Inside Banga.");
   });
 
   it("blocks a spot off the loaded road graph, however it got there", async () => {
     nearestRoadMeters.mockResolvedValue(38_000);
     const verdict = await checkStoreLocation(OFF_MAP);
     expect(verdict.status).toBe("blocked");
-    expect(verdict.message).toMatch(/outside Tacurong City|outside the road map/);
+    expect(verdict.message).toMatch(/outside all supported service areas|outside the road map/);
   });
 
   it("strictly rejects spots outside border regardless of graph road distance", async () => {

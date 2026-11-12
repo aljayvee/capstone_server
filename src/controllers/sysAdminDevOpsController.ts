@@ -3,6 +3,7 @@ import {
   getSystemTelemetry,
   toggleMaintenanceMode,
   getPortalMaintenanceStatus,
+  ensureMaintenanceLoaded,
   triggerDatabaseBackupSnapshot,
   listItAdministrators,
   createItAdministrator,
@@ -11,6 +12,8 @@ import {
   setServerErrorStatus,
   getDispatcherAiSuggestionsEnabled,
   setDispatcherAiSuggestionsEnabled,
+  getKuyaSugoEnabled,
+  setKuyaSugoEnabled,
 } from "../services/sysAdminDevOpsService.js";
 import { sysAdminBackupService } from "../services/sysAdminBackupService.js";
 import { sysAdminLogService, type LogSource } from "../services/sysAdminLogService.js";
@@ -33,7 +36,7 @@ export async function getTelemetryHandler(req: AuthenticatedRequest, res: Respon
 
 export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: Response) {
   try {
-    const { portal, active, notice, maintenanceType, header, message, supportContact, customColor } = req.body;
+    const { portal, active, notice, maintenanceType, header, message, supportContact, customColor, footnote } = req.body;
     const validPortals = ["owner", "dispatcher", "rider", "customer"];
     if (!portal || !validPortals.includes(portal)) {
       return res.status(400).json({ error: `Property 'portal' must be one of: ${validPortals.join(", ")}.` });
@@ -41,7 +44,7 @@ export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: R
     if (typeof active !== "boolean") {
       return res.status(400).json({ error: "Property 'active' must be a boolean." });
     }
-    const validTypes = ["SCHEDULED", "EMERGENCY", "UPGRADE", "SECURITY"];
+    const validTypes = ["SCHEDULED", "EMERGENCY", "UPGRADE", "SECURITY", "ADVISORY", "LIVE_NOTICE"];
     if (maintenanceType && !validTypes.includes(maintenanceType)) {
       return res.status(400).json({ error: `Property 'maintenanceType' must be one of: ${validTypes.join(", ")}.` });
     }
@@ -56,6 +59,7 @@ export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: R
         message: message || notice,
         supportContact,
         customColor,
+        footnote,
       },
       operator
     );
@@ -69,12 +73,13 @@ export async function toggleMaintenanceHandler(req: AuthenticatedRequest, res: R
 }
 
 // Public endpoint — no auth required — for portal polling
-export function getPublicMaintenanceStatusHandler(req: AuthenticatedRequest, res: Response) {
+export async function getPublicMaintenanceStatusHandler(req: AuthenticatedRequest, res: Response) {
   const { portal } = req.query;
   const validPortals = ["owner", "dispatcher", "rider", "customer"];
   if (!portal || typeof portal !== "string" || !validPortals.includes(portal)) {
     return res.status(400).json({ error: `Query param 'portal' must be one of: ${validPortals.join(", ")}.` });
   }
+  await ensureMaintenanceLoaded();
   const status = getPortalMaintenanceStatus(portal as "owner" | "dispatcher" | "rider" | "customer");
   return res.status(200).json(status);
 }
@@ -128,6 +133,29 @@ export async function toggleDispatcherAiSuggestionsHandler(req: AuthenticatedReq
       return res.status(err.status).json({ error: err.message });
     }
     return res.status(500).json({ error: "Failed to update dispatcher AI suggestions." });
+  }
+}
+
+// Staff endpoint — read by owner portal to show or hide the Kuya Sugo AI copilot button & drawer
+export function getKuyaSugoHandler(req: AuthenticatedRequest, res: Response) {
+  return res.status(200).json({ enabled: getKuyaSugoEnabled() });
+}
+
+// SysAdmin mutation endpoint — turns the Kuya Sugo AI assistant on or off
+export async function toggleKuyaSugoHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ error: "Property 'enabled' must be a boolean." });
+    }
+    const operator = req.user?.username || req.user?.email || "Administrator";
+    const result = await setKuyaSugoEnabled(enabled, operator);
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    if (err instanceof ServiceError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return res.status(500).json({ error: "Failed to update Kuya Sugo status." });
   }
 }
 

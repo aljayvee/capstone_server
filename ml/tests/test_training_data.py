@@ -7,6 +7,7 @@ calibrated, and the export file a Docker build trains from.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -14,6 +15,8 @@ import pytest
 from sugo_category.evaluation import apply_temperature, fit_temperature, group_split, load_osm_rows, measure
 from sugo_category.lexicon import FOOD, GROCERY, PHARMACY, RETAIL
 from sugo_category.model import CategoryModel, normalize
+from sugo_category.config import ITEM
+from sugo_category.lexicon import synthetic_rows
 from sugo_category.train import is_shop_name, main as train_main
 
 SIX = [FOOD, PHARMACY, GROCERY, RETAIL, "Bakery", "Convenience Store"]
@@ -52,6 +55,31 @@ def test_group_split_never_puts_one_name_in_two_splits():
     names = [{normalize(n) for n, _ in part} for part in (train, val, test)]
     assert not (names[0] & names[1]) and not (names[0] & names[2]) and not (names[1] & names[2])
     assert len(train) + len(val) + len(test) == len(rows)
+
+
+def test_item_holdout_names_never_leak_through_seed_vocabulary(monkeypatch):
+    import sugo_category.model as module
+
+    # Every real name is also a seed: withholding only real rows leaked the
+    # same name into the probe through a second source.
+    real = [(name, category) for name, category, kind in synthetic_rows(SIX) if kind == "item"][:60]
+    _, _, test = group_split(real, val=0.0, test=0.2, seed=20260923)
+    test_names = {normalize(name) for name, _ in test}
+    calls = []
+    original = module._fit_predictor
+
+    def capture(settings, rows, val_rows, **kwargs):
+        calls.append((list(rows), list(val_rows)))
+        return original(settings, rows, val_rows, **kwargs)
+
+    monkeypatch.setattr(module, "_fit_predictor", capture)
+    CategoryModel.train("item", real, allowed=set(SIX), settings=replace(ITEM, classifier="logistic"))
+    assert test_names
+    probe_rows, validation = calls[0]
+    assert not test_names.intersection(normalize(name) for name, _, _ in probe_rows)
+    assert not test_names.intersection(normalize(name) for name, _ in validation)
+    # Withholding is evaluation-only; the final model still learns all names.
+    assert test_names <= {normalize(name) for name, _, _ in calls[-1][0]}
 
 
 def test_temperature_keeps_the_ranking_and_fixes_overconfidence():

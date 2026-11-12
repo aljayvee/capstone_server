@@ -38,6 +38,10 @@ Fares and ETAs rely on road-network geometry rather than straight-line distance.
 
 Errand arrival estimates account for both travel time and category-specific store wait times (P50/P80 dwell percentiles learned nightly from past deliveries).
 
+For active merchant categories with zero observations, valid configured P50/P80 defaults can provide the dwell baseline. The upper dwell bound retains 25% padding; no observations or sample counts are fabricated. Set `ETA_ALLOW_ZERO_SAMPLE_BASELINE=false` to disable this policy. Unknown or inactive categories, categories with 1-9 observations, and degraded routing retain the low-confidence behavior. Delivery promises still freeze only with a fresh rider position, a non-degraded route, and no stores remaining.
+
+Riders can report store arrival with `PATCH /api/errands/:id/pinpoints/:pinpointId/arrived` independently of GPS batch uploads. The authenticated rider must own the errand and the pinpoint must belong to it. New arrivals require `IN_TRANSIT`; repeated requests preserve the first timestamp. The endpoint uses server receipt time, emits `errand:stop_arrived` to the errand parties, and triggers an ETA refresh. Deploy this endpoint before releasing the rider client that calls it.
+
 ### 3. Authentication and Security
 - Access Tokens: Short-lived (15 minutes), decoded and verified statelessly.
 - Refresh Tokens: Rotating 30-day tokens stored in HttpOnly cookies or secure mobile storage. Replay detection revokes compromised sessions immediately.

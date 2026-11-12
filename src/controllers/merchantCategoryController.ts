@@ -6,6 +6,7 @@ import {
   storeCategoryImageUploadSchema,
 } from "../validators/merchantCategoryValidators.js";
 import * as merchantCategoryService from "../services/merchantCategoryService.js";
+import { invalidateMerchantCategoryCache } from "../lib/merchantCategoryCache.js";
 import { ServiceError } from "../services/ServiceError.js";
 
 export const listMerchantCategories = asyncHandler(async (req, res) => {
@@ -22,6 +23,7 @@ export const listMerchantCategories = asyncHandler(async (req, res) => {
 export const createMerchantCategory = asyncHandler(async (req, res) => {
   const input = parseOrThrow(createMerchantCategorySchema, req.body);
   const category = await merchantCategoryService.createMerchantCategory(input);
+  invalidateMerchantCategoryCache();
   res.status(201).json(category);
 });
 
@@ -29,6 +31,7 @@ export const updateMerchantCategory = asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const input = parseOrThrow(updateMerchantCategorySchema, req.body);
   const category = await merchantCategoryService.updateMerchantCategory(id, input);
+  invalidateMerchantCategoryCache();
   res.json(category);
 });
 
@@ -72,11 +75,13 @@ export const uploadStoreCategoryImage = asyncHandler(async (req, res) => {
   const categoryId = parseCategoryId(req.params.id);
   const input = parseOrThrow(storeCategoryImageUploadSchema, req.body);
   const result = await merchantCategoryService.setCategoryImage(categoryId, input);
+  invalidateMerchantCategoryCache();
   res.json(result);
 });
 
 export const deleteStoreCategoryImage = asyncHandler(async (req, res) => {
   const categoryId = parseCategoryId(req.params.id);
   const result = await merchantCategoryService.removeCategoryImage(categoryId);
+  invalidateMerchantCategoryCache();
   res.json(result);
 });

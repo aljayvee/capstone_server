@@ -9,9 +9,17 @@ import { buildCustomerAccountCreateData, flattenCustomerAccount } from "./patter
 import { sendVerificationCode } from "./emailVerificationService.js";
 import { emailVerificationRepository } from "../repositories/emailVerificationRepository.js";
 import { verifyFirebaseIdToken } from "../lib/firebaseAdmin.js";
+import type { DecodedFirebaseToken } from "../lib/firebaseAdmin.js";
 import * as loginChallengeService from "./loginChallengeService.js";
-import type { ChallengeAudience, LoginChallenge } from "./loginChallengeService.js";
+import type {
+  ChallengeAudience,
+  ChallengeSubject,
+  LoginChallenge,
+  MfaRequestContext,
+} from "./loginChallengeService.js";
 import * as staffVerificationService from "./staffVerificationService.js";
+import * as mfaTrustService from "./mfaTrustService.js";
+import type { TrustMethod } from "./mfaTrustService.js";
 import { ServiceError } from "./ServiceError.js";
 import { JWT_SECRET, JWT_REFRESH_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN } from "../config/env.js";
 import * as sessionService from "./sessionService.js";
@@ -101,6 +109,18 @@ export type LoginOutcome =
   | { kind: "AUTHENTICATED"; result: AuthResult; user: StaffRow }
   | { kind: "CHALLENGE"; challenge: LoginChallenge };
 
+// The customer twin. No row rides along: the login alert and log that read it
+// are staff-only.
+export type CustomerLoginOutcome =
+  | { kind: "AUTHENTICATED"; result: AuthResult }
+  | { kind: "CHALLENGE"; challenge: LoginChallenge };
+
+// Where the request came from, for the trust a passed second factor grants.
+export interface DeviceContext {
+  deviceId: string | null;
+  userAgent: string | null;
+}
+
 // NOTE: loginGeneral/loginRider/loginCustomer intentionally stay as three separate
 // functions sharing these internals — mirrors the original three near-duplicated
 // route handlers structurally. Collapsing them behind a single Facade (see
@@ -177,19 +197,27 @@ function finalizeStaffLogin(user: StaffRow, audience: ChallengeAudience): AuthRe
   return issueAuthResult(user);
 }
 
-export async function loginGeneral(identifier: string, password: string): Promise<LoginOutcome> {
+export async function loginGeneral(
+  identifier: string,
+  password: string,
+  mfa: MfaRequestContext = loginChallengeService.LEGACY_CLIENT
+): Promise<LoginOutcome> {
   const user = await verifyStaffCredentials(identifier, password);
-  const challenge = await loginChallengeService.startChallenge(user, "WEB_PORTAL");
+  const challenge = await loginChallengeService.startChallenge(user, "WEB_PORTAL", mfa);
   if (challenge) return { kind: "CHALLENGE", challenge };
   return { kind: "AUTHENTICATED", result: finalizeStaffLogin(user, "WEB_PORTAL"), user };
 }
 
-export async function loginRider(identifier: string, password: string): Promise<LoginOutcome> {
+export async function loginRider(
+  identifier: string,
+  password: string,
+  mfa: MfaRequestContext = loginChallengeService.LEGACY_CLIENT
+): Promise<LoginOutcome> {
   const user = await verifyStaffCredentials(identifier, password, {
     role: "RIDER",
     deniedMessage: "Access denied: Only Rider accounts are permitted to access the Rider Mobile App.",
   });
-  const challenge = await loginChallengeService.startChallenge(user, "RIDER_APP");
+  const challenge = await loginChallengeService.startChallenge(user, "RIDER_APP", mfa);
   if (challenge) return { kind: "CHALLENGE", challenge };
   return { kind: "AUTHENTICATED", result: finalizeStaffLogin(user, "RIDER_APP"), user };
 }
@@ -205,10 +233,18 @@ export interface CompleteProfileInput {
 // The bootstrap admin supplying a real identity. Ends in a NEW challenge at
 // step OTP — the re-mint is required, not cosmetic: the credential stamp covers
 // the email, which just changed, so the old token is now structurally invalid.
-export async function completeLoginProfile(input: CompleteProfileInput): Promise<LoginChallenge> {
-  const { user, audience } = await loginChallengeService.consumeChallenge(input.challengeToken, {
+export async function completeLoginProfile(
+  input: CompleteProfileInput,
+  mfa: MfaRequestContext = loginChallengeService.LEGACY_CLIENT
+): Promise<LoginChallenge> {
+  const { subject, audience } = await loginChallengeService.consumeChallenge(input.challengeToken, {
     step: "PROFILE_SETUP",
   });
+  // Only staff are ever sent to profile setup.
+  if (subject.kind !== "STAFF") {
+    throw new ServiceError(401, "Your sign-in session expired. Please sign in again.");
+  }
+  const user = subject.row;
 
   const email = input.email.trim().toLowerCase();
   const emailOwner = await userRepository.findByIdentifier(email);
@@ -225,96 +261,235 @@ export async function completeLoginProfile(input: CompleteProfileInput): Promise
   });
 
   await loginChallengeService.burnChallenge(input.challengeToken);
-  return loginChallengeService.restartChallenge(user.id, audience);
+  return loginChallengeService.restartChallenge(user.id, audience, mfa);
 }
 
 export interface VerifyLoginOtpResult {
   result: AuthResult;
-  user: StaffRow;
+  // The staff row, for the login alert and log; null for a customer.
+  user: StaffRow | null;
   audience: ChallengeAudience;
+  // This device's MFA trust (mfaTrustService), handed to the client once.
+  trustToken: string;
+}
+
+// Philippine mobile numbers in the one form both sides can compare exactly:
+// "0917 123 4567", "639171234567" and "+63 917 123 4567" all become
+// "+639171234567". Anything else keeps its digits behind a "+".
+export function canonicalPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("63")) return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `+63${digits.slice(1)}`;
+  if (digits.length === 10 && digits.startsWith("9")) return `+63${digits}`;
+  return `+${digits}`;
+}
+
+// How far a phone sign-in may precede the challenge it answers, for clock skew
+// between Google and this server.
+const SMS_PROOF_SKEW_SECONDS = 30;
+
+// Marks a Firebase ID token as used, for as long as it could still verify.
+// Insert-only, so two concurrent requests with one token cannot both win. The
+// SMS proof and Google sign-in share the key space, so a token spent as one can
+// never answer the other.
+async function claimFirebaseIdToken(idToken: string, decoded: DecodedFirebaseToken): Promise<boolean> {
+  const spentKey = `firebase-id:${crypto.createHash("sha256").update(idToken).digest("hex")}`;
+  const expiresAt = new Date((decoded.expiresAt ?? Math.floor(Date.now() / 1000) + 3600) * 1000);
+  return tokenBlocklistRepository.claim(spentKey, expiresAt);
+}
+
+/**
+ * The SMS factor. Firebase Phone Auth sent the code and checked it; the client
+ * proves that with the ID token of that phone sign-in, and this decides whether
+ * the proof answers THIS challenge for THIS account:
+ * - the token comes from a phone sign-in, not Google or a custom token;
+ * - that sign-in happened after the challenge was issued, so an old token
+ *   lying in a browser cannot be replayed;
+ * - its number is exactly the account's number, country code included;
+ * - it is spent: the same token never answers a second challenge.
+ */
+async function verifySmsProof(firebaseIdToken: string, accountPhone: string, challengeIssuedAt: number): Promise<void> {
+  const decoded = await verifyFirebaseIdToken(firebaseIdToken);
+  if (decoded.signInProvider !== "phone" || !decoded.phoneNumber) {
+    throw new ServiceError(400, "This step needs the code from a text message. Please try again.");
+  }
+  if (!decoded.authTime || decoded.authTime < challengeIssuedAt - SMS_PROOF_SKEW_SECONDS) {
+    throw new ServiceError(400, "That text message code was for an earlier sign-in. Please request a new one.");
+  }
+  if (!accountPhone || canonicalPhone(decoded.phoneNumber) !== canonicalPhone(accountPhone)) {
+    throw new ServiceError(400, "That number does not match the mobile number on this account.");
+  }
+
+  if (!(await claimFirebaseIdToken(firebaseIdToken, decoded))) {
+    throw new ServiceError(401, "That text message code was already used. Please request a new one.");
+  }
+}
+
+// After the second factor: records the channel as verified, so the
+// first-sign-in check (staff) and password reset by SMS (customers) know it.
+async function markFactorVerified(subject: ChallengeSubject, method: TrustMethod): Promise<void> {
+  if (subject.kind === "STAFF") {
+    if (method === "SMS" && !subject.row.phoneVerified) await userRepository.markPhoneVerified(subject.row.id);
+    if (method === "EMAIL" && !subject.row.emailVerified) await userRepository.markEmailVerified(subject.row.id);
+    return;
+  }
+
+  if (method === "EMAIL") {
+    if (!subject.row.emailVerified) await customerRepository.markEmailVerified(subject.row.id);
+    return;
+  }
+  if (subject.row.information?.phoneVerified) return;
+  try {
+    // A number another account has verified stays theirs: the sign-in still
+    // passes (this person has the phone), but it is not marked as verified here.
+    await assertPhoneAvailable(subject.row.information?.phone, subject.row.id);
+  } catch {
+    return;
+  }
+  await customerRepository.update(subject.row.id, {
+    phoneVerified: true,
+    information: { phoneVerified: true, phoneVerifiedAt: new Date() },
+  });
 }
 
 export async function completeLoginOtp(
   challengeToken: string,
   code?: string,
-  firebaseIdToken?: string
+  firebaseIdToken?: string,
+  device: DeviceContext = { deviceId: null, userAgent: null }
 ): Promise<VerifyLoginOtpResult> {
-  const { user, audience } = await loginChallengeService.consumeChallenge(challengeToken, { step: "OTP" });
+  const { subject, audience, issuedAt } = await loginChallengeService.consumeChallenge(challengeToken, {
+    step: "OTP",
+  });
+  const contact = loginChallengeService.contactOf(subject);
 
-  // Hard replay stop, independent of the token blocklist.
-  if (user.emailVerified || user.phoneVerified) {
-    throw new ServiceError(401, "This sign-in has already been completed. Please sign in again.");
-  }
-
+  let method: TrustMethod;
   if (firebaseIdToken) {
-    // 1. SMS OTP path via Google Firebase Phone Auth
-    const decoded = await verifyFirebaseIdToken(firebaseIdToken);
-    if (!decoded.phoneNumber) {
-      throw new ServiceError(400, "Firebase ID token does not contain a verified mobile phone number.");
-    }
-
-    const cleanTokenPhone = decoded.phoneNumber.replace(/\D/g, "");
-    const cleanUserPhone = (user.phone || "").replace(/\D/g, "");
-    const tokenSuffix = cleanTokenPhone.length >= 10 ? cleanTokenPhone.slice(-10) : cleanTokenPhone;
-    const userSuffix = cleanUserPhone.length >= 10 ? cleanUserPhone.slice(-10) : cleanUserPhone;
-
-    if (!userSuffix || tokenSuffix !== userSuffix) {
-      throw new ServiceError(400, "Verified phone number does not match your registered staff account phone number.");
-    }
-
-    await userRepository.markPhoneVerified(user.id);
+    // 1. SMS: Firebase Phone Auth sent and checked the code
+    await verifySmsProof(firebaseIdToken, contact.phone, issuedAt);
+    method = "SMS";
   } else if (code) {
-    // 2. Email OTP path
-    await staffVerificationService.verifyLoginOtp(user.id, code);
-    await userRepository.markEmailVerified(user.id);
+    // 2. Email code
+    if (subject.kind === "STAFF") {
+      await staffVerificationService.verifyLoginOtp(subject.row.id, code);
+    } else {
+      await staffVerificationService.verifyCustomerLoginOtp(subject.row.id, code);
+    }
+    method = "EMAIL";
   } else {
     throw new ServiceError(400, "Please provide either an Email OTP code or Firebase SMS token.");
   }
 
-  await loginChallengeService.burnChallenge(challengeToken);
-
-  // Re-read so the returned profile and the JWT carry the post-verification
-  // state rather than the row we captured before the write.
-  const verifiedUser = await userRepository.findById(user.id);
-  if (!verifiedUser) {
-    throw new ServiceError(401, "Account no longer exists. Please sign in again.");
+  // The replay stop. It used to refuse any account already verified, which was
+  // right while this step ran once per account and would block MFA on every
+  // later sign-in. The insert-only claim keeps the one-session guarantee.
+  if (!(await loginChallengeService.claimChallenge(challengeToken))) {
+    throw new ServiceError(401, "This sign-in has already been completed. Please sign in again.");
   }
 
-  return { result: finalizeStaffLogin(verifiedUser, audience), user: verifiedUser, audience };
+  await markFactorVerified(subject, method);
+
+  // Re-read so the returned profile, the JWT and the trust stamp carry the
+  // post-verification state rather than the row we captured before the write.
+  if (subject.kind === "STAFF") {
+    const verifiedUser = await userRepository.findById(subject.row.id);
+    if (!verifiedUser) {
+      throw new ServiceError(401, "Account no longer exists. Please sign in again.");
+    }
+    const verified: ChallengeSubject = { kind: "STAFF", row: verifiedUser };
+    const trustToken = await mfaTrustService.issue(
+      loginChallengeService.trustSubjectOf(verified),
+      loginChallengeService.trustSourceOf(verified),
+      { ...device, method }
+    );
+    return { result: finalizeStaffLogin(verifiedUser, audience), user: verifiedUser, audience, trustToken };
+  }
+
+  const verifiedCustomer = await customerRepository.findById(subject.row.id);
+  if (!verifiedCustomer) {
+    throw new ServiceError(401, "Account no longer exists. Please sign in again.");
+  }
+  const verified: ChallengeSubject = { kind: "CUSTOMER", row: verifiedCustomer };
+  const trustToken = await mfaTrustService.issue(
+    loginChallengeService.trustSubjectOf(verified),
+    loginChallengeService.trustSourceOf(verified),
+    { ...device, method }
+  );
+  return { result: customerAuthResult(verifiedCustomer), user: null, audience, trustToken };
 }
 
+// Sends (or re-sends) the email code. A capable client calls this when the
+// person picks email, so it is also the FIRST send for them.
 export async function resendLoginOtp(challengeToken: string): Promise<LoginChallenge> {
-  const { user, audience } = await loginChallengeService.consumeChallenge(challengeToken, { step: "OTP" });
+  const { subject, audience } = await loginChallengeService.consumeChallenge(challengeToken, { step: "OTP" });
+  const contact = loginChallengeService.contactOf(subject);
 
-  await staffVerificationService.resendLoginOtp(
-    user.id,
-    user.email,
-    `${user.firstName} ${user.lastName}`.trim()
-  );
+  if (subject.kind === "STAFF") {
+    await staffVerificationService.resendLoginOtp(subject.row.id, contact.email, contact.name);
+  } else {
+    await staffVerificationService.resendCustomerLoginOtp(subject.row.id, contact.email, contact.name);
+  }
 
   // A fresh token so the 10-minute window restarts alongside the new code.
   await loginChallengeService.burnChallenge(challengeToken);
-  return loginChallengeService.restartChallenge(user.id, audience);
+  return loginChallengeService.remintChallenge(subject, audience);
 }
 
 // `identifier` is whatever the customer typed into the single sign-in box —
 // their username OR their email address. The wire key stays `username` (see
 // authValidators.ts) so the parameter name is the only thing that changes.
-export async function loginCustomer(identifier: string, password: string): Promise<AuthResult> {
-  const customer = await customerRepository.findByIdentifier(identifier);
-  if (!customer) {
-    throw new ServiceError(401, "Invalid username or password");
+// The one standing check every customer credential passes through: password,
+// Google and Google sign-up all issue sessions, and a sysadmin suspension used
+// to stop none of them (it revoked the old sessions, then the next sign-in made
+// new ones). Staff have the same rule in verifyStaffCredentials. Called after
+// the credential is proven, so a wrong password cannot learn an account's status.
+const ACCOUNT_DEACTIVATED = "This account has been deactivated. Please contact SUGO support.";
+function assertCustomerActive(customer: { status: string }): void {
+  if (customer.status !== "Active") {
+    throw new ServiceError(403, ACCOUNT_DEACTIVATED);
   }
+}
 
-  if (!customer.passwordHash) {
-    throw new ServiceError(401, "This account uses Google Sign-In. Please sign in with Google.");
+// Linking a Google sign-in to an account BY EMAIL trusts that the caller owns
+// that mailbox. Google tokens always prove it, but Firebase signs tokens for
+// every provider the project enables, and an email/password provider would let
+// anyone claim a customer's address and be linked straight into their account.
+function assertGoogleEmailVerified(decoded: { email?: string; emailVerified?: boolean }): string {
+  if (!decoded.email) {
+    throw new ServiceError(400, "Google account does not have an email address.");
   }
-
-  const isMatch = await bcrypt.compare(password, customer.passwordHash);
-  if (!isMatch) {
-    throw new ServiceError(401, "Invalid username or password");
+  if (decoded.emailVerified !== true) {
+    throw new ServiceError(403, "Google has not verified this email address.");
   }
+  return decoded.email;
+}
 
+// The Google sign-in token. A Firebase ID token verifies for an hour, and
+// nothing ties it to the request that asked for it: the native Google SDK the
+// CustomerApp uses takes no nonce, and there is no redirect for an OAuth
+// `state` to protect. So the server pins down what it can:
+// - it is a Google sign-in, not a phone or password token from the same project;
+// - Firebase has not disabled the user or revoked their sessions since;
+// - spendGoogleSignInToken uses it up once it buys a session or an MFA challenge.
+async function verifyGoogleSignInToken(idToken: string): Promise<DecodedFirebaseToken> {
+  const decoded = await verifyFirebaseIdToken(idToken, { checkRevoked: true });
+  if (decoded.signInProvider !== "google.com") {
+    throw new ServiceError(400, "Please sign in with your Google account and try again.");
+  }
+  return decoded;
+}
+
+async function spendGoogleSignInToken(idToken: string, decoded: DecodedFirebaseToken): Promise<void> {
+  if (!(await claimFirebaseIdToken(idToken, decoded))) {
+    throw new ServiceError(409, "That Google sign-in was already used. Please try again.");
+  }
+}
+
+type CustomerRow = NonNullable<Awaited<ReturnType<typeof customerRepository.findById>>>;
+
+// The one place a customer token pair is minted for sign-in (registration still
+// builds its own inline).
+function customerAuthResult(customer: CustomerRow): AuthResult {
   const flatCustomer = flattenCustomerAccount(customer);
   const tokenPayload: TokenPayload = {
     id: flatCustomer.id,
@@ -332,6 +507,45 @@ export async function loginCustomer(identifier: string, password: string): Promi
     subjectType: "CUSTOMER",
     role: "CUSTOMER",
   };
+}
+
+/**
+ * Trusts the device a customer just registered on: sign-up already proved the
+ * phone or email it needed, so their first sign-in there is not asked again.
+ */
+export async function trustCustomerDevice(customerId: number, device: DeviceContext): Promise<string | null> {
+  const customer = await customerRepository.findById(customerId);
+  if (!customer) return null;
+  const subject: ChallengeSubject = { kind: "CUSTOMER", row: customer };
+  return mfaTrustService.issue(loginChallengeService.trustSubjectOf(subject), loginChallengeService.trustSourceOf(subject), {
+    ...device,
+    method: customer.information?.phoneVerified ? "SMS" : "EMAIL",
+  });
+}
+
+export async function loginCustomer(
+  identifier: string,
+  password: string,
+  mfa: MfaRequestContext = loginChallengeService.LEGACY_CLIENT
+): Promise<CustomerLoginOutcome> {
+  const customer = await customerRepository.findByIdentifier(identifier);
+  if (!customer) {
+    throw new ServiceError(401, "Invalid username or password");
+  }
+
+  if (!customer.passwordHash) {
+    throw new ServiceError(401, "This account uses Google Sign-In. Please sign in with Google.");
+  }
+
+  const isMatch = await bcrypt.compare(password, customer.passwordHash);
+  if (!isMatch) {
+    throw new ServiceError(401, "Invalid username or password");
+  }
+  assertCustomerActive(customer);
+
+  const challenge = await loginChallengeService.startCustomerChallenge(customer, mfa);
+  if (challenge) return { kind: "CHALLENGE", challenge };
+  return { kind: "AUTHENTICATED", result: customerAuthResult(customer) };
 }
 
 export function normalizePhoneDigits(phone: string): string {
@@ -396,21 +610,28 @@ export type GoogleAuthResult =
       lastName: string;
       googleUid: string;
       avatar?: string;
+    }
+  | {
+      status: "MFA_REQUIRED";
+      challenge: LoginChallenge;
     };
 
-export async function loginCustomerWithGoogle(idToken: string): Promise<GoogleAuthResult> {
-  const decoded = await verifyFirebaseIdToken(idToken);
-  if (!decoded.email) {
-    throw new ServiceError(400, "Google account does not have an email address.");
-  }
+export async function loginCustomerWithGoogle(
+  idToken: string,
+  mfa: MfaRequestContext = loginChallengeService.LEGACY_CLIENT
+): Promise<GoogleAuthResult> {
+  const decoded = await verifyGoogleSignInToken(idToken);
+  const email = assertGoogleEmailVerified(decoded);
 
   // 1. Try finding by googleId
   let customer = await customerRepository.findByGoogleId(decoded.uid);
 
   // 2. If not found by googleId, try finding by email to link accounts
   if (!customer) {
-    customer = await customerRepository.findByEmail(decoded.email);
+    customer = await customerRepository.findByEmail(email);
     if (customer) {
+      // Before linking, so a suspended account is not handed a new sign-in method.
+      assertCustomerActive(customer);
       customer = await customerRepository.update(customer.id, {
         googleId: decoded.uid,
         emailVerified: true,
@@ -420,6 +641,7 @@ export async function loginCustomerWithGoogle(idToken: string): Promise<GoogleAu
 
   // 3. If customer exists, check if phone number is present
   if (customer) {
+    assertCustomerActive(customer);
     const hasPhone = Boolean(customer.information?.phone && customer.information.phone.trim());
     if (!hasPhone) {
       const nameParts = (decoded.name || "").trim().split(/\s+/);
@@ -435,26 +657,16 @@ export async function loginCustomerWithGoogle(idToken: string): Promise<GoogleAu
       };
     }
 
-    const flatCustomer = flattenCustomerAccount(customer);
-    const tokenPayload: TokenPayload = {
-      id: flatCustomer.id,
-      username: flatCustomer.username,
-      email: flatCustomer.email,
-      role: "CUSTOMER",
-    };
+    // The token now buys a challenge or a session, so it is spent here. The
+    // phone-setup replies leave it unspent: google-register needs it next.
+    await spendGoogleSignInToken(idToken, decoded);
 
-    const sessionId = newSessionId();
-    return {
-      status: "AUTHENTICATED",
-      auth: {
-        user: withFullName(flatCustomer),
-        accessToken: generateAccessToken(tokenPayload),
-        refreshToken: generateRefreshToken(tokenPayload, sessionId),
-        sessionId,
-        subjectType: "CUSTOMER",
-        role: "CUSTOMER",
-      },
-    };
+    // Google proved the email; MFA still asks for the phone or a code on a
+    // device that has not passed it, same as a password sign-in.
+    const challenge = await loginChallengeService.startCustomerChallenge(customer, mfa);
+    if (challenge) return { status: "MFA_REQUIRED", challenge };
+
+    return { status: "AUTHENTICATED", auth: customerAuthResult(customer) };
   }
 
   // 4. New user: needs phone number setup
@@ -464,7 +676,7 @@ export async function loginCustomerWithGoogle(idToken: string): Promise<GoogleAu
 
   return {
     status: "PHONE_SETUP_REQUIRED",
-    email: decoded.email,
+    email,
     firstName,
     lastName,
     googleUid: decoded.uid,
@@ -482,22 +694,32 @@ export interface GoogleRegisterInput {
 }
 
 export async function registerCustomerWithGoogle(input: GoogleRegisterInput): Promise<AuthResult> {
-  const decoded = await verifyFirebaseIdToken(input.idToken);
-  if (!decoded.email) {
-    throw new ServiceError(400, "Google account does not have an email address.");
-  }
+  const decoded = await verifyGoogleSignInToken(input.idToken);
+  // Also the address written below as emailVerified: true.
+  const email = assertGoogleEmailVerified(decoded);
 
   // Verify that the phone number was actually verified via SMS OTP
   await verifyFirebasePhoneToken(input.phoneToken, input.phone);
 
   let existing = await customerRepository.findByGoogleId(decoded.uid);
   if (!existing) {
-    existing = await customerRepository.findByEmail(decoded.email);
+    existing = await customerRepository.findByEmail(email);
+  }
+  if (existing) assertCustomerActive(existing);
+
+  // An account that already has a mobile number signs in through google-login,
+  // which asks for its second factor. Registering over it would replace that
+  // number and hand out a session with no second factor at all.
+  if (existing?.information?.phone?.trim()) {
+    throw new ServiceError(409, "This account already has a mobile number. Please sign in with Google instead.");
   }
 
   // Both branches below write this number as verified, so neither may take one
   // another account already holds. The account being linked keeps its own.
   await assertPhoneAvailable(input.phone, existing?.id);
+
+  // Last check before anything is written: this token signs up once.
+  await spendGoogleSignInToken(input.idToken, decoded);
 
   if (existing) {
     const updated = await customerRepository.update(existing.id, {
@@ -533,7 +755,7 @@ export async function registerCustomerWithGoogle(input: GoogleRegisterInput): Pr
   }
 
   // Generate unique username from email
-  let baseUsername = (decoded.email.split("@")[0] || "user").replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
+  let baseUsername = (email.split("@")[0] || "user").replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
   if (baseUsername.length < 3) baseUsername = `user_${baseUsername}`;
   let username = baseUsername;
   let counter = 1;
@@ -547,7 +769,7 @@ export async function registerCustomerWithGoogle(input: GoogleRegisterInput): Pr
 
   const newCustomer = await customerRepository.create({
     username,
-    email: decoded.email,
+    email,
     passwordHash: null,
     googleId: decoded.uid,
     emailVerified: true,
@@ -624,6 +846,22 @@ export async function registerCustomer(input: RegisterInput): Promise<AuthResult
     }
   }
 
+  // The app sends emailVerified: true once /customers/verify-registration-otp
+  // passes, but the body is the caller's word. Believe it only when that check
+  // consumed this address's newest registration code, recently. A resend
+  // retires older codes as well, but always leaves a newer live one behind, so
+  // a consumed newest code means the person typed it.
+  let isEmailVerified = false;
+  if (input.emailVerified) {
+    const latest = await emailVerificationRepository.findLatestForEmail(cleanEmail);
+    isEmailVerified = Boolean(
+      latest?.consumedAt &&
+        latest.customerId == null &&
+        latest.userId == null &&
+        Date.now() - latest.consumedAt.getTime() < 30 * 60 * 1000
+    );
+  }
+
   // After the Firebase step, which may be what supplied effectivePhone.
   await assertPhoneAvailable(effectivePhone);
 
@@ -636,14 +874,14 @@ export async function registerCustomer(input: RegisterInput): Promise<AuthResult
     lastName: input.lastName,
     birthdate: input.birthdate,
     phone: effectivePhone,
-    emailVerified: input.emailVerified ?? false,
+    emailVerified: isEmailVerified,
     phoneVerified: isPhoneVerified,
     phoneVerifiedAt,
   });
   const newCustomer = await customerRepository.create(createData);
 
   // If not yet verified during registration, send email verification code
-  if (!input.emailVerified) {
+  if (!isEmailVerified) {
     void sendVerificationCode(newCustomer.id, cleanEmail);
   }
 
@@ -692,7 +930,7 @@ export async function refreshAccessToken(
   }
 
   const payload = await new Promise<TokenPayload & { sid?: string }>((resolve, reject) => {
-    jwt.verify(refreshToken, JWT_REFRESH_SECRET, (err: jwt.VerifyErrors | null, decoded: unknown) => {
+    jwt.verify(refreshToken, JWT_REFRESH_SECRET, { algorithms: ["HS256"] }, (err: jwt.VerifyErrors | null, decoded: unknown) => {
       if (err) {
         reject(new ServiceError(401, "Invalid or expired refresh token. Please log in again."));
         return;
@@ -707,6 +945,48 @@ export async function refreshAccessToken(
   if (!payload.sid) {
     throw new ServiceError(401, "Your session is no longer valid. Please log in again.");
   }
+
+  // Refresh tokens only carry id/username/email/role — look up the full
+  // profile (name, phone, avatar, ...) so the client can restore `user`
+  // state without depending on sessionStorage as a source of truth.
+  //
+  // The same lookup decides whether this session may continue. A refresh token
+  // lives 30 days and slides, and every new access token is minted from its
+  // claims, so without this a demoted owner stayed an owner and a deactivated
+  // or suspended account kept working until the session went idle (Codex
+  // security scan, 2026-11-02). Checked BEFORE rotating, and a refused session
+  // is revoked, so it is never handed a fresh token to try again with.
+  const role = String(payload.role || "").toUpperCase();
+  const sessionId = payload.sid;
+  const endSession = async (reason: string, message: string): Promise<ServiceError> => {
+    await sessionService.revokeSession(sessionId, reason);
+    return new ServiceError(401, message);
+  };
+  const user =
+    role === "CUSTOMER"
+      ? await (async () => {
+          const customer = await customerRepository.findById(payload.id);
+          if (!customer) {
+            throw new ServiceError(401, "Account no longer exists. Please log in again.");
+          }
+          if (customer.status !== "Active") {
+            throw await endSession("ACCOUNT_NOT_ACTIVE", ACCOUNT_DEACTIVATED);
+          }
+          return withFullName(flattenCustomerAccount(customer));
+        })()
+      : await (async () => {
+          const dbUser = await userRepository.findById(payload.id);
+          if (!dbUser) {
+            throw new ServiceError(401, "Account no longer exists. Please log in again.");
+          }
+          if (dbUser.status !== "Active") {
+            throw await endSession("ACCOUNT_NOT_ACTIVE", "This account has been deactivated.");
+          }
+          if (String(dbUser.role || "").toUpperCase() !== role) {
+            throw await endSession("ROLE_CHANGED", "Your role has changed. Please log in again.");
+          }
+          return withFullName(sanitize(dbUser));
+        })();
 
   // Validates, detects replay, and mints the replacement inside sessionService
   // so the new hash is written in the same step that retires the old one.
@@ -726,31 +1006,11 @@ export async function refreshAccessToken(
     context
   );
 
-  // Refresh tokens only carry id/username/email/role — look up the full
-  // profile (name, phone, avatar, ...) so the client can restore `user`
-  // state without depending on sessionStorage as a source of truth.
-  const role = String(payload.role || "").toUpperCase();
   if (role === "RIDER") {
     void riderPresenceService.openLoginSession(payload.id).catch((err) => {
       logger.error(`Failed to ensure rider login session on refresh for rider ${payload.id}:`, err);
     });
   }
-  const user =
-    role === "CUSTOMER"
-      ? await (async () => {
-          const customer = await customerRepository.findById(payload.id);
-          if (!customer) {
-            throw new ServiceError(401, "Account no longer exists. Please log in again.");
-          }
-          return withFullName(flattenCustomerAccount(customer));
-        })()
-      : await (async () => {
-          const dbUser = await userRepository.findById(payload.id);
-          if (!dbUser) {
-            throw new ServiceError(401, "Account no longer exists. Please log in again.");
-          }
-          return withFullName(sanitize(dbUser));
-        })();
 
   const accessToken = generateAccessToken({
     id: payload.id,

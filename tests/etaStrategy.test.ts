@@ -46,6 +46,38 @@ const strategy = new DwellAwareEtaStrategy();
 const secondsFromNow = (date: Date) => Math.round((date.getTime() - NOW.getTime()) / 1000);
 
 describe("dwell-aware ETA", () => {
+  it('uses active zero-sample defaults with a padded upper bound', async () => {
+    stubRoute(600);
+    const result = await strategy.compute({ origin: ORIGIN, stops: [stop({ dwellSampleCount: 0, hasDwellBaseline: true })], destination: DESTINATION, now: NOW });
+    expect(result!.degraded).toBe(false);
+    expect(result!.dwellHighSeconds).toBe(2250);
+  });
+
+  it.each([
+    { dwellSampleCount: 0, hasDwellBaseline: false },
+    { dwellSampleCount: 1, hasDwellBaseline: true },
+    { dwellSampleCount: 0, hasDwellBaseline: true, dwellP50Seconds: 0 },
+    { dwellSampleCount: 0, hasDwellBaseline: true, dwellP80Seconds: 1 },
+  ])('keeps unsupported or sparse dwell estimates degraded: %j', async (overrides) => {
+    stubRoute(600);
+    const result = await strategy.compute({ origin: ORIGIN, stops: [stop(overrides)], destination: DESTINATION, now: NOW });
+    expect(result!.degraded).toBe(true);
+  });
+
+  it('allows operators to disable the baseline', async () => {
+    vi.stubEnv('ETA_ALLOW_ZERO_SAMPLE_BASELINE', 'false');
+    try {
+      stubRoute(600);
+      const result = await strategy.compute({ origin: ORIGIN, stops: [stop({ dwellSampleCount: 0, hasDwellBaseline: true })], destination: DESTINATION, now: NOW });
+      expect(result!.degraded).toBe(true);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it('does not make fallback routing confident', async () => {
+    stubRoute(600, true);
+    const result = await strategy.compute({ origin: ORIGIN, stops: [stop({ dwellSampleCount: 0, hasDwellBaseline: true })], destination: DESTINATION, now: NOW });
+    expect(result!.degraded).toBe(true);
+  });
   beforeEach(() => vi.resetAllMocks());
 
   it("adds store service time on top of travel time", async () => {
@@ -177,5 +209,40 @@ describe("dwell-aware ETA", () => {
     expect(await strategy.compute({
       origin: ORIGIN, stops: [stop()], destination: DESTINATION, now: NOW,
     })).toBeNull();
+  });
+
+  it("calibrates store-bound travel time from rider speed while preserving store dwell times untouched", async () => {
+    // 2 legs: Leg 0 is rider -> store (1000m, nominal 120s), Leg 1 is store -> customer (2000m, nominal 180s).
+    // Total nominal travel = 300s.
+    routeMock.mockResolvedValue({
+      distanceMeters: 3000,
+      durationSeconds: 300,
+      coordinates: [],
+      encodedGeometry: null,
+      legs: [
+        { distanceMeters: 1000, durationSeconds: 120, coordinates: [], steps: [] },
+        { distanceMeters: 2000, durationSeconds: 180, coordinates: [], steps: [] },
+      ],
+      provider: "osrm",
+      degraded: false,
+    } as any);
+
+    // Rider traveling fast towards store at 10 m/s (~36 km/h):
+    // Leg 0 becomes 1000m / 10 m/s = 100s (down from 120s, delta = -20s).
+    // Total travelSeconds = 300 - 20 = 280s.
+    const result = await strategy.compute({
+      origin: ORIGIN,
+      originSpeedMps: 10,
+      stops: [stop({ dwellP50Seconds: 900, dwellP80Seconds: 1800 })],
+      destination: DESTINATION,
+      now: NOW,
+    });
+
+    expect(result!.travelSeconds).toBe(280);
+    // CRITICAL INVARIANT: Store dwell times remain 100% UNTOUCHED
+    expect(result!.dwellLowSeconds).toBe(900);
+    expect(result!.dwellHighSeconds).toBe(1800);
+    expect(secondsFromNow(result!.etaLowAt)).toBe(280 + 900 + HANDOFF);
+    expect(secondsFromNow(result!.etaHighAt)).toBe(280 + 1800 + HANDOFF);
   });
 });

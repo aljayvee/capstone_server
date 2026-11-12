@@ -31,3 +31,17 @@ export const directionsSchema = z.object({
   originAccuracyMeters: z.number().min(0).max(10_000).optional(),
 });
 export type DirectionsInput = z.infer<typeof directionsSchema>;
+
+// GET /routing/rider-route: the line a rider is following, by the errand being
+// tracked (its customer, its rider, staff) or by rider (staff only). `since` is
+// the version the caller already holds, so an unchanged line is not sent again.
+export const riderRouteQuerySchema = z
+  .object({
+    errandId: z.string().trim().min(1).max(64).optional(),
+    riderId: z.coerce.number().int().positive().optional(),
+    since: z.coerce.number().int().nonnegative().optional(),
+  })
+  .refine((query) => query.errandId != null || query.riderId != null, {
+    message: "Name the errand or the rider whose route you want.",
+  });
+export type RiderRouteQuery = z.infer<typeof riderRouteQuerySchema>;

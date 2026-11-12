@@ -47,7 +47,7 @@ describe("tidying a Review screen's lines", () => {
             { name: "chicken", quantity: 2, size: "" },
             { name: "rice", quantity: 1, size: "5 kg" },
           ],
-          confident: false,
+          confident: true,
         },
       ],
     });
@@ -70,7 +70,7 @@ describe("tidying a Review screen's lines", () => {
           { name: "chicken", quantity: 2, size: null, notes: null },
           { name: "rice", quantity: 1, size: "5 kg", notes: null },
         ],
-        confident: false,
+        confident: true,
       },
     ]);
   });
@@ -98,8 +98,12 @@ describe("tidying a Review screen's lines", () => {
 
     const result = await tidyItemLines({ lines });
 
-    expect(result.results.map((r) => r.id)).toEqual(["a"]);
-    expect(result.results[0].items[0].name).toBe("Chicken");
+    expect(result.results).toEqual([]);
+  });
+
+  it("keeps an uncertain reading out of automatic application, including for installed apps", async () => {
+    reply({ available: true, results: [{ n: 1, items: [{ name: "Chicken", quantity: 2 }], confident: false }] });
+    expect((await tidyItemLines({ lines })).results).toEqual([]);
   });
 
   it("answers available: false when the service is unreachable or declines", async () => {
@@ -112,8 +116,8 @@ describe("tidying a Review screen's lines", () => {
 });
 
 describe("the request validator", () => {
-  it("accepts up to 20 lines of up to 120 characters", () => {
-    const ok = Array.from({ length: 20 }, (_, i) => ({ id: String(i), text: "Coke 1.5L x2" }));
+  it("accepts up to 20 sentence lines of up to 500 characters", () => {
+    const ok = Array.from({ length: 20 }, (_, i) => ({ id: String(i), text: "x".repeat(500) }));
     expect(itemTidyBodySchema.parse({ lines: ok }).lines).toHaveLength(20);
   });
 
@@ -122,6 +126,6 @@ describe("the request validator", () => {
     expect(() =>
       itemTidyBodySchema.parse({ lines: Array.from({ length: 21 }, (_, i) => ({ id: String(i), text: "x" })) })
     ).toThrow();
-    expect(() => itemTidyBodySchema.parse({ lines: [{ id: "a", text: "x".repeat(121) }] })).toThrow();
+    expect(() => itemTidyBodySchema.parse({ lines: [{ id: "a", text: "x".repeat(501) }] })).toThrow();
   });
 });

@@ -115,12 +115,12 @@ describe("verified places", () => {
     ]);
   });
 
-  it("learns nothing from a place it refused for being outside Tacurong", async () => {
+  it("learns nothing from a place it refused for being outside every service area", async () => {
     const service = new PlaceService(placeRepo as any);
     // Koronadal, about 20 km south.
     await expect(
       service.createPlace({ name: "Koronadal Bakeshop", latitude: 6.5003, longitude: 124.8469 } as any)
-    ).rejects.toThrow(/outside Tacurong/);
+    ).rejects.toThrow(/outside all supported service areas/);
     expect(trigger).not.toHaveBeenCalled();
   });
 });

@@ -177,14 +177,25 @@ export interface DecodedFirebaseToken {
   name?: string;
   picture?: string;
   signInProvider?: string;
+  // Seconds since the epoch. `authTime` is when the person actually signed in
+  // (for a phone token, when they typed the SMS code); a refreshed token keeps
+  // it, so it is what proves the sign-in happened after a challenge was issued.
+  authTime?: number;
+  issuedAt?: number;
+  expiresAt?: number;
 }
 
 /**
  * Cryptographically verifies a client-provided Firebase ID token minted after
  * successful Phone or Google Authentication. Extracts the confirmed identity.
+ *
+ * `checkRevoked` also asks Firebase whether the user is disabled or had their
+ * sessions revoked since the token was issued. That is one network call to
+ * Firebase, so it is for sign-in, not for every request.
  */
 export async function verifyFirebaseIdToken(
-  idToken: string
+  idToken: string,
+  options: { checkRevoked?: boolean } = {}
 ): Promise<DecodedFirebaseToken> {
   const initialized = ensureApp();
   if (!initialized) {
@@ -192,7 +203,7 @@ export async function verifyFirebaseIdToken(
   }
 
   try {
-    const decodedToken = await getAuth(initialized).verifyIdToken(idToken);
+    const decodedToken = await getAuth(initialized).verifyIdToken(idToken, options.checkRevoked === true);
     return {
       uid: decodedToken.uid,
       phoneNumber: decodedToken.phone_number,
@@ -201,6 +212,9 @@ export async function verifyFirebaseIdToken(
       name: decodedToken.name,
       picture: decodedToken.picture,
       signInProvider: decodedToken.firebase?.sign_in_provider,
+      authTime: decodedToken.auth_time,
+      issuedAt: decodedToken.iat,
+      expiresAt: decodedToken.exp,
     };
   } catch (error: any) {
     logger.warn(`[Firebase Admin] Invalid ID token: ${error?.message || error}`);

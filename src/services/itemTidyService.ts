@@ -38,10 +38,7 @@ const answerSchema = z.object({
 export interface TidiedLine {
   id: string;
   items: Array<{ name: string; quantity: number; size: string | null; notes: string | null }>;
-  /**
-   * False when the model guessed. The customer app applies it anyway: the
-   * sidecar already refused any reading that dropped or invented a word.
-   */
+  /** Only confident readings are returned for automatic application. */
   confident: boolean;
 }
 
@@ -59,7 +56,10 @@ export async function tidyItemLines(input: ItemTidyInput): Promise<TidyResponse>
     return { available: false, results: [] };
   }
 
-  const seen = new Set<number>();
+  const counts = new Map<number, number>();
+  for (const raw of answer.results) {
+    if (raw && typeof raw.n === "number") counts.set(raw.n, (counts.get(raw.n) ?? 0) + 1);
+  }
   const results: TidiedLine[] = [];
   for (const raw of answer.results) {
     const parsed = answerSchema.safeParse(raw);
@@ -67,8 +67,7 @@ export async function tidyItemLines(input: ItemTidyInput): Promise<TidyResponse>
     const { n, items, confident } = parsed.data;
     // n is 1-based. A number past the end, or one answered twice, is the model
     // losing track of which line is which; neither answer can be trusted.
-    if (n > input.lines.length || seen.has(n)) continue;
-    seen.add(n);
+    if (n > input.lines.length || counts.get(n) !== 1 || !confident) continue;
     results.push({
       id: input.lines[n - 1].id,
       items: items.map((item) => ({

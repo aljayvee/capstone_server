@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { haversineDistanceKm, type GeoPoint } from "../lib/geo.js";
 import { logger } from "../lib/logger.js";
 import { ServiceError } from "./ServiceError.js";
+import { getStoresAllowed } from "../lib/storeLimit.js";
 import { itemNameKey } from "./patterns/itemNameKey.js";
 import { suggestItemPlacements, type ItemPlacement } from "./itemPlacementService.js";
 import { checkStoreLocation, type StoreLocationVerdict } from "./storeLocationGuard.js";
@@ -60,7 +61,7 @@ import { bindRoles, resolveCategoryLabel } from "./categoryRoles.js";
  *   nearest the customer, is proposed.
  *
  * The stores are then chosen as a set: greedily, the store that covers the
- * most of the remaining list goes first, up to the three-stop limit. A basket
+ * most of the remaining list goes first, up to the errand's store limit. A basket
  * of medicine and bread becomes one pharmacy and one bakery, not three
  * pharmacies that each stock one item.
  *
@@ -69,8 +70,6 @@ import { bindRoles, resolveCategoryLabel } from "./categoryRoles.js";
  * warning.
  */
 
-/** The same three-stop limit the pinpoint validator enforces. */
-const MAX_STORES = 3;
 
 /** Past filings lose half their weight every this many days. */
 const HALF_LIFE_DAYS = 45;
@@ -708,7 +707,10 @@ export async function predictStores(errandId: string, names?: string[]): Promise
   // stop (and a multi-store fee) for nothing the first could not supply.
   const chosenNames = new Set<string>();
 
-  while (chosen.length < MAX_STORES && remaining.size > 0) {
+  // 1 + the owner's Max Additional Stores Allowed, as a pin save enforces it.
+  const maxStores = await getStoresAllowed();
+
+  while (chosen.length < maxStores && remaining.size > 0) {
     let bestKey: string | null = null;
     let bestGain = 0;
     for (const key of allKeys) {
@@ -776,11 +778,11 @@ export async function predictStores(errandId: string, names?: string[]): Promise
   const uncovered = [...remaining].map((i) => {
     const { name, placement, candidates } = perItem[i];
     const known = placement?.categoryId != null ? directoryByCategory.get(placement.categoryId)?.length ?? 0 : 0;
-    // It had a store, but the rest of the list took all three stops first.
+    // It had a store, but the rest of the list took every stop first.
     const crowdedOut =
-      chosen.length >= MAX_STORES && [...candidates.values()].some((c) => c.score >= MIN_ITEM_SCORE);
+      chosen.length >= maxStores && [...candidates.values()].some((c) => c.score >= MIN_ITEM_SCORE);
     const reason = crowdedOut
-      ? `${MAX_STORES} stores is the most one errand can have, and the rest of the list needs them. Pin one by hand if this item needs its own.`
+      ? `${maxStores} ${maxStores === 1 ? "store is" : "stores is"} the most one errand can have, and the rest of the list needs them. Pin one by hand if this item needs its own.`
       : placement?.categoryName == null
         ? "No past orders and no confident category to go on yet."
         : known === 0

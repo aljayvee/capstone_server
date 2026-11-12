@@ -116,7 +116,7 @@ export class PlaceService {
       isServiceAreaConfigured() &&
       !isWithinServiceBuffer({ latitude: input.latitude, longitude: input.longitude }, 0.1)
     ) {
-      const error: any = new Error("Place location is outside Tacurong City service area.");
+      const error: any = new Error("Place location is outside all supported service areas (Tacurong City and Banga).");
       error.status = 422;
       throw error;
     }
@@ -164,7 +164,7 @@ export class PlaceService {
       input.longitude !== undefined &&
       !isWithinServiceBuffer({ latitude: input.latitude, longitude: input.longitude }, 0.1)
     ) {
-      const error: any = new Error("Place location is outside Tacurong City service area.");
+      const error: any = new Error("Place location is outside all supported service areas (Tacurong City and Banga).");
       error.status = 422;
       throw error;
     }

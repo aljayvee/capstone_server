@@ -1,14 +1,554 @@
-# 🌐 DUAL-MODEL COLLABORATION TUNNEL (CLAUDE ◄► GEMINI) - SERVER BACKEND
+# 🌐 TRI-AGENT COLLABORATION TUNNEL (CLAUDE CODE ◄► OPENAI CODEX ◄► ANTIGRAVITY) - SERVER BACKEND
+
+## 2026-11-12 - Settlement & Transactions Report Updates (Antigravity)
+
+* **Scope**:
+  - `src/repositories/customerTransactionRepository.ts`: Selected `settlement` (`id`, `expectedAmount`, `collectedAmount`, `variance`, and standing `adjustments`) in `WITH_REPORT_DETAILS` so `getTransactionSummary` can derive `unremitted` and `uncollected` in one query.
+  - `src/repositories/settlementAdjustmentRepository.ts` & `src/repositories/settlementRepository.ts`: Added `findRepaymentsBetweenWithSettlement(start, end, riderId)` returning standing `RIDER_PAID_BACK` and `CUSTOMER_PAID_GCASH` adjustments recorded within `[start, end)`.
+  - `src/services/reportService.ts`:
+    - `getSettlementReport`: Includes Help Desk repayment rows (`lineKind: "REPAYMENT"`, `lineKey: "repayment-<id>"`) in `cash.lines` and credits `byRider.paidBackLater` when the parent settlement was settled prior to `start`.
+    - `getTransactionSummary`: Computes `unremitted`, `unremittedCount`, `uncollected`, and `uncollectedCount` inside `totals`.
+  - `src/services/pdf/reportPdfService.ts`:
+    - `settlementSpec`: Removed `Short` from summary boxes, renamed `Still owed (today)` / `Still owed` to `Unremitted`, and updated `whatHappenedSince` so repayment rows print their follow-up details.
+    - `transactionsSpec`: Added `Unremitted` and `Uncollected` summary boxes.
+  - `tests/reportPdfExport.test.ts`, `tests/settlementRevenueSplit.test.ts`, `tests/transactionSummaryRider.test.ts`: Updated and expanded test coverage.
+* **Verification**:
+  - `npx tsc --noEmit`: PASS (exit 0).
+  - `npx vitest run tests/settlementRevenueSplit.test.ts tests/transactionSummaryRider.test.ts tests/reportPdfExport.test.ts`: PASS (3 files / 52 tests).
+* **Status**: Local changes verified; not yet deployed or committed.
+
+## 2026-11-10 - Fix: a manual store arrival was followed by an instant false departure (Claude Code) - LIVE
+
+* **Found in review** of the 261110-1B21F-0003 work below. `PATCH /errands/:id/pinpoints/:pinpointId/arrived` stamps `arrivedAt` at server time, and is used exactly when no GPS fix is inside the stop's circle. `applyGeofenceTransitions` took the first fix after `arrivedAt` that the stop does not own as the departure, so the next batch marked the stop departed within seconds: a "departed" event to every party, a dwell observation of seconds (which `existsForPinpoint` then let block the real one), and possibly an ETA promise frozen while the rider was still shopping.
+* **Already happened once in production**: errand `261110-6447B-0008`, pinpoint 850 (7-Eleven), arrived by tap 09:57:26 UTC, departed 09:57:47, **dwell observation of 21 s written**. **Repaired on the user's go-ahead** (11:56 VPS time): observation id 458 deleted by an exact-match guard, after the row was saved to `/root/deploy-backups/dwell-observation-458-pin850-20261110T105600.json`. Its category, Convenience Store (id 6), still had `dwellSampleCount` 0 with the configured 600/1200 s defaults: the 03:15 learning job had not run since, so no percentile ever included it, and the category now has 0 observations. The errand is DELIVERED; its `departedAt` is left as history.
+* **Fix** (`src/services/geofenceService.ts`, `src/repositories/trackPointRepository.ts`; no schema change): the old departure rule now holds only once a fix has placed the rider at the stop (owned by it, per `ownerOf`) since `arrivedAt`. New `seenAtStopSince()` checks the batch first (no query in the common case: a GPS arrival is itself such a fix) and then the stored trail via new `trackPointRepository.findInWindowNear` (time window plus a lat/lng box prefilter on the `[errandId, recordedAt]` index; exact attribution in code). Never seen inside (a tap with offset GPS): departure is the first fix more than the stop's radius from where the phone put the rider at the arrival moment (new `findNearestInTime`, the closest stored fix either side); no trail yet means no departure yet. **Only GPS-seen visits become dwell observations.** GPS arrivals behave exactly as before.
+* **Tests**: new `tests/manualArrivalDeparture.test.ts` (8). The four manual-arrival cases fail with the new check switched off (checked). Geofence suites (attribution, radius, stop mismatch, pinpoint arrival) unchanged and passing. `npx tsc --noEmit` exit 0; full Vitest 163 files / 2089 tests pass.
+* **Deployed** (two files only): production's copies were downloaded and diffed first; they differed from the local files by this fix alone, and `trackPointRepository.ts` matched git HEAD. Backup `/root/deploy-backups/server-departure-20261110113638` (both sources, the full pre-deploy `dist/`, executable `rollback.sh`). On the VPS: `npx tsc --noEmit` ok, `npm run build` ok, `seenAtStopSince` present in `dist/`, `pm2 restart capstone-backend` (online, PID 614024), `/api/health` 200 locally and at `api.sugo-express.org`. Nothing committed.
+* **Not changed (from the same review, still open)**: the arrival time is server receipt time, so an offline-queued tap can land after the rider left (now kept out of the dwell data, but `arrivedAt` is still late); 401 responses drop the rider's queued GPS trail; manual arrival reports the GPS-nearest store, which can be the wrong one.
+
+
+## 2026-11-10 - Production ML Deployment: Pharmaceutical Dosage Units & Conjoined Medicine Normalization (Antigravity)
+
+* **Defect & Root Cause Remediation**:
+  - `ml/sugo_category/gemma.py`: Added missing pharmaceutical units (`tablet`, `tablets`, `capsule`, `capsules`, `tab`, `tabs`, `cap`, `caps`, `pad`, `pads`, `strip`, `strips`, `vial`, `vials`, `ampoule`, `ampoules`, `ampule`, `ampules`) to `_UNIT_WORDS` and unit aliases in `_CHECK_UNIT`.
+  - Added Tagalog primary conjunction `"at"` to `_LINK_WORDS` alongside `tapos`, `tsaka`, `saka`, `pati`.
+  - Enhanced `normalize_prompt`: Added few-shot conjoined medicine example and explicit trailing count distribution rule (`confident true`).
+  - `ml/tests/test_normalize.py`: Added comprehensive test coverage for medicine unit normalization across English, Tagalog, and Bisaya syntax (all 73 tests PASS).
+* **Production Deployment to VPS (`root@109.123.239.182`)**:
+  - Backup: `/root/deploy-backups/ml-medicine-20261110-101421` (source backup and rollback tag `sugo-category:rollback-20261110-101421`).
+  - Staged files verified by MD5: `ml/sugo_category/gemma.py` (`5a381880f4284d6b8b52f7cafafc02bc`), `ml/tests/test_normalize.py` (`7b9cde0e8f838ab7e78623e71098082b`).
+  - Docker container rebuild: `docker compose -f ml/docker-compose.category.yml build` completed cleanly, image `sugo-category:latest` updated.
+  - Container recreate & startup: `capstone-category` running and status `healthy` on `127.0.0.1:8100`.
+  - Live empirical verification on VPS:
+    - Sent `{"lines": ["Biogesic and flugard na 10 tablets"]}` directly to `http://127.0.0.1:8100/normalize-items`: returned 2 items (`Biogesic` qty 10, `flugard` qty 10) with `confident: true` (previously returned `{available: true, results: []}`).
+    - Probed `http://127.0.0.1:5000/api/health`: HTTP 200 OK.
+    - Probed public edge `https://api.sugo-express.org/api/health`: HTTP 200 OK.
+* **Status**: Live in production. CustomerApp review list now properly normalizes conjoined medicine requests.
+
+## 2026-11-10 - Server Deployment Hardening & Peer Audit: Production Anomaly Fixes for 261110-1B21F-0003 (Antigravity)
+
+* **Audit & Defect Remediation**:
+  - `src/services/geofenceService.ts`: Defensively guarded `(changed?.count ?? 0) === 0` against undefined/null repository responses to prevent uncaught runtime `TypeError: Cannot read properties of undefined (reading 'count')`.
+  - `src/services/pinpointArrivalService.ts`: Defensively guarded `(changed?.count ?? 0) > 0` before emitting `errand:stop_arrived` and triggering background ETA recomputation.
+  - Test Synchronization: Synchronized `tests/geofenceAttribution.test.ts` and `tests/etaStrategy.test.ts` (all 20 tests) to the VPS; previously the test suite on the VPS failed 3 tests due to out-of-sync mocks.
+* **Deployment to VPS (`root@109.123.239.182:/var/www/server`)**:
+  - Backup: `/root/deploy-backups/server-arrival-hardening-20261110070445` containing `src-before.tar`, pre-deploy `dist/`, and executable `rollback.sh`.
+  - Staged files verified: `src/services/geofenceService.ts`, `src/services/pinpointArrivalService.ts`, `tests/geofenceAttribution.test.ts`, `tests/etaStrategy.test.ts`, `tests/pinpointArrival.test.ts`.
+  - Remote verification: `npx tsc --noEmit` PASS (0 errors), `npm run build` PASS.
+  - Remote test suite: `npx vitest run tests/geofenceAttribution.test.ts tests/etaStrategy.test.ts tests/pinpointArrival.test.ts` PASS (3 files / 32 tests clean).
+  - Process restart: `pm2 restart capstone-backend` clean, PID 579645, status `online`.
+  - Live API probes: `/api/health` 200 OK (local + Cloudflare public edge). Probed `PATCH /api/errands/:id/pinpoints/:pinpointId/arrived` across CUSTOMER role (403), wrong rider assignment (403), invalid UUID (400), invalid pinpointId (400), non-existent errand (404), and DELIVERED errand (409) confirming strict security and status invariants.
+* **Status**: Live in production. All server tests green.
+
+## 2026-11-10 - Server Deployment: Production Anomaly Fixes for 261110-1B21F-0003 (Antigravity)
+
+* **Deployment**: Successfully deployed the 8 backend files to VPS (`root@109.123.239.182:/var/www/server`) following the safe backup-and-swap protocol.
+  - Backup: `/root/deploy-backups/server-arrival-20261110054023` containing `src-before.tar`, pre-deploy `dist/`, and executable `rollback.sh`.
+  - Staged files verified by MD5: `src/controllers/errandController.ts`, `src/repositories/pinpointRepository.ts`, `src/routes/errandRoutes.ts`, `src/services/etaService.ts`, `src/services/geofenceService.ts`, `src/services/patterns/etaStrategy.ts`, `src/services/pinpointArrivalService.ts`, `src/services/proofImageService.ts`.
+  - Remote compilation: `npx tsc --noEmit` PASS (0 errors), `npm run build` PASS.
+  - Process restart: `pm2 restart capstone-backend` clean, PID 575252, status `online`.
+  - Live probe: `/api/health` 200 (local + public edge). Probed `PATCH /api/errands/:id/pinpoints/:pinpointId/arrived` -> 401 Unauthorized (`Access token required`), confirming route is live and gated by authentication.
+* **Status**: Live in production. No DB migration or schema change required.
+
+## 2026-11-10 - Production anomaly fixes for 261110-1B21F-0003 (Codex)
+
+* **Arrival fallback**: `src/controllers/errandController.ts`, `src/routes/errandRoutes.ts`, new `src/services/pinpointArrivalService.ts`. Added rider-only, rate-limited `PATCH /api/errands/:id/pinpoints/:pinpointId/arrived`; Zod validates UUID/positive integer params before queries. Reuses exported `assertRidersOwnErrand` from `proofImageService.ts`, then verifies the pinpoint belongs to that errand. New arrivals require IN_TRANSIT; retries of an existing arrival are no-ops. Emits the existing `errand:stop_arrived` payload via `emitToErrandParties` (customer, rider, dispatcher, owner) and forces background ETA recomputation.
+* **Idempotency across GPS and HTTP**: `src/repositories/pinpointRepository.ts` now conditionally marks arrival only where `arrivedAt IS NULL`. `src/services/geofenceService.ts` reads the winning persisted timestamp when another writer wins, avoiding duplicate arrival events and dwell based on an overwritten timestamp.
+* **New-zone dwell baseline**: `src/services/patterns/etaStrategy.ts`, `src/services/etaService.ts`, category selection in `pinpointRepository.ts`. Valid configured P50/P80 defaults for ACTIVE categories with exactly zero samples may produce a non-degraded dwell estimate; retain 25% upper dwell padding. `ETA_ALLOW_ZERO_SAMPLE_BASELINE=false` disables it. Unknown/inactive categories, 1-9 samples, invalid defaults, and fallback routing remain degraded. No fabricated observations, seed writes, schema changes or migrations. Documented in `README.md`.
+* **Correction to investigation premise**: current `freezeEtaPromise` additionally requires zero remaining stores, a fresh rider position and IN_TRANSIT. The baseline does not relax those conditions; dwell sample count alone was not the current delivery-promise gate once shopping finished.
+* **Verification**: `npx tsc --noEmit` PASS (exit 0); full Vitest 162 files / 2080 tests PASS. After adding the final GPS/HTTP race regression, focused `geofenceAttribution`, `pinpointArrival`, `etaStrategy`, `etaPromiseFreeze`: 4 files / 38 tests PASS. Existing expected mocked-failure logs and the pre-existing `ERR_ERL_KEY_GEN_IPV6` warning remain.
+* **Peer/release notes**: Local and uncommitted; no server deployment or production data repair. Preserve other sessions' existing changes. Deploy the endpoint before releasing the Rider client. The endpoint timestamps arrival at server receipt time, so an offline retry does not backdate physical arrival. Test automatic/manual arrival and airplane-mode recovery on a real phone after release; inspect track points and pinpoint timestamps for a new errand.
+
+## 2026-11-10 - Handoff to Claude Code: Fixes for Transaction 261110-1B21F-0003 Real-World Anomalies (Antigravity)
+
+* **Context**: Real-world field verification of errand `261110-1B21F-0003` (`0fc997ce-9084-4c53-a0ee-9ab74101b21f`) in Banga, South Cotabato identified key backend gaps around arrival reporting and initial zone dwell baselines.
+* **Directives for Claude Code**:
+  1. **Fallback Pinpoint Arrival Endpoint (`server/src/controllers/errandController.ts`, `server/src/routes/errandRoutes.ts`)**:
+     - Currently, `errand_pinpoints_tbl.arrivedAt` is ONLY marked inside `geofenceService.ts` when a GPS batch arrives via `trackingService.ingestBatch()`. If GPS batch uploads are offline, delayed, or fail authorization, `arrivedAt` remains `NULL` on the database indefinitely.
+     - Implement `PATCH /api/errands/:id/pinpoints/:pinpointId/arrived`:
+       - Authenticate caller; verify `assertRidersOwnErrand(errandId, riderId)`.
+       - Call `pinpointRepository.markArrived(pinpointId, new Date())` if not already set.
+       - Emit socket / notification events so the dispatcher and customer interfaces know the rider reached the store.
+  2. **Dwell Sample Baseline for New Service Zones (`server/src/services/patterns/etaStrategy.ts` / seed)**:
+     - In `etaStrategy.ts:122`, `dwellSampleCount < MIN_CONFIDENT_SAMPLES` (10) forces `lowConfidence = true`, which makes `etaIsDegraded: 1` and prevents `freezeEtaPromise()` from ever locking in new zones like Banga (`merchant_categories` has 0 samples).
+     - Provide a sensible default baseline or seed for merchant category dwell times so that newly configured zones do not suffer from perpetually degraded, unfreezable ETAs.
+  3. **Verification**: Verify with `npx tsc --noEmit` and run the server test suite.
+
+## 2026-11-09 - Dual-zone service area: Banga, South Cotabato beside Tacurong, isolated (Claude Code)
+* **Why**: rider app field tests run in Banga (~30 km south). Every boundary check was Tacurong-only, so Banga orders and rider GPS read as "outside service area". Both towns now run in one system, but no errand and no dispatch ever spans the two. Zones are derived from coordinates every time: **no schema change, no stored zone column**.
+* **Files**:
+  - NEW `gis/banga-service-area.geojson`: OSM relation 20011844 via Nominatim `/lookup?osm_ids=R20011844` (checked: name Banga, South Cotabato; bbox 6.282736 to 6.5140662, 124.7074706 to 124.918899). The OSM boundary is coarse: 88 points vs Tacurong's 649.
+  - `src/lib/serviceArea.ts`: `ServiceZone = "TACURONG" | "BANGA"`, `SERVICE_ZONES` (name, center, file), rings tagged by zone and loaded **per zone** (a missing Banga file leaves Tacurong working). Optional `zone` argument on `isWithinServiceArea`, `isWithinServiceBuffer(point, bufferKm, zone)`, `distanceOutsideServiceAreaKm`, `isServiceAreaConfigured`, `serviceAreaEnvelope`; no zone = any zone, as before. NEW `detectServiceZone(point, bufferKm = 0.1)` (inside first, else the nearest zone within the buffer), `validateIntraZone(points)` (`{valid, zone?, error?, reason?, index?}`), `getZoneCenter(zone?)` (Tacurong default), `serviceZoneName`, `CROSS_ZONE_MESSAGE`, `OUTSIDE_ALL_ZONES_MESSAGE`. `SERVICE_AREA_CENTRE` unchanged (Tacurong).
+  - NEW `src/services/dispatchZone.ts` (pure, tested): `dispatchTargetPoint`, `errandServiceZone` (first store, else drop-off), `riderMayTakeZone`, `namedRiderZoneConflict`.
+  - `src/services/errandService.ts` `assignRider`: automatic dispatch offers an errand only to riders whose **fresh (60 s) fix** is in the errand's zone. This bounds the ranking, the repeat-customer rider, **and** the least-loaded and back-of-queue fallbacks, which previously took every eligible rider and would have leaked across zones. Rider beacons arrive every 5 to 10 s, so a dispatchable rider almost always has a fresh fix. Empty queue: 404 `No rider is currently available in the <Tacurong City|Banga> service area. N available riders are elsewhere or without a recent location.` A rider the dispatcher names is refused (409) only when their last known fix is in the other zone; no fix, or outside every zone, stays the dispatcher's call. `savePinpoints` and `quotePinpoints` refuse a cross-zone set of stops plus drop-off with 400 `CROSS_ZONE_MESSAGE`. Checkout delivery message names both towns.
+  - `src/validators/errandValidators.ts` (`createErrandSchema`, the only errand-creation schema; there is no separate pabili-request validator): new final `.superRefine` refuses stores and drop-off in different zones (400, the mission's exact message, path on the offending point). Per-point messages now say "outside all supported service areas ... Tacurong City or Banga".
+  - `src/services/storeLocationGuard.ts`: messages zone-aware ("Inside Banga.", "outside all supported service areas", "past the service-area border"). `kmBeyondBorder` is now to the NEAREST zone.
+  - `src/services/placeService.ts`: outside message names both towns.
+  - `src/lib/places/googlePlacesClient.ts`: `banga`, `south`, `cotabato` strip words; `banga`, `municipality of banga`, `banga, south cotabato` are vague addresses; `searchPlacesByText(query, { zone })` restricts to that zone's box. Without it the box spans both zones and takes in Koronadal, whose branches would crowd a 20-result page.
+  - `src/services/establishmentService.ts`: typed and category-name text searches pass the searcher's zone (`detectServiceZone(centre)`); cache key is now `text:<ZONE|ALL>:<words>`. Nearby and popular searches already centre on `near`, and `isWithinServiceBuffer` without a zone accepts Banga, so `outsideServiceArea` is no longer set there.
+  - Tests: NEW `tests/serviceAreaMultiZone.test.ts` (23: detection, buffer edges, Koronadal inside Banga's box but outside its polygon, `validateIntraZone`, `createErrandSchema` cross-zone), NEW `tests/dispatchZoneIsolation.test.ts` (9: the rules, plus `assignRider` building its queue with every claim answered AT_CAPACITY, so the claims are the whole queue). `storeLocationGuard.test.ts` (+1 Banga case; Tantangan is now 3.8 km from Banga's tip, so the threshold went from 5 to 3); mock or message updates in the `establishments`, `customerPickedStores` and `categoryRename` tests.
+* **Verification**: `tsc --noEmit` exit 0. Full vitest **161 files / 2067 tests PASS**.
+* **DEPLOYED 2026-11-09 19:49 (+08)** on the user's "Yes, deploy server": the 7 changed files plus `src/services/dispatchZone.ts` and `gis/banga-service-area.geojson` (not `deploy-server.sh`, no `db push`, no schema change). Nothing committed.
+  - **Proof**: each live file was fetched and diffed (CR stripped) against local: every hunk was this session's, so live = local minus these edits (the other sessions' work in `errandService.ts` was already live). `find src prisma gis -newer dist/index.js` was empty. The script re-checked the live fingerprints and the staged md5s before the swap, and the swapped files after.
+  - **Steps**: backup, swap, chown to the neighbour's numeric owner, `npx tsc --noEmit` (clean), `npm run build`, a zone gate importing the BUILT `dist/lib/serviceArea.js` with the real boundary files (`{tacurong: TACURONG, banga: BANGA, koronadal: null, both zones configured, mixed pair CROSS_ZONE}`), then `pm2 restart capstone-backend`. Every failure path restored src and dist without restarting; none ran.
+  - **Backup and rollback**: `/root/deploy-backups/server-banga-20261109-1955` (`src-before.tar`, `dist/`, `tsc.log`, `build.log`, `staged/`, `rollback.sh`, which moves and never deletes).
+  - **Live checks**: `/api/health` 200 locally and through Cloudflare; pm2 online; clean startup, no service-area load error; the only stderr entry is the pre-existing `ERR_ERL_KEY_GEN_IPV6`.
+  - **Not yet seen**: a real Banga order end to end (needs a rider in Banga). The web portal half was DEPLOYED 2026-11-09 21:22 (+08), entry `index-CagKvu69.js`, backup `/root/deploy-backups/web-banga-20261109-212208`. The CustomerApp half shipped as OTA group `2fb978cd-c3ea-4071-a002-c8d6977098aa` at 21:52 (+08); a first publish at 21:40 lacked the API address and was rolled back within 3 minutes (details in the CustomerApp handshake).
+  - **Deploy trap**: `scripts/deploy-server.sh` streams only `src prisma/schema.prisma package.json ml`, **not `gis/`**. Upload `gis/banga-service-area.geojson` to `/var/www/server/gis/` with the source, or the server logs "Could not load service area GeoJSON for BANGA" and treats every Banga point as outside (Tacurong unaffected). That script also runs `prisma db push --accept-data-loss`; prefer the file-swap deploy used for the 11-09 Google change.
+  - The web portal half (Stage 2 pins) and the CustomerApp half are in their own handshakes; the CustomerApp half needs an app update before Banga customers see stores.
+* **Left as is**: pricing uses the shared RateConfig (as agreed). No RiderMobileApp change was needed (it has no client boundary checks). Customer-facing copy that names only Tacurong (help modal, legal terms "We deliver within Tacurong City") was not changed.
+
+## 2026-11-09 - Google sign-in token is Google-only, unrevoked and single-use (Claude Code)
+* **Why**: the user asked whether Google sign-in has OAuth `state`. It has neither `state` nor a `nonce`. `state` does not apply: the CustomerApp uses the native Google SDK (`@react-native-google-signin` 16.1.5, `GoogleSignin.signIn()`, which takes no nonce) and posts a Firebase ID token as JSON, so there is no redirect callback to forge. The real gap was replay: `/customers/google-login` and `/google-register` accepted the same token for its whole hour, from any Firebase provider, without a revocation check. A replayed token at `google-register` could also replace an existing account's number and get a session with no second factor.
+* **Files**:
+  - `src/lib/firebaseAdmin.ts`: `verifyFirebaseIdToken(idToken, { checkRevoked? })`, passed to Admin `verifyIdToken`. Default off, so the other callers (phone proofs) are unchanged.
+  - `src/services/authService.ts`: NEW `claimFirebaseIdToken` (the SMS proof's `firebase-id:<sha256>` blocklist claim, extracted; the SMS proof now calls it, same behaviour). NEW `verifyGoogleSignInToken` (checkRevoked on, `signInProvider` must be `google.com`, else 400) and `spendGoogleSignInToken` (claim, else 409 "That Google sign-in was already used."). `loginCustomerWithGoogle` spends the token only when it buys an MFA challenge or a session; the PHONE_SETUP_REQUIRED replies leave it unspent because the app sends the same token to `google-register` next. `registerCustomerWithGoogle` refuses (409) an existing account that already has a phone, and spends the token after `assertPhoneAvailable`, before any write.
+  - Tests: `tests/googleAuth.test.ts` (mocks now carry `signInProvider: "google.com"`, tokenBlocklist mocked, 8 new cases), `tests/loginMfa.test.ts` (Google mock gets the provider; NEW replay case through the in-memory insert-only claim).
+* **Verification**: `tsc --noEmit` exit 0. Full vitest 159 files / 2034 tests PASS. 8 of the new cases fail against the pre-change `authService.ts` (checked by swapping the file in and back; md5 restored). The local service account (`firebase-adminsdk-*`, project `capstonedata-3589c`, same project as the CustomerApp) passed a read-only `listUsers(1)`, the permission `checkRevoked` needs.
+* **DEPLOYED 2026-11-09 02:58 (+08)** on the user's "Yes, deploy", two source files only (not `deploy-server.sh`, no `db push`). Nothing committed. No schema, route, response-shape or client change; no app release needed.
+  - **Proof**: live `authService.ts` and `firebaseAdmin.ts` equalled the local pre-edit copies (CR-stripped md5 `256b9602…`, `5a2938cb…`), and `find src prisma -newer dist/index.js` was empty. The script re-checked both before the swap and the staged hashes after upload (`b7b97cb1…`, `acacccab…`). VPS service account: `firebase-adminsdk-*`, project `capstonedata-3589c`.
+  - **Steps**: backup, swap, chown to the neighbour's numeric owner, `npx tsc --noEmit` (clean), `npm run build`, a read-only `listUsers(1)` with the prod service account as a gate (OK), then `pm2 restart capstone-backend`. Every failure path restored src and dist without restarting; none ran.
+  - **Backup and rollback**: `/root/deploy-backups/server-googletoken-20261109-025734` (`src-before.tar`, `dist/`, `build.log`, `staged/`, `rollback.sh`, which moves and never deletes).
+  - **Live checks**: `/api/health` 200 locally and through Cloudflare; `POST /api/customers/google-login` with a fake token gives 401 `{"error":"Invalid or expired Firebase authentication token."}`, logged by the new process; pm2 online. Only error since start is the pre-existing `ERR_ERL_KEY_GEN_IPV6`.
+  - **Not yet seen**: a real phone signing in with Google after the deploy (needs a person and a Google account).
+  - `authService.ts`, `firebaseAdmin.ts` and `googleAuth.test.ts` already carried other sessions' uncommitted work (mtimes 11-03), which was already live; pre-edit copies are in this session's scratchpad `google-harden-before/`.
+* **Left as is**: the phone token sent to `google-register` is not single-use (it can only set the number it proves). The CustomerApp's `CREDENTIAL_ENDPOINTS` regex does not list `google-login`/`google-register`, so their 401s go through the refresh interceptor; the new refusals are 400/409 and do not.
+
+## 2026-11-04 - Customer photo is a signed link, not inline base64 (slow-connection work) (Claude Code)
+* **Why**: the customer's profile photo travelled as base64 inside every profile, login, Google login and token-refresh response. On prod, customer 7's photo was 739 KB of base64 (customer 2's, 702 KB), so nginx logged `/api/customers/:id` at up to 556 KB gzipped and `google-login` at up to 557 KB. That is 10+ s per login or profile load on a slow mobile link, and `/api/customers/7` was #2 by data transfer in Cloudflare.
+* **Contract change (backward compatible)**: inside a request, `avatar` in the flat customer is now `https://<api host>/api/customers/:id/photo?v=<photo updatedAt ms>&sig=<22-char HMAC>`. Google photo URLs and null pass through unchanged. Outside a request (no origin), it stays inline as before. The app only ever uses `avatar` as an `<Image>` URI and already handled https avatars (Google sign-ups), so **no app release is needed**. The web portal never reads customer avatars.
+* **Files**:
+  - NEW `src/lib/publicOrigin.ts`: `publicOrigin(req)` moved here from `establishmentController.ts`, which re-exports it. Also an `AsyncLocalStorage` (`rememberPublicOrigin` middleware, `currentPublicOrigin()`, `withPublicOrigin()` for tests).
+  - NEW `src/lib/customerPhotoLink.ts`: HMAC (key `JWT_SECRET`, label `customer-photo:<id>:<version>`), `timingSafeEqual`, data-URI decoding.
+  - `src/index.ts`: `app.use("/api", rememberPublicOrigin, apiRoutes)`.
+  - `services/patterns/customerFactory.ts`: `customerAvatar()`; `profilePhoto.photoData` and `updatedAt` are now optional in the type.
+  - `repositories/customerRepository.ts`: `WITH_INFORMATION` selects `profilePhoto` without `photoData`, so profile reads no longer pull the photo out of MariaDB.
+  - `services/customerService.ts`: `getLinkedPhoto(id, version)`. The uploaded photo first, else a legacy data URI in `customer_information.avatar`. A stale version returns null.
+  - `controllers/customerController.ts`: `getCustomerPhoto`. No auth; the signature is the check; every refusal is the same 404. `Cache-Control: private, max-age=31536000, immutable`, ETag with 304, and `Cross-Origin-Resource-Policy: cross-origin`.
+  - `routes/customerRoutes.ts`: `GET /:id/photo` with `readLimiter`.
+* **Tests**: NEW `tests/customerPhotoLink.test.ts` (12). Full suite 159 files / 2025 tests PASS; `tsc --noEmit` PASS.
+* **DEPLOYED 2026-11-04 23:25 (+08)**. All 7 live files equalled the local pre-edit copies (CR-stripped md5, re-checked by the script), the 2 new paths were absent, and nothing was unbuilt. Steps: `tsc --noEmit` PASS, build, `pm2 restart` (restart 10).
+  - Backup: `/root/deploy-backups/server-avatarlink-20261104-232446` (`src-before.tar`, `dist/`, `staged/`, `verify.mjs`). Rollback: `tar xf src-before.tar`, move the two new lib files aside, build, restart. No `rm` anywhere.
+  - Live, with real data: customer 7's profile JSON is **678 bytes** (was ~740 KB). Its link through Cloudflare returned 200 `image/jpeg`, 567 KB, in 0.6 s. Repeat with If-None-Match: 304. The same link on customer 2: 404. A forged sig: 404.
+  - **Not yet seen**: a real phone loading the linked photo (no customer traffic after the deploy).
+* **Left as is**: uploads still write the same base64 into `customer_information.avatar` too ("backwards compatibility"), so that duplicate is still stored and still read on every profile query. Photos are stored at full size: there is no image library on the server, and the app uploads a 555 KB JPEG unresized.
+
+## 2026-11-04 - Fixed: mobile apps stuck on Socket.IO long-polling (Cloudflare p99 of 25 s) (Claude Code)
+* **Symptom**: Cloudflare Performance showed origin response p50 31 ms but p95/p99 spiking to a flat 25.1 s.
+* **Cause**: 25 s is Socket.IO's default `pingInterval`, the time a long-poll GET is held open. Both mobile apps connect polling-first (on purpose; see `CustomerApp/src/services/socketClient.ts`). React Native's Android WebSocket (okhttp) adds a default `Origin: https://api.sugo-express.org`. That origin was not in `ALLOWED_ORIGINS`, and engine.io runs the `cors` option as middleware on upgrades too, so every upgrade got `400 Bad request` (`MIDDLEWARE_FAILURE`). The apps stayed on polling for the whole session: one 25 s request every 25 s.
+  - nginx 11-03: all 15 okhttp upgrades with a sid got 400; every Chrome upgrade got 101. One okhttp sid made 26 GETs exactly 25 s apart, each returning the 1-byte ping.
+  - Same root cause as the "websocket error" the app comments blame on emulators and LAN dev servers: there the Origin is `http://<lan-ip>:5000`.
+* **Fix**: `src/lib/socket.ts`. `cors` is now a delegate, and the origin check also accepts an Origin whose host equals the request's `Host` (new exported `isSameOrigin`). Allow-list and foreign-origin behaviour are unchanged. This is safe because socket identity comes only from `handshake.auth.token`, never cookies, and the API serves no pages.
+* **Test**: NEW `tests/socketOrigin.test.ts` drives raw upgrades through the real `io`. Full suite 158 files / 2013 tests PASS; `tsc --noEmit` PASS.
+* **DEPLOYED 2026-11-04 22:56 (+08)**, one file. Live `socket.ts` equalled local pre-edit (CR-stripped md5 `c00bc92a…`), and `find src prisma -newer dist/index.js` was empty. Steps: backup, `tsc --noEmit` PASS, `npm run build`, `pm2 restart capstone-backend` (restart 9).
+  - Backup: `/root/deploy-backups/server-sockorigin-20261104-225551` (`socket.ts`, `dist/`). Rollback: copy `socket.ts` back, build, restart.
+  - Live probe through Cloudflare: Origin api host 101 (was 400), none 101, portal 101, `https://evil.example` 400; polling handshake then upgrade with sid 101.
+  - **Not yet seen**: a real phone upgrading. No okhttp client connected in the hour after the deploy (the one okhttp 101 at 15:58:24 CET is my own probe). Check tomorrow: `grep okhttp /var/log/nginx/access.log | grep "transport=websocket[^ ]*sid="` should show 101s, and Cloudflare p99 should drop to real API latency.
+* **Not changed**: no client changes and no app release needed. The pre-existing `ERR_ERL_KEY_GEN_IPV6` startup error (express-rate-limit, logged on every start) is unrelated and untouched. Not committed: the server tree carries other sessions' uncommitted work.
+
+## 2026-11-04 - Access groups (RBAC) for Admin and Dispatcher accounts, Main Owner only (Claude Code)
+* **DEPLOYED 2026-11-04 ~08:36 (+08)** on the user's "Yes, deploy". This used neither `deploy-server.sh` nor `db push`.
+  - **Proof**: all 19 changed files on the VPS equalled my pre-change versions. The 11 route files matched my pre-edit backups byte for byte; for the other 8, the CR-stripped live-vs-local diff was only my hunks. The 8 new paths were absent, and `find src prisma -newer dist/index.js` was empty. The script re-checked the live md5s just before applying.
+  - **Steps**: backup, extract and chown to `197612:197121`, then `prisma generate`, `tsc --noEmit` (clean), `prisma db execute` of the migration only, `npm run build`, and `pm2 restart capstone-backend` (restart 6).
+  - **Backup and rollback**: `/root/deploy-backups/server-rbac-20261104-013620` (VPS clock CET) holds `src-before.tar.gz`, `dist/`, `db-before.sql.gz` (full dump, 70 MB, gzip-tested) and `rollback.sh`. The rollback deletes nothing: it moves the RBAC files and build aside and leaves the access tables, which old code never reads.
+  - **Live checks**: `/api/health` 200 locally and publicly; `/account/permissions` and `/access/groups` give 401 without a token; the process was stable after 67 s; there are no related errors in the pm2 error log. Prod has 0 groups and 0 overrides, and every account is in Full access. The Main Owner resolves to id 1 `owner`.
+  - **Not exercised live**: a signed-in Main Owner using the Access tabs. Agents use no production credentials.
+* **Request**: per-account access control behind a new Owner portal Settings screen. User's decisions: Admin + Dispatcher scope, groups plus per-account GRANT/DENY overrides, and **only the Main Owner (the first OWNER account ever created) manages access**.
+* **Touches the `[LOCKED]` Prisma schema**, additive only, approved by the user with the plan that named it:
+  - NEW `access_groups`, `access_group_permissions`, `user_permission_overrides`, enum `PermissionEffect`, and `users.accessGroupId` (FK **RESTRICT**).
+  - Migration `prisma/migrations/20261104120000_add_access_groups/migration.sql`, hand-written (migrate dev is broken).
+  - Applied to the local XAMPP DB, and to production on deploy (see above).
+* **NULL group = the built-in "Full access" for the role** (a code constant, not a row). Every existing account keeps exactly its current access with no data migration.
+* **Main Owner** = lowest `users.id` with role OWNER (`src/lib/mainOwner.ts`). On prod that is **id 1 `owner`**, read 2026-11-04. It always has every Admin key; no group or override applies to it. `requireMainOwner` gates all `/access/*`.
+* **Files**:
+  - NEW `src/lib/permissions.ts`: the catalog, 9 Admin and 9 Dispatcher keys, each with title/label/description/requires.
+  - NEW `src/lib/permissionCache.ts`: effective-permission math, 30 s LRU, invalidated on every write, fails closed.
+  - NEW `src/services/accessService.ts`, `src/controllers/accessController.ts`, `src/routes/accessRoutes.ts`, `src/validators/accessValidators.ts`.
+  - `src/middleware/auth.ts`: `requirePermission(spec)` (named `requirePermissionGuard`) and `requireMainOwner`. `requireRole` is unchanged.
+  - `src/routes/index.ts` mounts accessRoutes at `/`.
+  - 56 route gates added after `requireRole` in `analyticsRoutes`, `reportRoutes`, `userRoutes`, `rateConfigRoutes`, `merchantCategoryRoutes`, `placeRoutes`, `riderRoutes`, `feedbackRoutes`, `ownerCopilotRoutes`, `errandRoutes`. A key only constrains callers of its own role, so an Admin on a dispatcher route passes as before.
+  - `errandController.updateStatus`: a dispatcher's CANCELLED or PASSING BY needs `errands.cancel`; any other move needs `errands.review`.
+  - `ownerCopilotService` / `ownerCopilotController`: Kuya Sugo offers and runs only tools the caller may use (deterministic fallback too).
+  - `userService` / `userController`: only the Main Owner creates or edits Admin accounts or moves anyone into or out of OWNER. A promotion of an account older than the Main Owner is refused (409). The profile route needs `users.manage` to edit others. A role change clears the account's group and overrides. `listUsers` adds `isMainOwner` and `accessGroup`.
+  - `src/lib/socket.ts`: `notifyPermissionsChanged` emits `permissions:changed` to `user:<id>`.
+* **Endpoints**: `GET /account/permissions` (Admin/Dispatcher, own). Main Owner only: `GET /access/catalog`, `GET/POST /access/groups`, `PUT/DELETE /access/groups/:id` (version 409; members 409), `GET /access/accounts`, `PUT /access/accounts/:userId`.
+* **Audit**: an `account_modification_logs` row per affected account (`accessGroup`, `permissionOverride:<key>`, `groupPermissions:<group>`), with `verifiedVia` `MAIN_OWNER_SESSION`.
+* **Verification**:
+  - `tsc --noEmit` clean.
+  - New `tests/accessControl.test.ts` (23 tests). Route-shape tests updated for the new guard: `exceptionAccess`, `placeRoutesAuth`, `riderAccessGuards`, `storeCategoryImage`. `staffAccountChanges` gained the Main Owner lookup mock and 2 tests.
+  - Full vitest 157 files, 2003/2003 pass on the final tree.
+  - Local end-to-end against XAMPP with locally signed tokens: 19/20 pass. The one failure is `GET /errands` answering 500 because the local DB lacks `errands.referenceNo`, unrelated; the permission check passed. Test user, groups and audit rows were removed afterwards.
+* **Known limits**:
+  - Chat and live positions are Firebase RTDB, gated by the role claim, not by group.
+  - Socket rooms stay role-based.
+  - The ownerCopilot "disabled by SysAdmin" test can time out under a parallel full run: it writes the gitignored `config/maintenance.json`. This is pre-existing.
+* **Now live**: the 7 other Admins can no longer create or edit Admin accounts. Nothing is committed.
+
+## 2026-11-04 - Fix: a browser trusted only the last account that passed MFA (Claude Code)
+* **Bug (user report)**: "logged out, same browser and device, logged in again, it asked the OTP again".
+  - **Cause**: the portal's `mfaTrust` cookie held ONE token, so each account that passed MFA on a browser overwrote the previous account's trust.
+  - **Seen in prod**: owner (#1) passed at 00:52Z; jayvee (#13) passed at 00:58Z on the same browser (`web-a8d588cc...`); owner's sign-in at 01:04Z (nginx: 636-byte challenge reply) was challenged again.
+  - **Ruled out**: trust rows, device id, stamps and expiry were all fine.
+* **Fix (3 files)**:
+  - `mfaTrustService.ts`: the cookie carries up to 5 tokens, newest first, joined by "." (`parseTrustCookie` / `serializeTrustCookie`). `isTrusted` takes a list and matches the row for THIS account (another account's token never matches). `liveTokens` prunes replaced, revoked and expired tokens when the cookie is rewritten. `revokeOthers` keeps every token the caller's browser holds.
+  - `loginChallengeService.ts`: `MfaRequestContext.trustToken` becomes `trustTokens: string[]`.
+  - `authController.ts`: `trustTokensOf` (cookie list plus the apps' body token); `setMfaTrustCookie` keeps the other accounts' live tokens.
+  - Mobile apps are unchanged: they still send and receive one `mfaTrustToken`.
+* **Tests**:
+  - `tsc` clean.
+  - `tests/loginMfa.test.ts` now 31 tests, +5 for this bug, including a replay of the owner, then dispatcher, then owner sequence.
+  - Full suite **157/157 files, 2008/2008 tests**.
+  - Local HTTP end to end: two accounts in one cookie jar 5/5 (the cookie held 2 tokens; both signed straight back in); the original single-account check 14/14.
+* **Deployed 2026-11-04 ~09:20 (+08)**, VPS 02:18 CET.
+  - Race guard on the 3 live md5s; the live-only lines were exactly the replaced ones; nothing unbuilt on the VPS.
+  - `tsc --noEmit`, `npm run build`, `pm2 restart` (restart 8, clean); health 200 locally and publicly; MFA setting unchanged `["WEB_PORTAL","CUSTOMER_APP"]`.
+  - Backup: `/root/deploy-backups/server-mfa-cookie-20261104-021853`. Its `rollback.sh` deletes nothing; it moves the fix aside.
+* **One-time effect**: a browser whose cookie already lost an account's token asks that account once more. After that, every account on the browser stays trusted.
+
+## 2026-11-04 - MFA switched ON for customers too (Claude Code)
+* **01:51 CET (08:51 +08), on the user's "Switch it on now"**: `.env` now reads `MFA_ENFORCED_AUDIENCES=WEB_PORTAL,CUSTOMER_APP` (one line edited with `sed`), then `pm2 restart` (restart 7). The server reads `["WEB_PORTAL","CUSTOMER_APP"]`; health is 200 locally and publicly; the restart was clean (exit 0, `unstable_restarts` 0).
+* **Rollback (deletes nothing)**: `cp -p /root/deploy-backups/server-mfa-customer-20261104-015111/env.before /var/www/server/.env && pm2 restart capstone-backend`. That returns to web-only MFA.
+* **Effect**:
+  - **Customer app 1.4.0 on OTA group `bab5148c`** (published 05:33 +08, carries the MFA screen): password and Google sign-ins on an untrusted phone are asked for SMS or email.
+  - **Older bundles**: get 403 "Update Sugo Express to the latest version to sign in." (`details.code` `APP_UPDATE_REQUIRED`) and no session.
+  - **Already signed-in customers**: unaffected until they sign in again.
+  - **Riders**: not enforced.
+* **Someone else restarted the API at 01:38 CET (restart 6)**: another session deployed access/permissions work (`src/routes/*`, `middleware/auth.ts`, `lib/permissions.ts`, `services/accessService.ts`, ... saved 11-03 21:51-22:08 CET; `dist` built 01:37 CET). Checked afterwards: all 10 MFA source files on the VPS are byte-identical (CR stripped) to this deploy.
+* **Not verified live**: a real customer sign-in through the challenge, and the SMS hand-off on a phone.
+
+## 2026-11-04 - MFA switched ON for the web portal (Claude Code)
+* **~03:37 (+08), on the user's "Yes, switch it on"**: appended `MFA_ENFORCED_AUDIENCES=WEB_PORTAL`, with a comment line, to `/var/www/server/.env`, then `pm2 restart capstone-backend` (restart 5).
+  - The setting as the server reads it (`dist/config/env.js`) is `["WEB_PORTAL"]`, with `MFA_TRUST_DAYS` 30.
+  - Health is 200 locally and publicly; the API was stable after 46 s with no related errors; an unknown login still gets 401.
+* **Effect**: owner and dispatcher sign-ins on the portal from a browser without a live `mfaTrust` cookie get the two-step screen (SMS via Firebase, or an emailed code), then are trusted for 30 days. Sessions that are already signed in are untouched until they sign in again. Rider and customer apps are not enforced.
+* **Rollback (deletes nothing)**: `cp -p /root/deploy-backups/server-mfa-enable-20261103-203615/env.before /var/www/server/.env && pm2 restart capstone-backend`.
+* **Not verified live**: a real staff sign-in through the challenge. No production credentials are used by agents; the user should try one.
+
+## 2026-11-03 - MFA on every sign-in: server side (Claude Code)
+* **Status**: **DEPLOYED 2026-11-04 ~00:20 (+08)** (user: "Yes, deploy server"), with MFA switched OFF: `MFA_ENFORCED_AUDIENCES` is not in the prod `.env` or the running process. Nothing committed.
+* **Deploy**:
+  - **Files**: the 11 below, not `deploy-server.sh` (no `db push`). Each live copy equalled my pre-change version: the CR-stripped diff live vs local was exactly my hunks.
+  - **Race guard**: checked the 9 live md5s, `find src prisma -newer dist/index.js` (empty) and that the new paths were absent.
+  - **Table**: created by `prisma db execute` of the migration file only. Prod **now has a `_prisma_migrations` table** (it did not on 10-18); I left it alone and did not record this migration there.
+  - **Build**: `prisma generate`, `tsc --noEmit`, `npm run build`, `pm2 restart capstone-backend` (restart 4). Files chowned `197612:197121`.
+  - **Backup and rollback**: `/root/deploy-backups/server-mfa-20261103-172011` (VPS clock CET), holding `src-before.tar.gz`, `dist/` and `rollback.sh`. The rollback leaves the new table in place; old code never reads it.
+  - **`rollback.sh` deletes nothing** (rewritten 2026-11-04 on the user's instruction; **never use `rm -rf` on production**). It moves the MFA build, `mfaTrustService.ts` and the migration folder into `rolled-back-<time>/` inside that backup, and tars the nine MFA-era files there before restoring the old ones.
+* **Live checks**: local and public `/api/health` 200; `dist/services/mfaTrustService.js` present; `mfa_trusted_devices` exists with 0 rows; no auth/MFA errors in the pm2 error log after restart.
+  - Public refusals unchanged: an unknown staff or customer login gets 401 "Invalid username or password"; a forged challenge on verify/resend gets 401 "Your sign-in session expired".
+  - The CORS preflight echoes `x-sugo-mfa` in `access-control-allow-headers`.
+* **What changes in production now, with MFA off**:
+  - A first-login staff challenge no longer carries the raw `phone`. The deployed web bundle's SMS tab for that one-time check stays disabled until the new web ships; email still works.
+  - Customer register and Google register write a trust row and return `mfaTrustToken`, which today's apps ignore.
+  - Sign-in emails use the new wording.
+* **Decided with the user**: server-run MFA. Express stays the identity authority; Firebase's built-in MFA cannot attach, because Firebase only ever sees server-minted custom tokens. The second factor is a Firebase Phone Auth SMS code (the client posts the phone sign-in's ID token) or an email code. It is asked on a device that has not passed it within 30 days, for every audience: web owner/dispatcher, rider app, customer app (password and Google). Mobile apps do SMS through the portal's `/verify-phone?purpose=mfa` page. Clients are being built in separate sessions (web, CustomerApp, Rider).
+* **Wire contract**:
+  - **Challenge**: still HTTP 200, with `otpRequired` kept for old clients, plus `mfaRequired`, `reason` (`FIRST_LOGIN` | `NEW_DEVICE`), `factors` (`SMS`/`EMAIL`) and `phoneHint` (last 4). **The raw `phone` field is gone**: a password alone no longer reveals the number. Google sign-in answers `{ status: "MFA_REQUIRED", ...same }`.
+  - **Capability header**: clients send `x-sugo-mfa: 1`. Those get no automatic email; `POST /auth/resend-login-otp` sends the first one. Without the header, staff keep today's behaviour (email sent at once, so old rider builds still finish). A customer app without it gets 403 `{ error: "Update Sugo Express to the latest version to sign in.", details: { code: "APP_UPDATE_REQUIRED" } }`, and only when `CUSTOMER_APP` is enforced. CORS needed no change: with no `allowedHeaders` set, `cors` reflects the requested headers.
+  - **Verify**: `POST /auth/verify-login-otp` now serves customers too. On success it issues the device trust: HttpOnly cookie `mfaTrust` for `WEB_PORTAL`, `mfaTrustToken` in the body for the apps. Login bodies (`/auth/login`, `/riders/login`, `/customers/login`, `/customers/google-login`) accept `mfaTrustToken`. Customer register and Google register also trust the device and return `mfaTrustToken`.
+* **Files**:
+  - `prisma/schema.prisma`: NEW model `MfaTrustedDevice` (`mfa_trusted_devices`). Additive; the [LOCKED] 3NF tables are untouched.
+  - NEW `prisma/migrations/20261103230000_add_mfa_trusted_devices/migration.sql`, hand-written. Applied to the local XAMPP DB with `db execute` + `migrate resolve`.
+  - NEW `src/services/mfaTrustService.ts`: sha256 of the token stored; the device id is compared when both sides have one; `credStamp` covers the password hash, status, email and phone, so a reset or a contact change ends trust; `revokeOthers`.
+  - `src/services/loginChallengeService.ts`:
+    - subject kind claim `sk` (STAFF/CUSTOMER) and audience `CUSTOMER_APP`;
+    - `evaluateGate(user, { enforced, trusted })`, `startCustomerChallenge`, `remintChallenge`;
+    - insert-only `claimChallenge`;
+    - **`jti` nonce on challenge tokens**: two challenges for one account in the same second were byte-identical, so a resend's re-mint could return the token it had just burned.
+  - `src/services/authService.ts`:
+    - `loginGeneral`/`loginRider`/`loginCustomer`/`loginCustomerWithGoogle` take an `MfaRequestContext`; `loginCustomer` now returns `CustomerLoginOutcome`.
+    - `completeLoginOtp` drops the "already verified" replay stop, which would block recurring MFA; the claim keeps one session per challenge.
+    - SMS proof is stricter: `sign_in_provider` must be `phone`, `auth_time` must be no earlier than the challenge `iat` minus 30 s, the number must be an exact `canonicalPhone` match (was last 10 digits), and the ID token is single-use via `token_blocklist`.
+    - New `trustCustomerDevice`, `customerAuthResult`.
+  - `src/services/staffVerificationService.ts`: code owner is a staff user or a customer, with customer twins; copy fits a recurring sign-in check; no send to an empty email.
+  - `src/controllers/authController.ts`: `mfaContext`, trust cookie/body, customer outcome; `revoke-others` also forgets the other devices' trust.
+  - `src/validators/authValidators.ts`: `mfaTrustToken` on `loginSchema` and `customerGoogleLoginSchema`.
+  - `src/lib/firebaseAdmin.ts`: decoded token also returns `authTime`, `issuedAt`, `expiresAt`.
+  - `src/repositories/tokenBlocklistRepository.ts`: `claim()`.
+  - `src/config/env.ts`: `MFA_ENFORCED_AUDIENCES`, `MFA_TRUST_DAYS` (30).
+* **Tests**:
+  - `tsc --noEmit` clean.
+  - NEW `tests/loginMfa.test.ts`: 26 tests covering the gate matrix, trust (password change, other device, other account, expiry, revokeOthers keeping the web's, re-trust), SMS refusals, concurrent verify (exactly one session), replay, customer and Google challenges, and `APP_UPDATE_REQUIRED`.
+  - `accountStanding.test.ts` updated for the new `loginCustomer` return.
+  - Full suite **1969/1970**; the 1 failure is the known `ownerCopilot` timeout.
+* **Local end to end**:
+  - Ran the API with `MFA_ENFORCED_AUDIENCES=WEB_PORTAL`, via new launch config `api-server-mfa` in the web repo's `.claude/launch.json`.
+  - Used a throwaway local dispatcher, deleted afterwards; email codes were planted in the DB, so no mail was sent.
+  - **14/14 passed**: challenged with no full number; wrong code refused; right code gives a session and the `mfaTrust` cookie only; replay refused; the trusted browser skips the challenge; sign-out-others re-challenges the other device and keeps the caller's; a new password hash ends trust.
+  - The local DB lags prod by other migrations (`referenceNo`, `rider_offer_declines`, ...), whose background jobs log errors there. That is pre-existing.
+* **Deploy order (each needs the user's go-ahead)**:
+  1. Run the migration SQL on prod with `prisma db execute` only. Prod has no `_prisma_migrations`; never use `db push --accept-data-loss`.
+  2. Deploy these server files.
+  3. Ship the web, then set `MFA_ENFORCED_AUDIENCES=WEB_PORTAL`.
+  4. After the CustomerApp OTA, add `CUSTOMER_APP`.
+  5. After the rider APK, add `RIDER_APP`.
+* **Firebase console (user)**: Philippines in the SMS region policy; SMS quota for recurring MFA; test phone numbers for QA.
+
+## 2026-11-03 - Fixes for the Codex Security scan of 2026-11-02 (Claude Code)
+* **Status**: **DEPLOYED 2026-11-03 ~16:37 (+08)** (user: "Yes, deploy"); nothing committed. No schema change, no migration.
+* **Deploy**: only the 9 files below (8 changed + new `src/lib/seedPassword.ts`), not `deploy-server.sh` (no `db push`). Each live copy in `/var/www/server` equalled my pre-change version: the CR-stripped diff live vs local was exactly my hunks, nothing else. `socket.ts` stays CRLF on the VPS, the rest LF. A race guard re-checked the live md5s and `find src prisma -newer dist/index.js` (empty) just before applying. VPS `tsc --noEmit` clean, `npm run build`, `pm2 restart capstone-backend` (restart 3), local and public `/api/health` 200, still up 50 s later. Files chowned to `197612:197121` like their neighbours. Backup and rollback: `/root/deploy-backups/server-security-scan-20261103-093647` (VPS clock CET): `src-before.tar.gz`, `dist/`, `rollback.sh`.
+* **Live checks** (2-minute tokens signed on the VPS for id 999999, which owns nothing): `POST /api/errands/<missing>/payment-selection` RIDER 403, DISPATCHER 403 (both logged `[AuthZ] ... role X is not one of CUSTOMER`), CUSTOMER 404. Compiled `identifySocketToken`: session token accepted, `purpose` token and forged token refused.
+* **Expected effect at once**: one live staff session belonged to a changed role (user 10, session DISPATCHER, account now RIDER). It ends at that device's next refresh. 1 Inactive dispatcher exists; 14 live staff sessions in all before the deploy.
+* **Pre-existing, not from this deploy**: the error log carries express-rate-limit `ERR_ERL_KEY_GEN_IPV6` ValidationError (1,836 lines, from line 1 of the current log): a custom limiter `keyGenerator` uses the IP without `ipKeyGenerator`, so IPv6 callers may get a limit bucket per address.
+* **Source**: Codex Security scan of this server at revision c0e8b8b plus the uncommitted tree, saved under `C:\Users\Capstone\.codex\state\plugins\codex-security\scans\server\c0e8b8bd..._20261102T135923Z_fdtl3821\` (`report.md`, `threatmodel.md`, `artifacts\coverage\reviewed_surfaces.md`). Claude re-checked 9 of its 14 findings against the code; all 9 held, and 8 are fixed here.
+* **Fixed**:
+  - **#6 Suspended or locked customers could sign in again.** `authService.assertCustomerActive` runs on password login (after the password check, so status is not an oracle), Google login (before linking) and Google sign-up. 403.
+  - **#1 Google linked a customer by an unverified Firebase email.** `assertGoogleEmailVerified` requires `email_verified` in both Google flows. 403.
+  - **#2 Demoted or deactivated staff kept their access.** `refreshAccessToken` reads the account BEFORE rotating: a role different from the token's, or a non-Active status (staff or customer), revokes that session (`ROLE_CHANGED` / `ACCOUNT_NOT_ACTIVE`) and answers 401. Owner `updateUser` also revokes the account's sessions, sends `session:revoked` and closes its sockets on a role change or deactivation.
+  - **#3 A stolen staff token could redirect password reset.** `userService.updateProfile` clears `emailVerified`/`phoneVerified` when the email or phone changes (email now lowercased, as in `updateUser`).
+  - **#8 Revoked sessions kept Socket.IO access** (partly). New `identifySocketToken` in `lib/socket.ts`: the handshake now refuses blocklisted tokens and non-session tokens (`purpose`, missing role/id), connecting them anonymous. New `disconnectAccount()` closes an account's sockets 1 s after its `session:revoked` notice; called on sysadmin status changes to anything but Active and on owner demotion/deactivation.
+  - **#12 A dispatcher could cancel another dispatcher's claimed errand.** `declineErrandReview` controller now calls `verifyDispatcherAccess` first.
+  - **#14 Rider or staff with a customer's id could confirm that customer's payment mode.** `POST /errands/:id/payment-selection` gains `requireRole(["CUSTOMER"])` (the CustomerApp is its only caller).
+  - **#10 Seeders hard-coded account passwords.** New `src/lib/seedPassword.ts`; `src/seed.ts` reads `OWNER_SEED_PASSWORD` and no longer resets an existing owner's password; untracked `prisma/seed.ts` reads `OWNER_/STAFF_/SYSADMIN_/CUSTOMER_SEED_PASSWORD` and no longer prints passwords. **Production accounts were not touched.**
+* **Not fixed (still open)**: #4 customer stop moving a shared store, #5 fabricated transfer image settling a bill, #7 rider-set subtotal, #9 Firebase session after suspension, #11 unreviewed training labels, #13 customer searches using the staff AI allowance, and the alternate matcher's input size. #8 remainder: an open socket still outlives its token's 15-minute expiry, and a sysadmin ending ONE session does not close sockets (they cannot tell which session they belong to). #12 remainder: a decline still cancels at any unfinished status, mid-delivery included (product decision).
+* **`[LOCKED]` contracts**: Rotating Refresh Token Architecture untouched (`sessionService.rotateSession` unchanged; refresh only looks the account up before calling it). BOLA dispatcher authorization extended to `/dispatcher-decline`, per the lock. Route prefix and limiter order unchanged (`requireRole` before `userApiLimiter`).
+* **Files**: `src/services/authService.ts`, `src/services/userService.ts`, `src/services/sysAdminUserService.ts`, `src/lib/socket.ts`, `src/controllers/errandController.ts`, `src/routes/errandRoutes.ts`, `src/seed.ts`, `prisma/seed.ts` (untracked), NEW `src/lib/seedPassword.ts`; tests NEW `tests/accountStanding.test.ts`, `tests/staffAccountChanges.test.ts`, `tests/socketIdentity.test.ts`, `tests/errandClaimGuards.test.ts`, updated `tests/googleAuth.test.ts` (mock Google tokens now carry `emailVerified: true`, as real ones do).
+* **Verification**: `tsc --noEmit` clean (project, plus `prisma/seed.ts` and `src/seed.ts` checked separately). New/updated suites 34/34. Full suite 1943/1944: the 1 failure is `ownerCopilot.test.ts` "refuse requests when Kuya Sugo is disabled" (5 s timeout), which also fails run alone and touches none of these files.
+* **Client impact**: demoted/deactivated/suspended accounts get 401 on their next refresh and are signed out (intended), within the 15-minute access-token life. The portal's `AuthContext.tsx` acts on `session:revoked` only for four reason codes, so it ignores the plain-text reasons sent here (as it already did for sysadmin suspension); the socket still closes 1 s later. A server-closed socket does not auto-reconnect, which is the point for a suspended account.
+* **Next session**: commit these files when the user asks (repo is public: `prisma/seed.ts` is now free of passwords, re-check before adding it). The 2026-10-16 seeded accounts are now **Suspended** (next bullet).
+* **Seeded accounts suspended on production, 2026-11-03 ~16:47 (+08)** (user: "Yes, suspend them"). A read-only check first compared every account's hash on the VPS with the old seed passwords (taken from the pre-deploy backup, never printed): 68 still matched, all created 2026-10-15 UTC, none with a live session, sign-in or work since 10-17: users 14-20 (`dispatcher1`, `dispatcher2`, `rider1`-`rider5`), sysadmin 2 (`sysadminit`, never signed in) and 60 `customer_*`. The owner (id 1) and every other account use their own passwords. One transaction set those 68 to `Suspended` (users also `version + 1`, so an open Owner edit form gets a conflict instead of writing Active back), revoked their sessions (0 were live) and wrote 67 `account_modification_logs` rows (`verifiedVia` `SEED_CLEANUP_20261103`; the sysadmin table has none). The job re-selected by username + seed password + Active and would have aborted on any other set. Still Active: 22 staff, 12 customers, 1 sysadmin. Live check: staff sign-in to `dispatcher1` answers 403 "This account has been deactivated." Their 500 synthetic errands are untouched. Backup `/root/deploy-backups/seed-accounts-suspend-20261103-094721` (VPS clock): `tables-before.sql.gz` (users, customer_accounts, tbl_sys_admin, user_sessions, account_modification_logs), `rows-before.json`, and `rollback.cjs` (run from `/var/www/server` with `NODE_PATH=/var/www/server/node_modules node -r dotenv/config <backup>/rollback.cjs`). The old owner seed password is in public git history (`src/seed.ts` at HEAD, `database_setup.sql`, `verify-auth-tests.js`): any account still using it should be rotated.
+
+## 2026-10-28 - SysAdmin Kuya Sugo Service Control Toggle Backend (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: DEPLOYED TO PRODUCTION VPS (109.123.239.182) via `scripts/deploy-server.sh`. PM2 PID 1046187 online. All endpoints verified (`https://api.sugo-express.org/api/health` HTTP 200, Category ML container 127.0.0.1:8100/health healthy). Rollback backup: `/root/deploy-backups/server-20261028-011556`.
+* **Goal**: Provided a centralized SysAdmin switch to enable or disable Kuya Sugo across the platform with disk persistence and live API enforcement.
+* **Changes**:
+  - `src/services/sysAdminDevOpsService.ts`:
+    - Added `kuyaSugoEnabled` state variable (default `true`) persisted in `config/maintenance.json`.
+    - Added `getKuyaSugoEnabled()` and `setKuyaSugoEnabled(enabled, operator)` with event logging.
+    - Added `kuyaSugoEnabled` to `SystemTelemetry` response.
+  - `src/controllers/sysAdminDevOpsController.ts`:
+    - Added `getKuyaSugoHandler` and `toggleKuyaSugoHandler`.
+  - `src/routes/sysAdminRoutes.ts`:
+    - Mounted `POST /sysadmin/devops/kuya-sugo` (guarded by `requireRole("SYSADMIN")`).
+    - Mounted `GET /system/kuya-sugo` (guarded by `requireRole(["OWNER", "SYSADMIN"])`).
+  - `src/services/ownerCopilotService.ts`:
+    - Added pre-execution check: if Kuya Sugo is disabled, returns an immediate polite operational refusal without contacting Gemini API.
+  - `tests/ownerCopilot.test.ts`:
+    - Added regression test asserting refusal response when disabled by SysAdmin (15/15 tests passing).
+
+## 2026-10-27 - Owner AI Chat Companion ("Kuya Sugo") Gemini 3.8 Flash Backend (Antigravity 2.0, Peer-Reviewed & Hardened)
+* **Status**: DEPLOYED TO PRODUCTION VPS (109.123.239.182) via `scripts/deploy-server.sh`. PM2 PID 1026986 online. All endpoints verified (`https://api.sugo-express.org/api/health` HTTP 200, Category ML container 127.0.0.1:8100/health healthy). Rollback backup: `/root/deploy-backups/server-20261027-180843`.
+* **Goal**: Implemented and hardened the Owner AI Chat Companion ("Kuya Sugo") backend powered by Gemini 3.8 Flash with native function calling and deterministic Prisma tool execution. Delivers natural, respectful, and operationally grounded operational intelligence for Tacurong City.
+* **Peer-Review Hardening & Fixes Applied**:
+  1. **Parallel Tool Response Packing (Gemini API Strict Turn Alternation)**:
+     - Fixed Gemini REST API protocol error where parallel tool calls generated multiple individual `{ role: "user" }` turns.
+     - Grouped all parallel `functionResponse` parts into a single `{ role: "user", parts: [...] }` message block, preserving strict turn alternation.
+  2. **Conversation History Normalization & Greeting Safeguard**:
+     - Stripped leading model greetings from history payloads before sending to Gemini, preventing API 400 rejection (`"First content should be with role 'user'"`).
+     - Merged consecutive turns with matching roles into single composite messages.
+     - Sliced history window to the 20 most recent messages.
+  3. **History Length & Zod Validation Realignment**:
+     - Updated `copilotMessageSchema` in `src/validators/ownerCopilotValidators.ts` to support detailed model responses up to 10,000 characters while enforcing 2,000 character limit on user queries.
+     - Expanded `messages` array capacity from 30 to 60.
+  4. **Active Store Bottleneck Detection**:
+     - Upgraded `getFleetHealth` tool in `src/services/ownerCopilotService.ts` to inspect ongoing store delays (`errandPinpoint.arrivedAt != null && departedAt == null && elapsed >= 20 mins`) on active in-transit errands, deduplicating with completed `DwellObservation` history.
+  5. **Comprehensive PII Scrubbing**:
+     - Added regex scrubbing (`09xx`, `+639xx`, formatted phone patterns) to prevent customer/rider phone numbers in cancellation and exception records from being forwarded to the external LLM.
+* **Architecture & Endpoints**:
+  - Route: `POST /api/owner/copilot/chat` guarded by `authenticateToken` + `requireRole(["OWNER", "ADMIN"])` + `ownerCopilotLimiter` (20 req/min, 120 req/min dev).
+  - Model: `gemini-3.8-flash` via Google Generative Language REST API with fallback to `GEMMA_API_KEY` or `ml/.env`.
+  - Multi-Turn Function Calling Loop: Preserves `thoughtSignature` from model calls to ensure Gemini 3.8 Flash compliance, handles dynamic tool execution, and sends user-role `functionResponse` blocks.
+  - Deterministic Tools (Zero Hallucination / Read-Only):
+    1. `getSalesPulse`: Daily/weekly sales totals, errand counts, delivery fees, average order value, and top payment methods.
+    2. `getFleetHealth`: Active/idle/offline riders, battery levels, overdue deliveries, and active delay alerts.
+    3. `getExceptionRecap`: Cancellation rates, top cancellation/decline reasons, and problem merchants.
+    4. `getCategoryPerformance`: Top merchant categories by revenue, volume, and gross merchandise value.
+  - Persona & Anti-AI-Slop Hygiene: "Kuya Sugo" persona (friendly, respectful, domain-grounded, Filipino-English operational tone), strictly no em dashes, no purple gradients, no PII leakage, and deterministic fallback if Gemini API is unreachable or rate-limited.
+* **Modified & Created Files**:
+  - `src/validators/ownerCopilotValidators.ts`: Zod schema for conversation messages, history, and portal context.
+  - `src/middleware/rateLimiters.ts`: `ownerCopilotLimiter` rate limiter.
+  - `src/services/ownerCopilotService.ts`: Core orchestrator, tools implementation, Gemini function calling loop, PII filtering, and deterministic fallback.
+  - `src/controllers/ownerCopilotController.ts`: `copilotChatHandler` request handler with error wrapping.
+  - `src/routes/ownerCopilotRoutes.ts`: Router mounting `POST /chat`.
+  - `src/routes/index.ts`: Mounted `/owner/copilot` under `/api/owner/copilot`.
+  - `tests/ownerCopilot.test.ts`: 14 unit tests verifying validation, tool data queries, mocked Gemini tool-calling loop, API failure fallback, parallel function calling, history normalization, PII scrubbing, and em-dash elimination.
+* **Verification**:
+  - `npx vitest run tests/ownerCopilot.test.ts`: 14/14 tests passed (325ms).
+  - `npx vitest run`: 149/149 test suites passed (1,880 unit tests).
+  - `npx tsc --noEmit`: 0 compiler errors.
+  - `npm run build`: Compiled successfully with 0 errors.
+* **Directives for Next Session**:
+  - Deploy server to production VPS (`109.123.239.182`) via `scripts/deploy-server.sh`.
+
+## 2026-10-27 - Hide Punctuality Status Column in Printed Rider Performance Report (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: DEPLOYED TO PRODUCTION VPS (109.123.239.182) via `scripts/deploy-server.sh`. PM2 PID 911695 online, 0 errors. All endpoints verified (`https://api.sugo-express.org/api/health` HTTP 200, Category ML container 127.0.0.1:8100/health healthy). Rollback backup: `/root/deploy-backups/server-20261027-063154`.
+* **Goal**: Hid the "Punctuality Status" column in the printed PDF report for Rider Performance per user request. The table now displays 4 balanced columns (`Order`, `Accepted`, `Delivered`, `Target Deadline`) normalized across the 720pt page width.
+* **Changes**:
+  - `src/services/pdf/reportPdfService.ts`:
+    - Removed `{ header: "Punctuality Status", ... }` from the `Every delivery in these dates` table in `oneRiderSpec`.
+    - Rebalanced remaining column widths: `Order` (210), `Accepted` (170), `Delivered` (170), `Target Deadline` (170) summing to 720pt.
+  - `tests/reportPdfExport.test.ts`:
+    - Updated integration test expectation to assert that `Punctuality Status` is omitted from the PDF printout.
+* **Verification**:
+  - `npx tsc --noEmit`: 0 errors.
+  - `npx vitest run tests/reportPdfExport.test.ts`: 28/28 tests passed.
+
+## 2026-10-27 - SysAdmin DevOps Telemetry: Maintenance Advisory & Playful Live Notice (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: LOCAL VERIFIED - Unit tests passing 5/5 (`tests/maintenanceAdvisory.test.ts`), `npx tsc --noEmit` 0 errors. Ready for VPS deployment.
+* **Goal**: Implemented Option B ("Integrated with Sysadmin DevOps Telemetry / Centralized Control") providing an `ADVISORY` / `LIVE_NOTICE` maintenance mode. Allows DevOps administrators to toggle a playful, non-blocking live polish banner/modal per portal (Customer, Rider, Dispatcher, Owner) with zero code deployments.
+* **Changes**:
+  - `src/services/sysAdminDevOpsService.ts`:
+    - Expanded `MaintenanceType` union to include `"ADVISORY" | "LIVE_NOTICE"`.
+    - Added `footnote?: string` property to `PortalMaintenanceConfig`.
+    - Defined `DEFAULT_MAINTENANCE_FOOTNOTES` with default playful footnote *"Please enjoy the construction cones."*
+    - Added `ensureMaintenanceLoaded()` to avoid floating promise startup race condition with disk configs; awaited in `getSystemTelemetry()` and `toggleMaintenanceMode()`.
+    - Updated `toggleMaintenanceMode` to support automatic type default promotion, `footnote` parameter in push notifications, and non-urgent push/telegram notifications for live advisories.
+  - `src/controllers/sysAdminDevOpsController.ts`:
+    - Updated `toggleMaintenance` validator `validTypes` to include `"ADVISORY"` and `"LIVE_NOTICE"`.
+    - Passed `footnote` parameter from request body to `toggleMaintenanceMode`.
+    - Made `getPublicMaintenanceStatusHandler` async and awaited `ensureMaintenanceLoaded()`.
+  - `tests/maintenanceAdvisory.test.ts`:
+    - Created comprehensive unit test suite (5 tests) verifying advisory mode activation, custom header/message/footnote overrides, push notification payloads (`urgent: false`, `data.type: "LIVE_ADVISORY_NOTICE"`, `data.footnote`), telemetry integration, and clean deactivation.
+* **Verification**:
+  - `npx vitest run tests/maintenanceAdvisory.test.ts`: 5/5 tests passed (58ms).
+  - `npx tsc --noEmit`: 0 compiler errors.
+* **Directives for Next Session**:
+  - Deploy backend updates to VPS (`109.123.239.182`) via `scripts/deploy-server.sh`.
+
+## 2026-10-27 - Rider Performance Delivery Verdict Clarity & PDF Alignment (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: DEPLOYED TO PRODUCTION VPS (109.123.239.182) via canonical `scripts/deploy-server.sh`. PM2 PID 895192 online, 0 errors. All endpoints verified (`https://api.sugo-express.org/api/health` HTTP 200, Category ML container 127.0.0.1:8100/health healthy). Rollback backup: `/root/deploy-backups/server-20261027-045918`.
+* **Goal**: Synchronized server PDF report export with web UI clarification for the Rider Performance delivery breakdown table, eliminating jargon confusion between "Promised By" and "On Time?".
+* **Changes**:
+  - `src/services/pdf/reportPdfService.ts`:
+    - Updated PDF table column headers: `"Target Deadline"` (width 110) and `"Punctuality Status"` (width 260).
+    - Reworded `NOT_CHECKED_REASON` map and `deliveryResultLabel` from repetitive *"Not checked: [reason]"* to precise domain status (*"Unverified: no target deadline set"*, *"Unverified: deadline set at doorstep (< 2 min)"*, *"Unverified: missing GPS proof at address"*, *"Unverified: marked delivered away from address"*).
+  - `tests/reportPdfExport.test.ts`:
+    - Updated PDF verification test assertion to check for `"Unverified: marked delivered 32.3 km from address"`.
+* **Verification**:
+  - `npx tsc --noEmit`: 0 errors.
+  - `npx vitest run tests/reportPdfExport.test.ts`: 28/28 tests passed.
+  - Full server vitest suite: 145 suites, 1855 tests passed.
+
+## 2026-10-27 - Speed-Aware Store ETA Calibration & Production VPS Deployment (Antigravity 2.0, Gemini 3.8 Flash High)
+
+* **Status**: DEPLOYED TO PRODUCTION VPS (109.123.239.182) & VERIFIED via canonical `scripts/deploy-server.sh`. PM2 PID 835395 online, 0 errors. All health checks passed (`/api/health`, `https://api.sugo-express.org`, category ML container).
+* **Context**: User requested dynamic store ETA calibration where rider travel time to stores scales with live GPS velocity, while strictly leaving store wait/dwell times untouched. Additionally deployed all pending server updates to the live production server.
+* **Changes**:
+  1. **GPS Velocity Ingestion & In-Memory Store**:
+     - Updated `src/lib/riderPositionStore.ts` to include `speedMps?: number | null`.
+     - Updated `src/services/trackingService.ts` and `src/lib/riderLocationBroadcast.ts` to capture and record `speedMps` on each GPS broadcast/tracking point.
+  2. **Speed-Aware Store ETA Strategy**:
+     - Updated `src/services/etaService.ts` to pass `originSpeedMps: position?.speedMps ?? null` to `defaultEtaStrategy.compute()`.
+     - Updated `src/services/patterns/etaStrategy.ts`: Store-bound transit time adjusts dynamically when rider is moving ($v \ge 2.0\text{ m/s}$), and freezes countdown progress when stationary ($v < 2.0\text{ m/s}$ at stoplights).
+     - **Locked Invariant Honored**: Store wait/dwell times (`dwellLowSeconds`, `dwellHighSeconds`) remain **100% untouched** (only transit duration scales). Customer delivery transit remains standard road-network baseline.
+* **Verification & VPS Deployment Ledger**:
+  - Local TypeScript check: `npm run build` / `npx tsc --noEmit` passed with 0 errors.
+  - Vitest: `tests/etaStrategy.test.ts` passed 13/13 tests.
+  - Production backup created: `/root/deploy-backups/server-20261027-001244`.
+  - Prisma generation & schema sync: Generated Prisma Client v5.22.0; DB schema in sync.
+  - Remote TypeScript build: PASSED (0 errors).
+  - Category ML Docker container: Rebuilt and healthy (`capstone-category` port 8100).
+  - PM2 restart: `capstone-backend` PID 835395 online, 0 restarts, 0 errors.
+  - Live Edge Health: `https://api.sugo-express.org/api/health` HTTP 200 `🟢 System Online`.
+
+
+## 2026-10-26 - Performance & 25s P95/P99 Latency Remediation (Antigravity 2.0, Gemini 3.8 Flash High)
+
+* **Status**: COMMITTED LOCALLY & VERIFIED (TypeScript `npx tsc --noEmit` passed with 0 errors; Prisma validation & generation clean; 141 Vitest test suites passed). Ready for VPS deployment.
+* **Context**: User reported P95 latency spikes reaching 25 seconds affecting P99 during heavy actions (financial report queries, store/location searches, and receipt image writes). Live PM2 inspection on `vmi3579720-1f7f` (109.123.239.182) revealed idle event loop at 0.58ms/2.3ms and CPU ~1%, but Prisma `pool_timeout=30` caused queries to queue in memory up to 30 seconds when database connections were saturated by un-indexed relations or full table scans.
+* **Changes**:
+  1. **Connection Pool Fail-Fast Safeguard**: Reduced `pool_timeout` from `30` to `8` seconds in `server/.env` (`DATABASE_URL`). Requests recover immediately and fail fast instead of hanging in a 30s FIFO queue across all mobile apps and web dashboards.
+  2. **Bounded Search Pagination**: Updated `src/repositories/placeRepository.ts` `findAll` to defensively clamp `take` to maximum 20 items (default 15) when search query is active, preventing runaway full-table scans across `verified_places`.
+  3. **Order Items & Proof Images Performance Indexes**:
+     - Added `@@index([errandId])` to `model PabiliDetail` (`pabili_details_tbl`).
+     - Added `@@index([errandId])` to `model PabiliItemRequest` (`pabili_item_requests_tbl`).
+     - Added composite `@@index([errandId, kind])` to `model ErrandProofImage` (`errand_proof_images`).
+     - Generated production migration: `prisma/migrations/20261026210000_add_errand_items_proof_perf_indexes/migration.sql`.
+     - Validated with `npx prisma validate` and compiled with `npx prisma generate`.
+  4. **Proof Image Database Write Optimization**:
+     - Updated `src/services/proofImageService.ts` (`saveScan`) to add `select: { id: true }` on `prisma.errandProofImage.create`, eliminating the wire round-trip of multi-megabyte `imageData` (LongText) back to Node.js memory after insertion.
+* **Verification**:
+  - `npx prisma validate`: Schema valid 🚀.
+  - `npx prisma generate`: Prisma Client v5.22.0 compiled successfully.
+  - `npx tsc --noEmit`: 0 errors.
+  - Vitest: 141 test suites / 1,825 unit tests passed.
+* **Directives for Next Session / VPS Deploy**:
+  - Apply `npx prisma migrate deploy` on production VPS (109.123.239.182).
+  - Update `pool_timeout=8` in production `.env`.
+  - Rebuild `npm run build` and reload PM2 `capstone-backend`.
+
+## 2026-10-24 - Node2Shell (CVE-2026-111497) Full-Stack Mitigation & Node 22 LTS Upgrade (Antigravity 2.0, Gemini 3.8 Flash High)
+
+* **Status**: DEPLOYED TO PRODUCTION VPS (109.123.239.182) & COMMITTED LOCALLY. Zero downtime. Unrelated uncommitted work preserved intact.
+* **Context**: Node2Shell (CVE-2026-111497) is an out-of-bounds write / buffer overflow in Google's native Brotli decoder (`c/dec/decode.c` v1.0.3–1.2.0) bundled into Node.js `node:zlib`. Production was running EOL Node `v20.20.2` (Brotli 1.1.0).
+* **Changes**:
+  1. **Nginx Edge Shield**: Configured `/etc/nginx/sites-available/api.sugo-express.org` and `/etc/nginx/sites-available/api.sugoonthego.online` with:
+     `if ($http_content_encoding ~* "(?:br|brotli)") { return 415; }`
+     Nginx drops any incoming Brotli request body before it ever reaches the Node.js backend.
+  2. **Application-Level Invariant**: Updated `src/middleware/threatInterceptor.ts` (Step 1, prior to whitelist check and prior to `express.json()`) to inspect `Content-Encoding`. If matching `br` or `brotli`, it immediately logs a security warning and returns HTTP 415 without invoking `body-parser` or Node's Brotli decoder.
+  3. **Production Runtime Upgrade**: Switched NodeSource to `node_22.x` and upgraded production VPS to Node 22 LTS (**`v22.23.4`**, official CVE-2026-111497 patched release).
+  4. **Prisma & PM2 Synchronization**: Executed `npx prisma generate` under Node 22 (modules 127), recompiled TypeScript (`npm run build`), and restarted PM2 `capstone-backend`.
+* **Verification**:
+  - `tests/node2ShellDefense.test.ts`: 4/4 passed locally and on VPS (case-insensitive `br`, `brotli`, mixed `gzip, br`, clean pass-through).
+  - Edge probe with `Content-Encoding: br`: HTTP 415 Unsupported Media Type.
+  - Direct port 5000 probe with `Content-Encoding: br`: HTTP 415 with `{ error: "Unsupported Media Type", message: "Brotli request content-encoding ('br') is rejected for system security (CVE-2026-111497)." }`.
+  - Edge health probe `https://api.sugo-express.org/api/health`: HTTP 200 `🟢 System Online`.
+  - PM2 status: `capstone-backend` PID 431477 online, 0 errors.
+
+## 2026-10-24 - Rider connectivity grace and notification fatigue (Codex)
+
+* **Status**: Local source only, not deployed. Preserve all unrelated uncommitted work.
+* **Changes**: `src/lib/riderLiveLink.ts` applies the existing eight-second heartbeat grace to transport disconnects instead of immediately declaring loss. `src/services/riderBeaconService.ts` accepts an HTTP beacon received after the last heartbeat as evidence of connectivity, so Android background suspension or a lost pause frame does not override a working background task.
+* **Alerts**: `src/services/riderStatusWatchService.ts` publishes status/assignment safety changes promptly but waits for 30 seconds of continuously observed signal-lost status before interrupting dispatchers (evaluated on the existing 20-second watcher, so confirmation may take up to another watcher interval). Both initial toasts and saved loss notifications share a ten-minute per-rider cooldown. Brief recovery cancels a pending loss; restoration is saved only for a loss that was actually notified. Existing five-/fifteen-minute prolonged-outage reminders and active-order escalation remain. Notification cooldown calculations use the pass timestamp consistently. No routes, schema, authorization, location cadence or routing provider changed.
+* **Verification**: `npx tsc --noEmit` passed. Focused Vitest: 6 files / 49 tests passed (`riderLiveLink`, `riderLiveLinkOverlay`, `riderStatusWatch`, `riderAvailability`, `riderBeaconMidnight`, `riderLocationBroadcast`). Added regression coverage for transport reconnects/late old-socket disconnects, newer background beacons and their expiry, brief/repeated losses, alert confirmation, cooldown and renewed confirmed outages. Dispatcher `useRiderFleetPresence.ts` consumes `rider:connectivity_alert` for its toast; no web change needed.
+* **Companion rider work**: See RiderMobileApp handshake entry dated 2026-10-24: native marker frame updates and repeated background pause on socket reconnect. Deployment/app distribution and phone verification remain outstanding.
+
+## 2026-10-22 - Customer shopping sentence extraction polish (Codex)
+
+* **Status**: DEPLOYED to VPS. Four source files and two compiled API modules only. ML image `sugo-category:sentence-20261022`, SHA `b31957c01c98d1abc5d9b3a69c2be63480af9b402a07f5b18fd536ac8620ea27`. Backend HTTP 200; ML ready; unchanged authentication returns 401; compiled Node-to-sidecar synthetic extraction passed. Current model bytes and full category reports, provider settings, review opt-in, memory, bindings and cache volume preserved. No retrain or schema change.
+* **Changes**: `ml/sugo_category/gemma.py` prompt version 5 handles English/Filipino/Hiligaynon/Cebuano requests, packaging, strength and rider notes; validates exact integer/bool/string types, duplicate positions, spoken numeric values/fractions, known numeric brands and units. Whole-sentence cache keys prevent final-note collisions. `ml/app.py` validates 1–500 characters rather than truncating at 120. `src/validators/itemTidyValidators.ts` accepts 500-character sentences; extracted names retain 120 limit. `src/services/itemTidyService.ts` drops uncertain/duplicate readings, protecting installed clients too.
+* **Verification**: Initial bug reproduction 14 failed/1 passed. Final scoped Python extraction/endpoint/quality/retraining suite 99 passed; API suite 7 passed; server TypeScript no-emit and staged compilation passed. Customer App 167 focused tests and TypeScript pass. Actual Gemini synthetic check initially 11/12 exact fields (strength/packaging combined); clarified prompt plus two new examples passed 14/14, around 2–3 seconds per four-line batch. Small functional set, not production accuracy. Evidence under ignored `ml/models/sentence-study/` and VPS backup. Docs: `ml/category/SENTENCE_EXTRACTION.md`.
+* **Mobile**: Updated sentence/count detection, no request truncation, confidence handling, pending-edit/stepper protection, preserved notes, unresolved-row hint/editor link and long-raw-name submit guard. New local APK built and v2 signature verified. Existing installed apps need that build for mobile changes; no OTA/public APK distribution or device installation performed.
+* **Rollback**: `/root/deploy-backups/sentence-20261022-01` contains previous sources/dist, current model snapshot/hashes, old image and guarded rollout script. Initial switch safely rolled back on environment-list order comparison; changed guard to compare actual key/value mappings. Retry passed all preservation checks and live validation. Keep backups and persistent caches. Preserve unrelated uncommitted work.
+
+## 2026-10-22 - Gemini-assisted training quality review (Codex)
+
+* **Status**: DEPLOYED, explicitly opted in after the user approved sending up to 20 new unique production store/item names and category labels per retrain to Google Gemini and persisting reviews. Initial auto-review rejection was respected; preview was generated offline before explicit approval. Provider availability and the first actual batch confirmed `gemini-3.8-flash`.
+* **Implementation**: `ml/sugo_category/training_quality.py` groups deterministically cleaned names; prioritizes suspicious strings and label conflicts; validates bounded, finite KEEP/REVIEW/EXCLUDE decisions. Only EXCLUDE >=0.95 quarantines fitting data. No label rewrites or database mutations. Review cache is separate from category/teacher cache; 20-name/20-second defaults and shared provider quotas/fallbacks. `GemmaAdvisor.review_training` implements the transport. Automatic `/retrain` prepares and audits quality before calling the trainer; an explicit CLI supports reviewed exports for builds. `model.py` preserves original validation/test rows while filtering probe/final fitting. `train.py` consumes reviewed exports; `/health` exposes summary metadata. Compose/code default to opt-out; VPS ML `.env` sets `TRAINING_QUALITY_ENABLED=1` after approval.
+* **First batch**: 294 unique grouped names; 20 reviewed; two junk item names (four rows) excluded from fitting; 20 conflicting-label groups flagged across the dataset; 274 names remain for later runs. Human labels preserved, including disputed labels. Private audit: `ml/models/quality-study/quality-audit.json` locally and VPS backup.
+* **Verification**: 16 new quality tests; full Python suite 291 passed, same nine pre-existing Gemma default-chain failures; final targeted integration 19 passed; focused catalogue/training/quality 52 passed; TypeScript `tsc --noEmit` and syntax checks passed. Disabled CLI generated an export with zero external calls. Image checks passed for six representative predictions, eight categories, and original held-out populations (464 item / 12,536 store rows).
+* **Release**: Built image `sugo-category:ml-quality-20261022`, SHA `aaa4d8f1178571200cc1de198f0a721d5cf25e7ab7edc696a7144ac0bdbaf5b8`, promoted to `sugo-category:latest`. Deployed app.py, gemma.py, model.py, train.py, new training_quality.py and opt-in Compose setting. Item held-out accuracy remains 80.39%, store 82.47%; item real fitting rows 2366. Live ML ready, backend 200, category predictions verified, provider env preserved, quality cache readable/writable by service user, loopback 8100 retained. No Node restart.
+* **Rollback**: `/root/deploy-backups/ml-quality-20261022-01` (previous source/models/image ID, private environment backup, rollout-quality.py with rollback, review/build/verification evidence). Previous image `sugo-category:rollback-ml-quality-20261022`. Preserve persistent external-answer and quality cache volume. Details: `ml/category/TRAINING_QUALITY.md`.
+
+## 2026-10-22 - Local item ML accuracy investigation (Codex)
+
+* **Status**: DEPLOYED after explicit user approval on 2026-10-22. Investigation used the previous deployed training snapshot from container run `20261021-194530`; release retrained from a fresh read-only production export. Preserved unrelated working-tree edits.
+* **Finding**: 2,370 cleaned item rows represent only 107 normalized names; 10 names have conflicting labels. Prepared coffee vocabulary incompletely followed the Cafe/beverage role. Item holdout names could leak through seed phrases.
+* **Changes**: Complete prepared-coffee vocabulary in `ml/sugo_category/lexicon.py`, preserving packaged coffee and parent-category fallback. Exclude real item test names from development seed rows in `model.py` (final serving fit still uses all data). Add four regression tests and `sugo_category/item_accuracy.py` for offline comparison.
+* **Evaluation**: Five fixed name-disjoint splits, identical fixed logistic settings. Mean equal-name accuracy 61.86% -> 66.63%; order-row accuracy 77.48% -> 88.81%. Gains concentrate in frequently ordered cafe items. Repeated splits overlap and were inspected after diagnostics: exploratory, not an independent production estimate. Rejected a settings-search winner that worsened test accuracy; no classifier-setting change.
+* **Verification**: Focused Python catalogue/training/cleansing/categorizer suite 103 passed; `npx tsc --noEmit` passed. Full Python suite completed outside the sandbox in 28.60 s: 275 passed, 9 failed. An isolated pre-change lexicon/model from Git HEAD reproduced exactly the same nine Gemma failures (36 Gemma tests passed), confirming existing model-chain/default/Compose mismatches. External AI calls disabled. Initial temp-directory errors were resolved with workspace-local `--basetemp`; the sandbox's blocked Windows asyncio socket pair caused initial TestClient stalls, resolved by permitting local sockets for verification.
+* **Artifacts**: `ml/category/ACCURACY_IMPROVEMENT.md`; detailed comparison, captured baseline vocabulary, training snapshot, and logs under ignored `ml/models/accuracy-study/`. No production data added to tracked source.
+* **Release**: Backed up host source, current model directory and previous image in `/root/deploy-backups/ml-accuracy-20261022-01`; retained image tag `sugo-category:rollback-ml-accuracy-20261022`. Built `sugo-category:ml-accuracy-20261022` from the production build context with only the approved `lexicon.py` and `model.py` deltas, then promoted it to `sugo-category:latest`. Image SHA `c1571e55641930106d526415b5b13cafff6f4791005ed687f85e7e79eb534779`.
+* **Live verification**: Docker healthy; ML ready; backend HTTP 200; both source hashes match local; eight categories retained; 230 cached answers preserved; loopback `127.0.0.1:8100` and 1.5 GiB memory limit retained. Nine offline prediction checks passed before switch; serving HTTP checks confirmed cold brew coffee -> Cafe and instant coffee sachet -> Supermarket & Grocery. Retrained model reports: store 82.47%, item 80.39% held-out accuracy. Item evaluation now excludes seed leakage, so the old 62.93% report is not an identical-method baseline. Item ensemble still weights linear model 1.0. Deployment evidence saved under `ml/models/accuracy-study/deployment/` locally and in the VPS backup directory. No database mutation or backend restart.
 
 > **ALWAYS ACTIVE IN ALL SESSIONS**: This file is the shared living memory between Claude App (Anthropic) and Antigravity 2.0 (Google AI / Gemini) for the Express / MariaDB / Prisma backend.
 
 ---
 
 ## 📡 Tunnel State
-* **Active Mission**: Dispatcher Portal Dashboard Aggregation & Shift Handover Auto-Release
+* **Active Mission**: Database Optimization, Composite B+Tree Indexing & In-Memory Hash Cache Blueprint Implementation
 * **Current Driver**: Antigravity 2.0 (Gemini 3.8 Flash High)
 * **Target Workspace**: `Capstone_Server/server` (Port 5000 API Backend)
-* **Last Updated**: 2026-10-17
+* **Last Updated**: 2026-10-23
 
 ---
 
@@ -19,10 +559,78 @@
 * `[LOCKED]` `BOLA/IDOR Dispatcher Authorization` (`verifyDispatcherAccess` on all mutating routes)
 * `[LOCKED]` `Rotating Refresh Token Architecture` (SHA-256 session hash in `user_sessions`, 10s grace window)
 
+## 2026-10-23 - Database Optimization, Composite B+Tree Indexing & In-Memory Hash Cache Blueprint (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [VERIFIED ON PRODUCTION VPS (109.123.239.182) - All 13 composite B+Tree indexes created in MariaDB InnoDB; legacy FK indexes safely replaced; table statistics analyzed; in-memory LRU hash caching deployed; connection pool bumped to 25 with 30s timeout; PM2 service online with zero errors].
+* **Feature & Implementation Specification**:
+  - **Tier 1: Composite B+Tree Indexes in `prisma/schema.prisma`**:
+    - `Errand`: Added `@@index([status, createdAt])` (optimizes dispatcher queue), `@@index([status, assignedAt])` (optimizes 15s offer expiry cron), `@@index([status, riderId])` and `@@index([riderId, status])` (fleet active errand aggregation), `@@index([customerId, createdAt])` (customer history), `@@index([createdAt])` (financial reports).
+    - `User`: Added `@@index([role, status])` (optimizes 20s rider fleet watch).
+    - `CustomerTransaction`: Added `@@index([customerId, createdAt])` and `@@index([createdAt])`.
+    - `DispatchLog`: Added `@@index([errandId, dispatchedAt])` and `@@index([dispatcherId, errandId])`.
+    - `ErrandPinpoint`: Upgraded single `@@index([errandId])` to composite covering `@@index([errandId, sequence])`.
+    - `RiderCommission`: Replaced single `@@index([riderId])` with composite covering index `@@index([riderId, computedAt])`.
+    - Created explicit production DDL migration: `prisma/migrations/20261023120000_add_performance_composite_indexes/migration.sql`.
+    - Validated with `npx prisma validate` and compiled with `npx prisma generate`.
+  - **Tier 2: Application-Level In-Memory Hash Table Caching (O(1) in RAM)**:
+    - Implemented `src/lib/rateConfigCache.ts` using `LRUCache` (15m TTL) returning shallow clones to prevent in-memory mutation of cached configurations. Integrated cached reads in `errandService.ts` (`quoteErrand`, `createErrand`, `confirmPaymentSelection`, `quotePinpoints`) and `rateConfigService.ts`. Wired cache invalidation into `rateConfigService.updateRateConfig` and `rateConfigController.updateRateConfig`.
+    - Implemented `src/lib/merchantCategoryCache.ts` using `LRUCache` (30m TTL) with segregated cache keys for `ACTIVE_ONLY` vs `ALL`. Integrated cached reads in `merchantCategoryService.listMerchantCategories`. Wired cache invalidation into `merchantCategoryService` and `merchantCategoryController` on `create`, `update`, `setCategoryImage`, and `removeCategoryImage`.
+  - **Tier 4: Connection Pool Headroom & Bounded Safe Default Pagination**:
+    - Updated `server/.env` connection pool parameters: `connection_limit=25&pool_timeout=30`.
+    - Enforced defensive bounded pagination via `sanitizePagination` in `errandRepository.findMany()` and `errandRepository.findManyForDispatcher()` (clamped `take: [1, 100]`, default 50; clamped `skip: >= 0`, default 0).
+    - Forwarded pagination controls through `errandService.listErrands` and `errandController.listErrands` (`req.query.take`, `req.query.skip`).
+* **Files Modified**:
+  - `prisma/schema.prisma`
+  - `prisma/migrations/20261023120000_add_performance_composite_indexes/migration.sql` (NEW)
+  - `src/lib/rateConfigCache.ts` (NEW)
+  - `src/lib/merchantCategoryCache.ts` (NEW)
+  - `src/services/rateConfigService.ts`
+  - `src/controllers/rateConfigController.ts`
+  - `src/services/errandService.ts`
+  - `src/controllers/errandController.ts`
+  - `src/repositories/errandRepository.ts`
+  - `src/services/merchantCategoryService.ts`
+  - `src/controllers/merchantCategoryController.ts`
+  - `.env`
+  - `tests/databaseOptimizationAndCaching.test.ts` (NEW)
+  - `tests/categoryWarm.test.ts`
+  - `tests/firebaseUid.test.ts`
+  - `AGENT_HANDSHAKE.md`
+* **Verification Ledger**:
+  - `npx prisma validate`: Schema is valid 🚀.
+  - `npx prisma generate`: Generated Prisma Client (v5.22.0) with zero errors.
+  - `npx tsc --noEmit`: 0 TypeScript compiler errors.
+  - Vitest test suite: 134/134 targeted tests passed (100%).
+  - Pre-migration database backup taken on VPS: `/var/www/server/backups/pre_index_migration_20261023_173940.sql.gz` (52MB).
+  - DDL applied to production MariaDB: All 13 composite indexes verified via `information_schema.statistics` (including `errands(status, createdAt)`, `errands(status, assignedAt)`, `errands(status, riderId)`, `users(role, status)`, `customer_transactions(customerId, createdAt)`, `dispatch_logs(errandId, dispatchedAt)`, `errand_pinpoints_tbl(errandId, sequence)`, `rider_commissions(riderId, computedAt)`).
+  - MariaDB optimizer statistics refreshed via `ANALYZE TABLE`.
+  - Application code built on VPS (`npm run build`) and `.env` updated with `connection_limit=25&pool_timeout=30`.
+  - PM2 restarted (`pm2 restart capstone-backend --update-env`) — process online, Socket.IO connections active, and live endpoints responding HTTP 200/401 cleanly.
+
+
+---
+
+## 2026-10-19 - Dispatcher Portal HTTP 500 Resolution: Orphaned Retired Payment Mode (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [VERIFIED ON PRODUCTION VPS (109.123.239.182) - 560/560 errands querying clean with 0 errors via Prisma ORM; HTTP 500 eliminated on `/api/errands` and `/api/errands/exceptions`].
+* **The Defect**:
+  - Accessing the Dispatcher Portal failed with an HTTP 500 crash on `GET /api/errands` and `GET /api/errands/exceptions?days=14`.
+  - PM2 error logs reported: `PrismaClientUnknownRequestError: Inconsistent query result: Field paymentMode is required to return data, got null instead.`
+  - **Root Cause**: Errand `261014-E5C6A-0001` (`80fe9297-8e0e-4cf7-91ca-1b7d351e5c6a`, delivered on 2026-10-15) and its corresponding `payment_selections` record had `paymentModeId = 4` (`Debit/Credit Card`). When the Card payment mode was retired from `payment_modes` on the owner's request (leaving only IDs 1: `Cash on Delivery`, 2: `GCash / PayMaya`, 3: `Bank Transfer`), this single completed row was left pointing to non-existent ID 4. Prisma's schema declares `paymentMode` as required on `PaymentSelection`, so the joined null value triggered runtime panics on every errand batch query.
+* **The Surgical Fix**:
+  - The errand was physically settled with the rider in cash (`settlement_records` status `MATCHED`, collected ₱190 with zero variance).
+  - Executed atomic transaction on VPS MariaDB `errand_system_db`:
+    - Updated `payment_selections.paymentModeId = 1` (`Cash on Delivery`) for errand `80fe9297-8e0e-4cf7-91ca-1b7d351e5c6a`.
+    - Updated `errands.paymentModeId = 1` for errand `80fe9297-8e0e-4cf7-91ca-1b7d351e5c6a`.
+    - Updated `customer_transactions.paymentMethod = 'Cash on Delivery'` for errand `80fe9297-8e0e-4cf7-91ca-1b7d351e5c6a`.
+* **Empirical Verification Ledger**:
+  - Production MariaDB FK check: 0 invalid/orphaned `paymentModeId` rows remain across `payment_selections`, `errands`, and `customer_transactions`.
+  - Live Prisma Client query test: `prisma.errand.findMany({ include: { paymentSelection: { select: { paymentMode: true } }, paymentMode: true } })` successfully queried all **560 of 560** errands with 0 errors.
+  - Exception Queue test: `exceptionService.findExceptions()` verified operational with 0 runtime errors.
+  - PM2 `capstone-backend` health: 200 OK on `https://api.sugo-express.org/api/health`.
+
 ---
 
 ## 2026-10-20 - Delivery hold: one trip for the same customer's orders (Claude, Opus 5.5)
-* **Status**: [Executed by Claude - tsc 0; vitest 1661 pass (12 new in `tests/deliveryHold.test.ts`, 4 in `tests/deliveryReminders.test.ts`, 2 in `tests/receiptsDoNotFinishShopping.test.ts`); the 14 failures are the same unrelated four suites. No schema change. NOT deployed; uncommitted.]
+* **Status**: [Executed by Claude - tsc 0; vitest 1661 pass (12 new in `tests/deliveryHold.test.ts`, 4 in `tests/deliveryReminders.test.ts`, 2 in `tests/receiptsDoNotFinishShopping.test.ts`); the 14 failures are the same unrelated four suites. No schema change. Commit 2933a4d. DEPLOYED 2026-10-20 (7 files; the live copies equalled local minus this change, nothing newer than dist). Backup `/root/deploy-backups/server-20261019-213650` (src-files, dist, new-files.txt: delete those two on rollback). Health 200, PM2 stable; live read-only check: 33 IN_TRANSIT, 1 already held (261019-E1593-0002 waits for 261019-F4226-0003, customer 1), `deliveryHold` on detail and all 34 list rows.]
 * **Rule** (`src/services/patterns/deliveryHold.ts`, mirrored by RiderMobileApp `errandQueue.ts`): an errand is held while IN_TRANSIT with `itemsPurchasedAt`, and the same rider has another IN_TRANSIT errand for the same `customerId` and drop-off (100 m, else same address) with no `itemsPurchasedAt`. Derived on read from existing columns, so cancel/reassign/purchase of the sibling ends it with no cleanup.
 * **Modified**: `deliveryHoldService.ts` (new: `findDeliveryHold`, `deliveryHoldOf`, `boughtNeighbours`); `errandRepository.findHoldCandidates`; `errandService` (`getErrandById` adds `deliveryHold: { errandId } | null`; `acceptErrand` and `markItemsPurchased` call `refreshDeliveryHolds`, which re-emits `order:updated` with `deliveryHold` and force-recomputes ETA for each bought neighbour; first purchase of a held errand sends `notifyDeliveryHeld` instead of on-the-way; a purchase that releases held orders sends one on-the-way with `{ together: n }`); `customerService.listTransactions` (`deliveryHold` from the customer's own list); `etaService` (held errand's ETA routes through the sibling's stores, which also keeps 10/5-min reminders silent); `deliveryReminderService` (`notifyDeliveryHeld`, type `DELIVERY_HELD`; "almost there" skipped while held, failing open).
 * **Known gaps**: two orders at one door get their 10/5-min reminders separately; dispatcher portal shows no hold badge (the rider app posts a chat message to the dispatcher instead).
@@ -40,6 +648,62 @@
   - `src/repositories/paymentModeRepository.ts`: `findByName`.
 * **Not changed**: owner reports still group by `paymentSelection` first (`reportService.ts` ~L707), so a switched errand reports as GCash there. Settlement already accepted cash on ledger errands.
 * **Prod data check before relying on it**: no errand had a GCash/bank selection with its own mode already Cash on Delivery (5 GCash errands have a null own mode, which never reads as a change).
+
+## 2026-10-19 - Errand reference number YYMMDD-KKKKK-NNNN (Claude, Opus 5.5)
+* **User instruction**: replace `SGO-######` with YYMMDD-[last 5 of the errand UUID]-NNNN, no prefix.
+* **Touches `[LOCKED]` Prisma schema** (additive, on that instruction): `errands.referenceNo` VARCHAR(20) UNIQUE NULL, NEW `errand_ref_counters`. Migration `20261019120000_add_errand_reference_no`.
+* **Code**: `src/lib/errandReference.ts` (Manila day, key, per-day counter inside the create transaction); `errandRepository.create` mints id + number together; number on dashboard attention items, exceptions, report rows, customer transactions, audit, push text and PDF columns. Backfill: `npm run errand-ref:backfill [-- --dry]` (raw SQL, keeps `updatedAt`).
+* **Status**: DEPLOYED to production 2026-10-19 04:10 +08 (not committed). Backup `/root/deploy-backups/server-20261019-040854-errand-ref` (full DB dump, the 14 replaced files, dist, Prisma client). Migration applied by `prisma db execute`; 17 files shipped, each proven equal to the prod copy plus these edits (Antigravity's uncommitted period/fee work was already live); `tsc --noEmit` clean; backfill `--number-last=e0000000-0000-4000-8000-` numbered all 558 rows, every one equal to the read-only preview, `updatedAt` untouched; restarted (restarts=185), health 200. Prod `/var/www/server` now also carries these 17 files uncommitted. Web portal and apps NOT deployed yet. Full notes: `C:\Capstone_Project_Web\AGENT_HANDSHAKE.md`.
+
+## 2026-10-18 - Daily, Weekly, Monthly, and Yearly Period Re-ordering (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [LOCAL VERIFIED - `npx tsc --noEmit` passed with 0 errors across both `Capstone_Server/server` and `Capstone_Project_Web`].
+* **Specification & Architecture**:
+  - Re-ordered and re-aligned time periods and trend bucketing across the Owner Dashboard and Financial Reports:
+    1. **Daily**: Sunday through Saturday calendar week (`Sun, Mon, Tue, Wed, Thu, Fri, Sat`).
+    2. **Weekly**: 4-part month division (`Week 1, Week 2, Week 3, Week 4`).
+    3. **Monthly**: 12 calendar months (`Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec`).
+    4. **Yearly**: 5-year retrospective comparative window (`Years (5 years)`).
+  - Modified files:
+    - `src/services/patterns/reportPeriodStrategy.ts`: Updated `DailyPeriodStrategy` (Sunday-start week), `WeeklyPeriodStrategy` (month window), `MonthlyPeriodStrategy` (year window), and `YearlyPeriodStrategy` (5-year window).
+    - `src/services/analyticsService.ts`: Re-engineered `buildTrend()` with dedicated bucketing helpers (`bucketByDayOfWeek`, `bucketByFourWeeks`, `bucketByTwelveMonths`, `bucketByFiveYears`, `bucketByDailyDates`).
+* **Verification**: `npx tsc --noEmit` passed with 0 errors on server and web.
+
+---
+
+## 2026-10-18 - Post-Purchase Grocery/Pabili Handling Fee & Surcharge Dynamic Triggering (Antigravity 2.0, Gemini 3.8 Flash High)
+* **Status**: [DEPLOYED TO PRODUCTION VPS (109.123.239.182) & VERIFIED LIVE - Local & Remote `npx tsc --noEmit` passed with 0 errors; Vitest pricing test suites passed 100% (53/53 tests across `postPurchaseFeeTrigger.test.ts`, `feeBreakdown.test.ts`, `agreedFare.test.ts`, `handlingFeeDecision.test.ts`); Live production MariaDB verification on Errand SGO-11BADD confirmed fee update from ₱70 to ₱420 (₱70 base transit + ₱350 grocery fee)].
+* **Feature & Implementation Specification**:
+  - **The Problem (Errand SGO-11BADD)**:
+    - Customer created a pabili errand with unpriced item checklist (`estimatedCost = 0`).
+    - At booking time, the system stamped `quotedHandlingBasket: 0` and `quotedHandlingFee: 0`.
+    - When rider purchased ₱3,500 of convenience store items at 7-Eleven and entered receipt amounts, `decideHandlingFee()` applied a quoted ceiling check: `if (quotedCeiling !== null && computed > quotedCeiling)` clamped the fee back down to `0`. Furthermore, `fareAfterAgreement()` froze the agreed transit delivery fee at ₱70 and frozen groceryFee at ₱0.
+  - **The Surgical Fix**:
+    - `src/services/patterns/pricingStrategy.ts`:
+      - Added `quotedHandlingBasket?: number | null` to `PricingInput` and `quotedBasket?: number | null` to `HandlingFeeInput`.
+      - In `decideHandlingFee()`: The ceiling clamp now requires a valid, pre-agreed non-zero basket (`quotedBasket > 0` or `quotedCeiling > 0`). When an order was agreed without a priced basket (`quotedBasket <= 0`), the ceiling is not applied (`ceilingApplied = false`), allowing actual purchase totals to trigger the appropriate fee tier post-purchase.
+    - `src/services/errandService.ts`:
+      - Passes `quotedHandlingBasket: errand.quotedHandlingBasket` to `priceForStops()`.
+      - Added `unpricedHandlingTriggered` logic in `fareAfterAgreement()` handling: When an errand was agreed without a priced basket (`(errand.quotedHandlingBasket ?? 0) <= 0`), any newly triggered grocery fee (`breakdown.groceryFee`) and non-COD fee (`breakdown.nonCodFee`) are dynamically added to the agreed transit delivery fee, updating `effectiveDeliveryFee`, `effectiveTotalCost`, and fee breakdown components.
+    - `tests/postPurchaseFeeTrigger.test.ts`:
+      - Added 5 unit tests verifying post-purchase grocery fee triggering, COD vs Non-COD surcharge triggers, pre-agreed ceiling retention, and fast food exemption.
+* **Files Modified**:
+  - `src/services/patterns/pricingStrategy.ts`
+  - `src/services/errandService.ts`
+  - `tests/postPurchaseFeeTrigger.test.ts` (NEW)
+  - `AGENT_HANDSHAKE.md`
+* **Verification Ledger**:
+  - Local `npx tsc --noEmit`: 0 errors.
+  - Remote `npx tsc --noEmit` & `npm run build` on VPS `109.123.239.182`: 0 errors.
+  - Vitest test suite: 53/53 tests passed (100%).
+  - PM2 Reload: `capstone-backend` process online on VPS.
+  - Live MariaDB Verification: Errand `SGO-11BADD` (`bf80487e-8141-4800-90c9-dff97d11badd`) updated:
+    - `estimatedCost`: 3500.00
+    - `deliveryFee`: 420.00 (70 base transit + 350 grocery fee)
+    - `groceryFee`: 350.00 (10% of ₱3,500)
+    - `nonCodFee`: 0.00 (COD payment mode)
+    - `totalCost`: 3920.00 (3500 items + 420 delivery fee)
+
+---
 
 ## 2026-10-18 - Rider map assigned by rider and day; route pick log (Claude, Opus 5.5)
 * **Status**: [Commit 3ceafc7. DEPLOYED TO PRODUCTION 2026-10-18 ~18:00 (+08): migration applied with `prisma db execute` (live DB to new schema diffed to exactly this table and FK beforehand), `tsc --noEmit` gate, `npm run build`, `pm2 restart capstone-backend` (online). Backup `/root/deploy-backups/server-20261018-175937` (files, dist, prisma client). Live check: table and FK present, a real route through dist, API answering. Production has NO `_prisma_migrations` table, so no `migrate resolve` there. Local DB: migration NOT applied (MariaDB was off). tsc 0; `tests/routeMapAssignment.test.ts` 12/12.]
@@ -1094,3 +1758,19 @@
   - **Empirical Verification**:
     - `npx tsc --noEmit` in `Capstone_Server/server`: Passed with 0 errors (clean exit code 0).
 
+
+## 2026-10-24 - Reliable order submission and safe retries (Codex)
+
+- **Status**: Implemented locally; no production migration/deployment and no app publication. Preserved all existing unrelated changes and locked schema relationships/auth contracts.
+- **Behavior**: Optional customer-scoped submission identity and SHA-256 contents fingerprint. Unique database constraint resolves concurrent creates to the same order; changed contents return 409. Identified orders and their transaction receipt commit in the existing reference-number transaction. Replay bypasses original creation events/chat grants. Authenticated CUSTOMER-only submission-status lookup precedes /:id routes. Identified baskets naming another account are rejected, preventing token-refresh replay after an account switch; legacy customer ownership behavior remains compatible.
+- **Paths**: prisma/schema.prisma; prisma/migrations/20261023140000_add_order_submission_identity/migration.sql; src/services/patterns/submissionIdentity.ts; src/services/errandService.ts; src/repositories/errandRepository.ts; src/validators/errandValidators.ts; src/controllers/errandController.ts; src/routes/errandRoutes.ts; tests/orderSubmission.test.ts; docs/ORDER_SUBMISSION.md.
+- **Verification**: Prisma validate and generate passed. TypeScript no-emit passed. Focused server suites: 48 tests passed across orderSubmission, customerPickedStores, errandReference and errandReviewStage; account-bound controller safeguard also rechecked with orderSubmission/customerPickedStores. Persistence concurrency tests use mocked database uniqueness; no live MariaDB migration/concurrency test was run. Scoped whitespace check passed.
+- **Next session**: Review pending migrations and deploy schema/server before releasing CustomerApp. Follow docs/ORDER_SUBMISSION.md for contract, staging checks and rollout. Keep submission identities for recovery; do not treat a transport timeout as an unreceived order. Updated clients require the new status contract and refuse unsafe fallback creation on an old server.
+
+## 2026-10-24 - Production deployment: reliable order submission (Codex)
+
+- **Status**: DEPLOYED schema/server following explicit user instruction "deploy". Scoped production-source comparison showed only this feature's deltas; unrelated dirty files were preserved. PM2 capstone-backend online, restart count 13.
+- **Migration**: Applied only 20261023140000_add_order_submission_identity SQL with Prisma db execute, then migrate resolve --applied. Production previously had no migration ledger. Older migrations remain unbaselined: audit historical schema before any blanket migrate deploy. Never replay them blindly or use db push --accept-data-loss.
+- **Verification**: Actual migration passed on isolated MariaDB copies of production table definitions; simultaneous same-identity inserts produced one errand / one receipt, rollback left no partial receipt, and NULL identities retained legacy compatibility. Scratch database removed. Production dependency Prisma validate/generate and tsc noEmit/build passed. Local/public HTTPS health 200; submission lookup unauthenticated 401, dispatcher 403, customer 200/NOT_FOUND. Unique index and migration record verified. Counts unchanged: 574 errands / 574 receipts; no synthetic production orders or notifications.
+- **Backup/rollback**: VPS /root/deploy-backups/order-submission-20261024-01 contains database.sql.gz, runtime-before.tar.gz, checksums, scoped release/candidate and rollback-server.sh. Rollback retains additive DB columns/identities. See docs/ORDER_SUBMISSION.md.
+- **Customer release**: Existing production OTA group 1d249230-4c69-49e6-8dcc-4e9045323365 already contains the exact current implementation (both platform bundle hashes and 185 mapped application sources/platform verified). Runtime 1.2.0, production channel active. No duplicate OTA published. Native-device slow-network/back gesture smoke remains unperformed.

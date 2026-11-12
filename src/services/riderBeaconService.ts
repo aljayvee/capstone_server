@@ -188,7 +188,10 @@ export async function availabilityForRiders(
       shutdownAt: row.shutdownAt?.getTime() ?? null,
     };
     let availability = availabilityOf(snapshot, now);
-    if (live?.lost && availability.riderStatus === "AVAILABLE_ONLINE") {
+    // A beacon received after the last heartbeat proves the phone still has
+    // connectivity (including when Android suspended the foreground socket
+    // before its pause frame arrived). Its own expiry decides availability.
+    if (live?.lost && (beaconAt === null || beaconAt <= live.lastHeartbeatAt) && availability.riderStatus === "AVAILABLE_ONLINE") {
       availability = {
         ...availability,
         state: "SIGNAL_LOST",

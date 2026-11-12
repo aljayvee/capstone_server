@@ -1,7 +1,7 @@
 import { GOOGLE_PLACES_API_KEY } from "../../config/env.js";
 import { logger } from "../logger.js";
 import type { GeoPoint } from "../geo.js";
-import { isWithinServiceBuffer, serviceAreaEnvelope } from "../serviceArea.js";
+import { isWithinServiceBuffer, serviceAreaEnvelope, type ServiceZone } from "../serviceArea.js";
 import { hasPlacesAllowance, spendPlacesRequest, type PlacesSku } from "./placesBudget.js";
 
 /**
@@ -386,9 +386,17 @@ export function searchPopularPlaces(
 
 export function searchPlacesByText(
   query: string,
-  options?: { includeRatings?: boolean }
+  options?: {
+    includeRatings?: boolean;
+    /**
+     * The zone to search, when the searcher's is known (2026-11-09). Without
+     * it the box spans every zone, which with Banga added also covers
+     * Koronadal, whose branches can crowd a 20-result page.
+     */
+    zone?: ServiceZone | null;
+  }
 ): Promise<GooglePlace[] | null> {
-  const box = serviceAreaEnvelope();
+  const box = serviceAreaEnvelope(options?.zone ?? undefined);
   return post(
     "searchText",
     {
@@ -777,6 +785,9 @@ const MUNICIPALITY_STRIP_WORDS = new Set([
   "of",
   "sultan",
   "kudarat",
+  "banga",
+  "south",
+  "cotabato",
   "poblacion",
   "philippines",
 ]);
@@ -835,7 +846,10 @@ export function isVagueOrUnverifiedAddress(
     lower === "tacurong city" ||
     lower === "tacurong" ||
     lower === "tacurong, sultan kudarat" ||
-    lower === "tacurong city, sultan kudarat"
+    lower === "tacurong city, sultan kudarat" ||
+    lower === "banga" ||
+    lower === "municipality of banga" ||
+    lower === "banga, south cotabato"
   ) {
     return true;
   }

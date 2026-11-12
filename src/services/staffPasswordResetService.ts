@@ -211,7 +211,7 @@ function signSession(user: StaffRow, audience: ResetAudience): string {
 async function openSession(resetSessionToken: string, audience: ResetAudience): Promise<StaffRow> {
   let claims: SessionClaims;
   try {
-    claims = jwt.verify(resetSessionToken, JWT_PASSWORD_RESET_SECRET) as SessionClaims;
+    claims = jwt.verify(resetSessionToken, JWT_PASSWORD_RESET_SECRET, { algorithms: ["HS256"] }) as SessionClaims;
   } catch {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }
@@ -484,7 +484,7 @@ export async function complete(
 ): Promise<{ userId: number; revokedSessions: number }> {
   let claims: ResetClaims;
   try {
-    claims = jwt.verify(resetToken, JWT_PASSWORD_RESET_SECRET) as ResetClaims;
+    claims = jwt.verify(resetToken, JWT_PASSWORD_RESET_SECRET, { algorithms: ["HS256"] }) as ResetClaims;
   } catch {
     throw new ServiceError(400, SESSION_EXPIRED_MESSAGE);
   }

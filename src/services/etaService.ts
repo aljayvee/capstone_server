@@ -6,6 +6,7 @@ import { pinpointRepository } from "../repositories/pinpointRepository.js";
 import { defaultEtaStrategy, type EtaStopInput } from "./patterns/etaStrategy.js";
 import * as deliveryReminders from "./deliveryReminderService.js";
 import { findDeliveryHold } from "./deliveryHoldService.js";
+import { notifyStaffAboutErrand } from "./notificationService.js";
 
 // A position older than this is not evidence of where a rider is now. Kept
 // identical to the web dashboard's SIGNAL_LOST_THRESHOLD_MS so a rider painted
@@ -60,6 +61,7 @@ export async function recomputeForErrand(errandId: string, options: { force?: bo
     // No category means no learned data by definition, which correctly widens
     // the upper bound via the strategy's low-confidence padding.
     dwellSampleCount: pin.category?.dwellSampleCount ?? 0,
+    hasDwellBaseline: pin.category?.status?.toUpperCase() === 'ACTIVE',
   }));
 
   const position = errand.riderId
@@ -68,6 +70,7 @@ export async function recomputeForErrand(errandId: string, options: { force?: bo
 
   const result = await defaultEtaStrategy.compute({
     origin: position?.point ?? null,
+    originSpeedMps: position?.speedMps ?? null,
     stops,
     destination: { latitude: errand.deliveryLatitude, longitude: errand.deliveryLongitude },
     now: new Date(),
@@ -81,6 +84,25 @@ export async function recomputeForErrand(errandId: string, options: { force?: bo
     etaComputedAt: new Date(),
     etaIsDegraded: result.degraded,
   });
+
+  // The delivery promise On Time is judged against, frozen the first time an
+  // estimate is good enough to hold a rider to: in transit, no store left
+  // ahead (the leg to the door is the part the rider controls; store queues
+  // are not), computed from a live GPS fix rather than a stop's coordinates,
+  // and routed rather than a fallback guess. etaHighAt keeps moving for the
+  // customer's countdown; this does not.
+  if (
+    errand.status === "IN_TRANSIT" &&
+    errand.riderId &&
+    !errand.etaPromisedAt &&
+    position &&
+    !result.degraded &&
+    result.remainingStopCount === 0
+  ) {
+    await errandRepository
+      .freezeEtaPromise(errandId, errand.riderId, new Date(), result.etaHighAt)
+      .catch((error) => logger.error(`Could not freeze the ETA promise for errand ${errandId}:`, error));
+  }
 
   // The delivery run's "about 10 / 5 min away" pushes ride on this recompute.
   deliveryReminders.inBackground(
@@ -161,6 +183,13 @@ export async function detectStalledStop(errandId: string) {
       elapsedSeconds: Math.round(elapsedSeconds),
       typicalSeconds: threshold,
     });
+    // This check repeats while the rider stays; the bell hears it once per stop visit.
+    void notifyStaffAboutErrand("STOP_DELAYED", errandId, (errand) => ({
+      title: `Long wait at ${pin.storeName ?? "a store"}: ${Math.round(elapsedSeconds / 60)} min`,
+      body: `${errand}: the rider has been at ${pin.storeName ?? "the store"} for ${Math.round(
+        elapsedSeconds / 60
+      )} min, longer than the usual ${Math.round(threshold / 60)} min. They may be in a queue.`,
+    }), { onceKey: `pin:${pin.id}:${pin.arrivedAt.getTime()}` });
     return { pinpointId: pin.id, storeName: pin.storeName, elapsedSeconds: Math.round(elapsedSeconds) };
   }
 

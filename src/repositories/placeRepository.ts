@@ -98,7 +98,7 @@ export class PrismaPlaceRepository implements IPlaceRepository {
         },
       },
       orderBy: { name: "asc" },
-      take: limit ? Number(limit) : undefined,
+      take: limit !== undefined ? Math.max(1, Math.min(Number(limit) || 20, 50)) : (search && search.trim() ? 20 : undefined),
     });
   }
 

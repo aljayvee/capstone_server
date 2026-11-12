@@ -61,6 +61,11 @@ def test_retrain_teaches_a_new_category_and_swaps_it_in(client):
     assert after["loaded_from"] == "retrain"
     assert "Bakery" in after["models"]["store"]["classes"]
     assert after["models"]["store"]["real_rows"] == len(bakeries)
+    quality = after["models"]["store"]["training_quality"]
+    assert quality["provider_available"] is False  # suite disables external AI
+    audit = service.RUNS_DIR / after["training"]["run"] / "quality-audit.json"
+    assert audit.exists()
+    assert quality["excluded_names"] == {"store": 0, "item": 0}
     guess = client.post("/categorize-store", json={"name": "Malinao Bakeshop"}).json()
     assert guess["category"] == "Bakery"
     assert (service.MODEL_DIR / "current").read_text().strip() == after["training"]["run"]

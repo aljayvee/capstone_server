@@ -1,4 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../src/config/env.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/config/env.js")>()),
+  FIREBASE_SERVICE_ACCOUNT_PATH: "",
+  FIREBASE_SERVICE_ACCOUNT_JSON: "",
+}));
+
 import { firebaseUidFor } from "../src/lib/firebaseAdmin.js";
 
 /**

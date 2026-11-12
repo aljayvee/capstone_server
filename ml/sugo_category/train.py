@@ -253,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
     descriptions: dict[str, str] = {}
     # Gemma's surest cached answers, sent by the service's own retrain (app.py).
     teacher: dict[str, list] = {}
+    quality: dict = {}
 
     if args.from_export:
         data = json.loads(args.from_export.read_text(encoding="utf-8"))
@@ -262,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         store_rows = [(name, cat) for name, cat in data["stores"] if is_shop_name(name)]
         item_rows = list(data["items"])
         teacher = data.get("teacher") or {}
+        quality = data.get("training_quality") or {}
         print(f"trained from {args.from_export} (exported {data.get('exported_at', 'unknown')})")
         print(f"active categories in this environment: {', '.join(sorted(active))}")
     elif not args.offline:
@@ -356,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
             # The item network starts from the store network (transfer learning).
             pretrained=trained.get("store"),
             teacher_rows=teacher_rows[kind],
+            excluded_training_names=(quality.get("excluded_training_names") or {}).get(kind, []),
+            training_quality=quality.get("summary"),
         )
         # Only the store model's network is needed for the transfer; holding
         # its linear pipeline too would add hundreds of megabytes to a retrain

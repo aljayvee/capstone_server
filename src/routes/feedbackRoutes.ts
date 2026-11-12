@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import {
   authenticateToken,
   optionalAuthenticateToken,
-  requireRole,
+  requireRole, requirePermission,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import {
@@ -71,6 +71,7 @@ router.get(
   "/",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("feedback.view"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { status, category, search, limit, offset } = req.query;
@@ -96,6 +97,7 @@ router.get(
   "/:id",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("feedback.view"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = Number(req.params.id);
@@ -117,6 +119,7 @@ router.patch(
   "/:id/read",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("feedback.view"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = Number(req.params.id);
@@ -136,6 +139,7 @@ router.patch(
   "/:id/resolve",
   authenticateToken,
   requireRole(["OWNER", "DISPATCHER"]),
+  requirePermission("feedback.view"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const id = Number(req.params.id);

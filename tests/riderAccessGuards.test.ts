@@ -95,9 +95,16 @@ describe("GET /riders/online", () => {
   it("is role-guarded right after authentication", () => {
     const layer = (riderRoutes as any).stack.find((l: any) => l.route?.path === "/online" && l.route.methods.get);
     const names = layer.route.stack.map((h: any) => h.name);
-    // authenticateToken, requireRole's guard, the limiter, the controller.
-    // Express names unnamed handlers "<anonymous>"; the controller is one too,
-    // since asyncHandler wraps it. Before the fix the chain was three long.
-    expect(names).toEqual(["authenticateToken", "<anonymous>", "readLimiterStub", "<anonymous>"]);
+    // authenticateToken, requireRole's guard, the access-group guard (Admins
+    // need tracking.view), the limiter, the controller. Express names unnamed
+    // handlers "<anonymous>"; the controller is one too, since asyncHandler
+    // wraps it. Before the fix the chain was three long.
+    expect(names).toEqual([
+      "authenticateToken",
+      "<anonymous>",
+      "requirePermissionGuard",
+      "readLimiterStub",
+      "<anonymous>",
+    ]);
   });
 });

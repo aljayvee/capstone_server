@@ -32,14 +32,17 @@ export const pinpointRepository = {
       orderBy: { sequence: "asc" },
       include: {
         category: {
-          select: { id: true, name: true, dwellP50Seconds: true, dwellP80Seconds: true, dwellSampleCount: true },
+          select: { id: true, name: true, status: true, dwellP50Seconds: true, dwellP80Seconds: true, dwellSampleCount: true },
         },
       },
     });
   },
 
   markArrived(pinpointId: number, arrivedAt: Date) {
-    return prisma.errandPinpoint.update({ where: { id: pinpointId }, data: { arrivedAt } });
+    // GPS and the explicit arrival endpoint may race. The first stamp wins.
+    return prisma.errandPinpoint.updateMany({
+      where: { id: pinpointId, arrivedAt: null }, data: { arrivedAt },
+    });
   },
 
   markDeparted(pinpointId: number, departedAt: Date) {

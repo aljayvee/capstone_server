@@ -6,6 +6,14 @@ vi.mock("../src/repositories/errandRepository.js", () => ({
 vi.mock("../src/services/patterns/categoryFeeModes.js", () => ({
   activeCategoryNameSet: vi.fn(),
 }));
+vi.mock("../src/repositories/userRepository.js", () => ({
+  userRepository: {
+    findAllRiders: vi.fn(async () => [
+      { id: 3, username: "caramel", firstName: "Renen", lastName: "Cadungog" },
+      { id: 9, username: "tamad", firstName: "Juan", lastName: "Tamad" },
+    ]),
+  },
+}));
 
 import { errandRepository } from "../src/repositories/errandRepository.js";
 import { activeCategoryNameSet } from "../src/services/patterns/categoryFeeModes.js";
@@ -29,9 +37,13 @@ interface ErrandOptions {
   pinpoints?: Array<{ id: number; categoryName: string | null }>;
 }
 
+// Inside any window the tests ask for: MONTHLY covers the current year.
+const NOW = new Date();
+
 function errand(id: string, o: ErrandOptions) {
   return {
     id,
+    createdAt: NOW,
     totalCost: o.totalCost,
     deliveryFee: o.deliveryFee ?? 50,
     tip: o.tip ?? 0,
@@ -125,6 +137,18 @@ describe("sales report — category allocation reconciles", () => {
     expect(report.reconciliation.difference).toBe(0);
   });
 
+  it("leaves tips out of total sales, in the headline and every row", async () => {
+    // The business takes no tips, but totalCost carries them (₱2,000 of seeded
+    // tips on prod). The fixture's tips are 10 + 25: sales is items plus delivery
+    // fee, so ₱2,200.51 of totalCost is ₱2,165.51 of sales.
+    const report = await getSalesReport({ period: "MONTHLY", date: NOW });
+
+    expect(report.totalRevenue).toBe(2165.51);
+    expect(sum(report.byCategory.map((c) => c.revenue))).toBe(2165.51);
+    expect(sum(report.timelineBreakdown.map((p) => p.revenue))).toBe(2165.51);
+    expect(report.reconciliation.difference).toBe(0);
+  });
+
   it("counts each errand exactly once across the category column", async () => {
     const report = await getSalesReport({ period: "MONTHLY", date: new Date() });
 
@@ -188,5 +212,62 @@ describe("commission report — shares reconcile", () => {
 
     expect(report.estimatedCommission + report.riderCommission).toBeLessThan(400);
     expect(report.commissionRate).toBe(0.7);
+  });
+});
+
+describe("commission report — one rider", () => {
+  it("lists every rider for the picker, and none is chosen by default", async () => {
+    const report = await getCommissionReport({ period: "MONTHLY", date: NOW });
+
+    expect(report.riderOptions.map((o) => o.name)).toEqual(["Juan Tamad", "Renen Cadungog"]);
+    expect(report.rider).toBeNull();
+    expect(report.orders).toEqual([]);
+    expect(errandRepository.aggregateBetween).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), undefined);
+  });
+
+  it("narrows both queries to the rider, and its orders add up to the headline", async () => {
+    const report = await getCommissionReport({ period: "MONTHLY", date: NOW, riderId: 3 });
+
+    expect(errandRepository.aggregateBetween).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), 3);
+    expect(errandRepository.findForCategoryAllocationBetween).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), 3);
+    expect(report.rider).toEqual({ riderId: 3, name: "Renen Cadungog" });
+    expect(report.orders).toHaveLength(FIXTURE.length);
+    expect(sum(report.orders.map((o) => o.businessShare))).toBe(report.estimatedCommission);
+    expect(sum(report.orders.map((o) => o.riderShare))).toBe(report.riderCommission);
+  });
+
+  it("refuses a rider who does not exist instead of printing an empty report", async () => {
+    await expect(getCommissionReport({ period: "MONTHLY", date: NOW, riderId: 999 })).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
+describe("period breakdown adds up to the headline", () => {
+  it("sales: every row's orders and sales sum to the report totals", async () => {
+    // The table an owner reads first on a printout. Its Total row must be the
+    // same number the report states, or the paper contradicts itself.
+    const report = await getSalesReport({ period: "MONTHLY", date: NOW });
+
+    expect(report.timelineBreakdown).toHaveLength(12);
+    expect(sum(report.timelineBreakdown.map((p) => p.revenue))).toBe(report.totalRevenue);
+    expect(report.timelineBreakdown.reduce((n, p) => n + p.orderCount, 0)).toBe(report.totalOrders);
+  });
+
+  it("commission: Sugo's and the rider's shares per row sum to the headline", async () => {
+    const report = await getCommissionReport({ period: "MONTHLY", date: NOW });
+
+    expect(sum(report.timelineBreakdown.map((p) => p.businessShare))).toBe(report.estimatedCommission);
+    expect(sum(report.timelineBreakdown.map((p) => p.riderShare))).toBe(report.riderCommission);
+    expect(sum(report.timelineBreakdown.map((p) => p.deliveryFee))).toBe(report.totalDeliveryFees);
+  });
+
+  it("daily: seven rows named Sunday to Saturday", async () => {
+    const report = await getSalesReport({ period: "DAILY", date: NOW });
+
+    expect(report.timelineBreakdown.map((p) => p.label)).toEqual([
+      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+    ]);
+    expect(report.coverageLabel).toMatch(/^This week, by day: Sunday, .+ to Saturday, /);
   });
 });

@@ -19,7 +19,14 @@ import * as passwordResetService from "../services/passwordResetService.js";
 import type { AuthResult, LoginOutcome } from "../services/authService.js";
 import * as loginNotificationService from "../services/loginNotificationService.js";
 import type { LoginChannel, LoginContext } from "../services/loginNotificationService.js";
-import type { LoginChallenge } from "../services/loginChallengeService.js";
+import type { ChallengeAudience, LoginChallenge, MfaRequestContext } from "../services/loginChallengeService.js";
+import * as mfaTrustService from "../services/mfaTrustService.js";
+import {
+  MFA_TRUST_COOKIE,
+  MFA_TRUST_TTL_MS,
+  parseTrustCookie,
+  serializeTrustCookie,
+} from "../services/mfaTrustService.js";
 import { getClientIp, getDeviceHint, getDeviceId, getUserAgent, parseDeviceInfo } from "../lib/requestContext.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import * as riderPresenceService from "../services/riderPresenceService.js";
@@ -64,17 +71,61 @@ function setRefreshCookie(res: Response, refreshToken: string) {
   });
 }
 
+// The portal's MFA trust. HttpOnly like the refresh cookie, so script on the
+// page can never read it, and set with the same domain and SameSite rules.
+// It keeps the other accounts' live trusts on this browser beside the new one
+// (see parseTrustCookie): an owner and a dispatcher sharing a PC each stay
+// trusted instead of overwriting each other.
+async function setMfaTrustCookie(req: Request, res: Response, token: string) {
+  const domain = getCookieDomain();
+  const secure = isSecureCookie();
+  const kept = await mfaTrustService.liveTokens(parseTrustCookie(req.cookies?.[MFA_TRUST_COOKIE]));
+  res.cookie(MFA_TRUST_COOKIE, serializeTrustCookie(token, kept), {
+    httpOnly: true,
+    secure,
+    sameSite: secure ? "none" : "lax",
+    ...(domain ? { domain } : {}),
+    maxAge: MFA_TRUST_TTL_MS,
+    path: "/",
+  });
+}
+
+// Every trust token the request carries: the portal's cookie (one per account)
+// and the apps' body field.
+function trustTokensOf(req: Request, bodyTrustToken?: string | null): string[] {
+  const tokens = parseTrustCookie(req.cookies?.[MFA_TRUST_COOKIE]);
+  return bodyTrustToken ? [...tokens, bodyTrustToken] : tokens;
+}
+
+// What a sign-in request says about MFA: whether the client can answer a
+// challenge (x-sugo-mfa: 1), and the trust it holds for this device.
+function mfaContext(req: Request, bodyTrustToken?: string): MfaRequestContext {
+  return {
+    capable: req.headers["x-sugo-mfa"] === "1",
+    trustTokens: trustTokensOf(req, bodyTrustToken),
+    deviceId: getDeviceId(req),
+  };
+}
+
+function deviceContext(req: Request): authService.DeviceContext {
+  return { deviceId: getDeviceId(req), userAgent: getUserAgent(req) };
+}
+
 // Every path that hands out a token pair funnels through here — the four login
 // and register endpoints below — which is what makes "no token exists without a
 // session row behind it" true by construction rather than by remembering to
 // call something at four call sites. The row is written before the response is
 // sent: a client that receives a refresh token can always spend it.
+//
+// `trust` is the device's new MFA trust, after a passed second factor or a
+// sign-up: a cookie for the portal, `mfaTrustToken` in the body for the apps.
 async function respondWithAuth(
   req: Request,
   res: Response,
   status: number,
   message: string,
-  result: AuthResult
+  result: AuthResult,
+  trust?: { token: string | null; audience: ChallengeAudience }
 ) {
   await sessionService.createSession(
     result.sessionId,
@@ -90,6 +141,10 @@ async function respondWithAuth(
   );
 
   setRefreshCookie(res, result.refreshToken);
+  const trustInBody = Boolean(trust?.token) && trust?.audience !== "WEB_PORTAL";
+  if (trust?.token && trust.audience === "WEB_PORTAL") {
+    await setMfaTrustCookie(req, res, trust.token);
+  }
   res.status(status).json({
     message,
     user: result.user,
@@ -98,6 +153,7 @@ async function respondWithAuth(
     // Surfaced so a client can show "signed in on this device" and so support
     // can correlate a complaint with a row in user_sessions.
     sessionId: result.sessionId,
+    ...(trustInBody ? { mfaTrustToken: trust!.token } : {}),
   });
 }
 
@@ -116,20 +172,30 @@ function loginContext(req: Request, channel: LoginChannel): LoginContext {
 // and the rider app treats any !res.ok as fatal without reading the body.
 // It also means entering the OTP flow does not burn a loginLimiter attempt,
 // since that limiter is configured with skipSuccessfulRequests.
-function respondWithChallenge(res: Response, challenge: LoginChallenge) {
-  return res.status(200).json({
+//
+// `otpRequired` stays for the clients built before MFA; `mfaRequired`, `reason`,
+// `factors` and `phoneHint` are for the ones that can offer SMS. The full phone
+// number is no longer sent: a password alone must not reveal the second factor,
+// so the SMS step asks for the number ending in `phoneHint`.
+function challengeBody(challenge: LoginChallenge) {
+  const isOtp = challenge.step === "OTP";
+  return {
     message: challenge.step === "PROFILE_SETUP" ? "Profile setup required" : "Verification required",
-    ...(challenge.step === "PROFILE_SETUP" ? { profileSetupRequired: true } : { otpRequired: true }),
+    ...(challenge.step === "PROFILE_SETUP" ? { profileSetupRequired: true } : { otpRequired: true, mfaRequired: true }),
     challengeToken: challenge.challengeToken,
     maskedEmail: challenge.maskedEmail,
     maskedPhone: challenge.maskedPhone,
-    phone: challenge.phone,
+    ...(isOtp ? { phoneHint: challenge.phoneHint, factors: challenge.factors, reason: challenge.reason } : {}),
     // Disclosed only after a correct password, so it is not an enumeration
     // vector — and it lets both clients turn away a wrong-surface role before
     // walking someone through an OTP they were never going to be able to use.
     role: challenge.role,
     expiresInSeconds: challenge.expiresInSeconds,
-  });
+  };
+}
+
+function respondWithChallenge(res: Response, challenge: LoginChallenge) {
+  return res.status(200).json(challengeBody(challenge));
 }
 
 function respondWithOutcome(req: Request, res: Response, outcome: LoginOutcome, channel: LoginChannel) {
@@ -143,8 +209,8 @@ function respondWithOutcome(req: Request, res: Response, outcome: LoginOutcome, 
 }
 
 export const login = asyncHandler(async (req, res) => {
-  const { username, password, confirmTakeover } = parseOrThrow(loginSchema, req.body);
-  const outcome = await authService.loginGeneral(username, password);
+  const { username, password, confirmTakeover, mfaTrustToken } = parseOrThrow(loginSchema, req.body);
+  const outcome = await authService.loginGeneral(username, password, mfaContext(req, mfaTrustToken));
 
   if (outcome.kind === "AUTHENTICATED") {
     const role = outcome.user.role?.toUpperCase();
@@ -212,21 +278,35 @@ export const login = asyncHandler(async (req, res) => {
 });
 
 export const riderLogin = asyncHandler(async (req, res) => {
-  const { username, password } = parseOrThrow(loginSchema, req.body);
-  const outcome = await authService.loginRider(username, password);
+  const { username, password, mfaTrustToken } = parseOrThrow(loginSchema, req.body);
+  const outcome = await authService.loginRider(username, password, mfaContext(req, mfaTrustToken));
   respondWithOutcome(req, res, outcome, "RIDER_APP");
 });
 
 export const completeLoginProfile = asyncHandler(async (req, res) => {
   const input = parseOrThrow(completeLoginProfileSchema, req.body);
-  const challenge = await authService.completeLoginProfile(input);
+  const challenge = await authService.completeLoginProfile(input, mfaContext(req));
   respondWithChallenge(res, challenge);
 });
 
 export const verifyLoginOtp = asyncHandler(async (req, res) => {
   const { challengeToken, code, firebaseIdToken } = parseOrThrow(verifyLoginOtpSchema, req.body);
-  const { result, user, audience } = await authService.completeLoginOtp(challengeToken, code, firebaseIdToken);
-  void loginNotificationService.sendLoginAlert(user, loginContext(req, audience));
+  const { result, user, audience, trustToken } = await authService.completeLoginOtp(
+    challengeToken,
+    code,
+    firebaseIdToken,
+    deviceContext(req)
+  );
+  const trust = { token: trustToken, audience };
+
+  // A customer's second factor: their sign-in has no staff alert, takeover or
+  // login-log step, same as an unchallenged customer sign-in.
+  if (!user) {
+    await respondWithAuth(req, res, 200, "Login successful", result, trust);
+    return;
+  }
+
+  void loginNotificationService.sendLoginAlert(user, loginContext(req, audience as LoginChannel));
 
   if (audience === "WEB_PORTAL" && (user.role === "OWNER" || user.role === "DISPATCHER")) {
     await sessionService.revokeOtherSessions(
@@ -255,7 +335,7 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
     sessionId: result.sessionId,
   });
 
-  await respondWithAuth(req, res, 200, "Login successful", result);
+  await respondWithAuth(req, res, 200, "Login successful", result, trust);
 });
 
 export const resendLoginOtp = asyncHandler(async (req, res) => {
@@ -265,22 +345,35 @@ export const resendLoginOtp = asyncHandler(async (req, res) => {
 });
 
 export const customerLogin = asyncHandler(async (req, res) => {
-  const { username, password } = parseOrThrow(loginSchema, req.body);
-  const result = await authService.loginCustomer(username, password);
-  await respondWithAuth(req, res, 200, "Login successful", result);
+  const { username, password, mfaTrustToken } = parseOrThrow(loginSchema, req.body);
+  const outcome = await authService.loginCustomer(username, password, mfaContext(req, mfaTrustToken));
+  if (outcome.kind === "CHALLENGE") {
+    respondWithChallenge(res, outcome.challenge);
+    return;
+  }
+  await respondWithAuth(req, res, 200, "Login successful", outcome.result);
 });
 
 export const customerRegister = asyncHandler(async (req, res) => {
   const input = parseOrThrow(customerRegisterSchema, req.body);
   const result = await authService.registerCustomer(input);
-  await respondWithAuth(req, res, 201, "Customer registered successfully", result);
+  // Sign-up just proved the phone or email, so this device starts out trusted.
+  const trustToken = await authService.trustCustomerDevice(result.user.id, deviceContext(req));
+  await respondWithAuth(req, res, 201, "Customer registered successfully", result, {
+    token: trustToken,
+    audience: "CUSTOMER_APP",
+  });
 });
 
 export const customerGoogleLogin = asyncHandler(async (req, res) => {
-  const { idToken } = parseOrThrow(customerGoogleLoginSchema, req.body);
-  const result = await authService.loginCustomerWithGoogle(idToken);
+  const { idToken, mfaTrustToken } = parseOrThrow(customerGoogleLoginSchema, req.body);
+  const result = await authService.loginCustomerWithGoogle(idToken, mfaContext(req, mfaTrustToken));
   if (result.status === "AUTHENTICATED") {
     await respondWithAuth(req, res, 200, "Google login successful", result.auth);
+  } else if (result.status === "MFA_REQUIRED") {
+    // `status` alongside the challenge fields: the app's Google handler branches
+    // on `status` before it looks at anything else.
+    res.status(200).json({ status: "MFA_REQUIRED", ...challengeBody(result.challenge) });
   } else {
     res.status(200).json({
       status: "PHONE_SETUP_REQUIRED",
@@ -296,7 +389,11 @@ export const customerGoogleLogin = asyncHandler(async (req, res) => {
 export const customerGoogleRegister = asyncHandler(async (req, res) => {
   const input = parseOrThrow(customerGoogleRegisterSchema, req.body);
   const result = await authService.registerCustomerWithGoogle(input);
-  await respondWithAuth(req, res, 201, "Google account registered successfully", result);
+  const trustToken = await authService.trustCustomerDevice(result.user.id, deviceContext(req));
+  await respondWithAuth(req, res, 201, "Google account registered successfully", result, {
+    token: trustToken,
+    audience: "CUSTOMER_APP",
+  });
 });
 
 // --- Customer password reset (3 steps) ---
@@ -505,6 +602,16 @@ export const revokeOtherSessionsHandler = asyncHandler<AuthenticatedRequest>(asy
     "REVOKED_ALL_OTHERS"
   );
   notifySessionRevoked(userId, { reason: "REVOKED_ALL_OTHERS" }, role);
+
+  // Signed-out devices also lose their MFA trust, so signing back in on one
+  // asks for the second factor again. This device keeps its own.
+  if (subjectType === "USER" || subjectType === "CUSTOMER") {
+    const bodyToken = typeof req.body?.mfaTrustToken === "string" ? req.body.mfaTrustToken : null;
+    await mfaTrustService.revokeOthers(
+      { type: subjectType, id: userId },
+      { tokens: trustTokensOf(req, bodyToken), deviceId: getDeviceId(req) }
+    );
+  }
 
   res.status(200).json({ message: `Signed out ${count} other device(s).` });
 });

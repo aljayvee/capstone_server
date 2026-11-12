@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STORE_COUNT_CEILING } from "../lib/storeLimitBounds.js";
 
 export const pinpointSchema = z.object({
   storeName: z.string().trim().min(1, "Store name is required.").max(60, "Store name must be at most 60 characters."),
@@ -31,7 +32,9 @@ export const pinpointsBodySchema = z.object({
   pinpoints: z
     .array(pinpointSchema)
     .min(1, "At least one pinpoint is required.")
-    .max(3, "Maximum 3 pinpoints allowed per errand.")
+    // The rate card's own limit (1 + maxAdditionalStores) is enforced in
+    // errandService; this is only the structural ceiling.
+    .max(STORE_COUNT_CEILING, `Maximum ${STORE_COUNT_CEILING} pinpoints allowed per errand.`)
     // The same catalogue place twice is provably one shop, and it used to be
     // accepted silently and then billed as two. Refused here rather than only
     // in the browser, because a client guard does nothing for a request that

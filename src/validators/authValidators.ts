@@ -10,6 +10,9 @@ export const loginSchema = z.object({
   username: nonEmptyTrimmed("Username or email"),
   password: nonEmptyTrimmed("Password"),
   confirmTakeover: z.boolean().optional(),
+  // This device's MFA trust (mfaTrustService). Mobile apps send it here; the
+  // portal's rides in the HttpOnly mfaTrust cookie instead.
+  mfaTrustToken: z.string().trim().max(200).optional(),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
@@ -95,6 +98,7 @@ export type VerifyFirebasePhoneTokenInput = z.infer<typeof verifyFirebasePhoneTo
 
 export const customerGoogleLoginSchema = z.object({
   idToken: nonEmptyTrimmed("Google or Firebase ID token"),
+  mfaTrustToken: z.string().trim().max(200).optional(),
 });
 export type CustomerGoogleLoginInput = z.infer<typeof customerGoogleLoginSchema>;
 

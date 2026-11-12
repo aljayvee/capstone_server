@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { errandRepository } from "../repositories/errandRepository.js";
 import { ServiceError } from "./ServiceError.js";
+import { settlementBalance } from "./patterns/settlementBalance.js";
 import {
   MATERIALITY_PESOS,
   exceptionRate,
@@ -104,36 +105,55 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
     amountAtRisk: number,
     detail: string,
     occurredAt: Date,
-    raisedAt: Date = occurredAt
+    raisedAt: Date = occurredAt,
+    extra: Partial<ErrandException> = {}
   ) => {
     if (!isMaterial(kind, amountAtRisk)) return;
 
     const review = latestReview(errand.exceptionReviews as ReviewRow[], kind, raisedAt);
     found.push({
       errandId: errand.id,
+      referenceNo: errand.referenceNo,
       kind,
       amountAtRisk: round2(Math.abs(amountAtRisk)),
       detail,
       riderId: errand.riderId ?? null,
       riderName,
       occurredAt,
+      orderPlacedAt: errand.createdAt,
       resolvedAt: review?.resolvedAt ?? null,
       resolvedBy: review ? nameOf(review.reviewer) : null,
       resolutionReason: review?.reason ?? null,
+      ...extra,
     });
   };
 
   // ── cash back against what was owed ──────────────────────────────────────
+  //
+  // Every detail below is read by a dispatcher deciding what to do, and printed
+  // on the owner's Help Desk Report. Plain words, the figures that matter, and
+  // the rider's own note when there is one; no accounting terms.
   const settlement = errand.settlement;
   if (settlement && settlement.status !== "MATCHED") {
-    const direction = settlement.variance < 0 ? "short" : "over";
+    const gap = `₱${round2(Math.abs(settlement.variance))}`;
+    const balance = settlementBalance(settlement.variance, settlement.adjustments ?? []);
     push(
       "CASH_VARIANCE",
       settlement.variance,
-      `Collected ₱${round2(settlement.collectedAmount)} against ₱${round2(settlement.expectedAmount)} — ` +
-        `₱${round2(Math.abs(settlement.variance))} ${direction}.` +
-        (settlement.shortReason ? ` Rider said: ${settlement.shortReason}` : ""),
-      settlement.settledAt
+      `The rider should have handed over ₱${round2(settlement.expectedAmount)} but handed over ` +
+        `₱${round2(settlement.collectedAmount)}, so the cash is ` +
+        (settlement.variance < 0 ? `${gap} short.` : `${gap} over.`) +
+        (settlement.shortReason ? ` Rider's note: ${settlement.shortReason}` : ""),
+      settlement.settledAt,
+      settlement.settledAt,
+      {
+        cash: {
+          expected: round2(settlement.expectedAmount),
+          collected: round2(settlement.collectedAmount),
+          short: balance.short,
+          stillOwed: balance.stillOwed,
+        },
+      }
     );
   }
 
@@ -146,7 +166,8 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
       push(
         "RECEIPT_DIVERGENCE",
         confirmed - extracted,
-        `Rider confirmed ₱${round2(confirmed)} on a receipt that scanned as ₱${round2(extracted)}.`,
+        `The rider entered ₱${round2(confirmed)} for this receipt, but the receipt photo reads ` +
+          `₱${round2(extracted)}. Check the photo to see which is right.`,
         proof.capturedAt,
         // Divergent from the rider's confirmation, which can come well after
         // the photo, not from the photo itself.
@@ -165,7 +186,8 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
       push(
         "UNVERIFIED_PURCHASE",
         proof.declaredTotal ?? 0,
-        `₱${round2(proof.declaredTotal ?? 0)} declared at a shop that issued no receipt.`,
+        `The rider says they spent ₱${round2(proof.declaredTotal ?? 0)} at a shop that gives no ` +
+          `receipt, so there is no receipt to prove it.`,
         proof.capturedAt
       );
     }
@@ -177,8 +199,8 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
       push(
         "WRONG_BRANCH",
         0,
-        `Pinned to ${stop.storeName}, but the rider settled at ` +
-          `${stop.observedPlace?.name ?? "an unpinned place"}.`,
+        `The errand said to buy at ${stop.storeName}, but the rider bought at ` +
+          `${stop.observedPlace?.name ?? "a place that was not on the errand"}.`,
         stop.mismatchDetectedAt
       );
     }
@@ -195,7 +217,9 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
       push(
         "MISSING_RECEIPT",
         0,
-        `${stop.items.length} item(s) at ${stop.storeName} with no receipt or declaration.`,
+        // Keeps the store name: exceptionReasonService finds this stop by it.
+        `${stop.items.length === 1 ? "1 item was" : `${stop.items.length} items were`} to be bought at ` +
+          `${stop.storeName}, but the rider sent no receipt or amount for that stop.`,
         errand.createdAt
       );
     }
@@ -211,8 +235,9 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
     push(
       "OVERAGE_PENDING",
       overage,
-      `Receipt came to ₱${round2(errand.estimatedCost)} against ₱${round2(errand.quotedHandlingBasket ?? 0)} agreed — ` +
-        `₱${round2(overage)} the customer has not approved. Goods held.`,
+      `The items cost ₱${round2(errand.estimatedCost)}, but the customer only agreed to ` +
+        `₱${round2(errand.quotedHandlingBasket ?? 0)}. The extra ₱${round2(overage)} needs the ` +
+        `customer's OK, so the rider is holding the items.`,
       errand.overageEscalatedAt
     );
   }
@@ -248,10 +273,10 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
         "UNPAID_BALANCE",
         outstanding,
         paid > 0
-          ? `Delivered with ₱${round2(outstanding)} still outstanding — ` +
-              `₱${round2(paid)} paid up front against a ₱${round2(errand.totalCost)} bill.`
-          : `Delivered on ${modeName} with nothing recorded against a ` +
-              `₱${round2(errand.totalCost)} bill. This mode captures no payment.`,
+          ? `Delivered, but ₱${round2(outstanding)} of the ₱${round2(errand.totalCost)} bill is ` +
+              `still unpaid. The customer paid ₱${round2(paid)} in advance.`
+          : `Delivered and paid by ${modeName}, but no payment of the ₱${round2(errand.totalCost)} ` +
+              `bill was recorded. The app does not record payments made this way.`,
         errand.createdAt
       );
     }
@@ -282,9 +307,9 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
       push(
         "CANCELLED_AFTER_PURCHASE",
         atRisk,
-        `Cancelled after the rider bought ₱${round2(atRisk)} of goods` +
-          (purchases.length > 0 ? ` (${receipts} on file)` : "") +
-          `. Nobody has been billed for them.`,
+        `The errand was cancelled after the rider had already bought ₱${round2(atRisk)} of items` +
+          (purchases.length > 0 ? ` (${receipts} saved)` : "") +
+          `. No one has paid for these items yet.`,
         errand.itemsPurchasedAt ?? lastPurchase ?? errand.createdAt
       );
     }
@@ -297,8 +322,8 @@ export function exceptionsFor(errand: EvidenceRow): ErrandException[] {
     push(
       "STALLED_STOP",
       0,
-      `${Math.round(dwell.dwellSeconds / 60)} min inside ${stop?.storeName ?? "a stop"} — ` +
-        `well past what this kind of shop usually takes.`,
+      `The rider spent ${Math.round(dwell.dwellSeconds / 60)} min at ${stop?.storeName ?? "a store"}. ` +
+        `This kind of shop usually takes much less time.`,
       dwell.departedAt,
       // departedAt is the phone's GPS time, and an offline batch uploads late;
       // the row's own insert time is when the server learned of the dwell.

@@ -22,7 +22,15 @@ export interface TransactionStatusInput {
    * (settlementService refuses one earlier), and on non-cash modes only when
    * the customer ended up paying the rider in cash.
    */
-  settlement: { status: string } | null;
+  settlement: {
+    status: string;
+    /**
+     * True once the customer has paid the whole short afterwards (by GCash,
+     * recorded as a SettlementAdjustment). The rider paying it back, or a
+     * write-off, does not count: the customer still did not pay it.
+     */
+    customerCoveredShort?: boolean;
+  } | null;
 }
 
 /**
@@ -43,7 +51,7 @@ export function deriveTransactionStatus(input: TransactionStatusInput): Transact
   // collected, so it wins over a ledger that may still show a balance the
   // customer paid in cash rather than by transfer. OVER is still paid.
   if (settlement) {
-    return settlement.status === "SHORT" ? "SHORT" : "PAID";
+    return settlement.status === "SHORT" && !settlement.customerCoveredShort ? "SHORT" : "PAID";
   }
 
   // Transfer modes: paid once nothing is owed. amountPaid > 0 so a bill that

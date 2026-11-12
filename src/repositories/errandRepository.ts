@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
-import type { Prisma, ErrandStatus } from "@prisma/client";
+import { withErrandReference } from "../lib/errandReference.js";
+import { Prisma, type ErrandStatus } from "@prisma/client";
 
 // Shared Prisma include shape for errand relations. firstName/lastName are selected
 // (not a stored `name` column — see 3NF note on the User model) and combined into a
@@ -60,6 +61,7 @@ export const ERRAND_INCLUDE = {
 // two can never read different evidence for the same errand.
 const RECONCILIATION_EVIDENCE_SELECT = {
   id: true,
+  referenceNo: true,
   createdAt: true,
   totalCost: true,
   estimatedCost: true,
@@ -79,7 +81,17 @@ const RECONCILIATION_EVIDENCE_SELECT = {
   paymentSelection: { select: { paymentMode: { select: { name: true } } } },
   rider: { select: { firstName: true, lastName: true } },
   settlement: {
-    select: { collectedAmount: true, expectedAmount: true, variance: true, status: true, shortReason: true, settledAt: true },
+    select: {
+      collectedAmount: true,
+      expectedAmount: true,
+      variance: true,
+      status: true,
+      shortReason: true,
+      settledAt: true,
+      // What has been paid back or written off since, so the Help Desk knows
+      // how much of a short is still owed.
+      adjustments: { select: { kind: true, amount: true, voidedAt: true } },
+    },
   },
   pabiliDetails: {
     select: {
@@ -130,9 +142,28 @@ const RECONCILIATION_EVIDENCE_SELECT = {
   },
 } as const;
 
+function sanitizePagination(opts: { take?: number; skip?: number } = {}) {
+  const take =
+    typeof opts.take === "number" && Number.isFinite(opts.take)
+      ? Math.min(Math.max(1, Math.floor(opts.take)), 100)
+      : 50;
+  const skip =
+    typeof opts.skip === "number" && Number.isFinite(opts.skip)
+      ? Math.max(0, Math.floor(opts.skip))
+      : 0;
+  return { take, skip };
+}
+
 export const errandRepository = {
-  findMany() {
-    return prisma.errand.findMany({ include: ERRAND_INCLUDE, orderBy: { createdAt: "desc" } });
+  // Bounded findMany with safe default limit
+  findMany(opts: { take?: number; skip?: number } = {}) {
+    const { take, skip } = sanitizePagination(opts);
+    return prisma.errand.findMany({
+      take,
+      skip,
+      include: ERRAND_INCLUDE,
+      orderBy: { createdAt: "desc" },
+    });
   },
 
   // Dispatcher-scoped queue: every unclaimed (AVAILABLE) errand, every errand
@@ -142,8 +173,11 @@ export const errandRepository = {
   // every errand this dispatcher has personally claimed (any status) — hides
   // other dispatchers' claims while keeping this dispatcher's own in-progress/
   // completed work visible.
-  findManyForDispatcher(dispatcherId: number) {
+  findManyForDispatcher(dispatcherId: number, opts: { take?: number; skip?: number } = {}) {
+    const { take, skip } = sanitizePagination(opts);
     return prisma.errand.findMany({
+      take,
+      skip,
       where: {
         OR: [{ status: "AVAILABLE" }, { status: "CANCELLED" }, { dispatchLogs: { some: { dispatcherId } } }],
       },
@@ -156,6 +190,13 @@ export const errandRepository = {
     return prisma.errand.findUnique({ where: { id }, include: ERRAND_INCLUDE });
   },
 
+  findBySubmission(customerId: number, submissionId: string) {
+    return prisma.errand.findUnique({
+      where: { customerId_submissionId: { customerId, submissionId } },
+      include: ERRAND_INCLUDE,
+    });
+  },
+
   findByIdWithPabiliDetails(id: string) {
     return prisma.errand.findUnique({ where: { id }, include: { pabiliDetails: true } });
   },
@@ -165,7 +206,7 @@ export const errandRepository = {
   },
 
   findStatusAndRiderById(id: string) {
-    return prisma.errand.findUnique({ where: { id }, select: { status: true, riderId: true } });
+    return prisma.errand.findUnique({ where: { id }, select: { status: true, riderId: true, assignedAt: true } });
   },
 
   findByIdWithDispatchLogs(id: string) {
@@ -237,7 +278,15 @@ export const errandRepository = {
 
         const { count } = await tx.errand.updateMany({
           where: { id: errandId, status: "PENDING" },
-          data: { riderId, status: "ASSIGNED", assignedAt: new Date() },
+          // A delivery promise belongs to the rider it was made to. Cleared on
+          // every assignment so a re-dispatched errand is measured afresh.
+          data: {
+            riderId,
+            status: "ASSIGNED",
+            assignedAt: new Date(),
+            etaPromisedAt: null,
+            etaPromisedHighAt: null,
+          },
         });
         return count === 1 ? ("CLAIMED" as const) : ("ERRAND_MOVED" as const);
       },
@@ -327,11 +376,13 @@ export const errandRepository = {
   // Revenue/volume totals for one resolved period window (see reportPeriodStrategy.ts).
   // Scoped strictly to realized/completed transactions (DELIVERED and COMPLETED)
   // so pending, in-flight, or cancelled orders are not counted as realized revenue.
-  aggregateBetween(start: Date, end: Date) {
+  aggregateBetween(start: Date, end: Date, riderId?: number) {
     return prisma.errand.aggregate({
       where: {
         createdAt: { gte: start, lt: end },
         status: { in: ["DELIVERED", "COMPLETED"] },
+        // The Commission report's one-rider view; every other caller omits it.
+        ...(riderId ? { riderId } : {}),
       },
       _sum: { totalCost: true, deliveryFee: true, estimatedCost: true, tip: true },
       _count: { _all: true },
@@ -357,14 +408,18 @@ export const errandRepository = {
    * LongText, and pulling it here would move megabytes per errand for numbers
    * that occupy a few bytes.
    */
-  findForCategoryAllocationBetween(start: Date, end: Date) {
+  findForCategoryAllocationBetween(start: Date, end: Date, riderId?: number) {
     return prisma.errand.findMany({
       where: {
         createdAt: { gte: start, lt: end },
         status: { in: ["DELIVERED", "COMPLETED"] },
+        // Same rider filter as aggregateBetween, so the two still reconcile.
+        ...(riderId ? { riderId } : {}),
       },
       select: {
         id: true,
+        referenceNo: true,
+        createdAt: true,
         totalCost: true,
         deliveryFee: true,
         tip: true,
@@ -423,11 +478,13 @@ export const errandRepository = {
     return prisma.errand.findUnique({ where: { id }, select: RECONCILIATION_EVIDENCE_SELECT });
   },
 
-  findWithSettlementBetween(start: Date, end: Date) {
+  findWithSettlementBetween(start: Date, end: Date, riderId?: number) {
     return prisma.errand.findMany({
       where: {
         createdAt: { gte: start, lt: end },
         status: { in: ["DELIVERED", "COMPLETED"] },
+        // The Settlement report's one-rider view; every other caller omits it.
+        ...(riderId ? { riderId } : {}),
       },
       select: {
         totalCost: true,
@@ -495,6 +552,7 @@ export const errandRepository = {
       },
       select: {
         id: true,
+        referenceNo: true,
         riderId: true,
         assignedAt: true,
         acceptedAt: true,
@@ -504,7 +562,61 @@ export const errandRepository = {
         createdAt: true,
         etaHighAt: true,
         etaIsDegraded: true,
+        itemsPurchasedAt: true,
+        etaPromisedAt: true,
+        etaPromisedHighAt: true,
       },
+    });
+  },
+
+  /**
+   * How close each errand's own rider got to the delivery address around the
+   * moment they marked it delivered: the nearest GPS fix recorded from 10
+   * minutes before to 2 minutes after, in metres, less the fix's own reported
+   * accuracy (capped at 100 m so one wild fix cannot vouch for a delivery).
+   *
+   * An errand with no fix in that window is simply absent from the result:
+   * there is no evidence either way, which On Time treats as "not checked".
+   * Uses the (errandId, recordedAt) index; one row per errand comes back.
+   */
+  async nearestFixToDoorAtDelivery(errandIds: string[]): Promise<Map<string, number>> {
+    const nearest = new Map<string, number>();
+    for (let i = 0; i < errandIds.length; i += 500) {
+      const chunk = errandIds.slice(i, i + 500);
+      if (chunk.length === 0) continue;
+      const rows = await prisma.$queryRaw<Array<{ errandId: string; nearestMeters: number | null }>>`
+        SELECT e.id AS errandId,
+          MIN(
+            2 * 6371000 * ASIN(SQRT(
+              POWER(SIN(RADIANS(t.latitude - e.deliveryLatitude) / 2), 2) +
+              COS(RADIANS(e.deliveryLatitude)) * COS(RADIANS(t.latitude)) *
+              POWER(SIN(RADIANS(t.longitude - e.deliveryLongitude) / 2), 2)
+            )) - LEAST(COALESCE(t.accuracyMeters, 0), 100)
+          ) AS nearestMeters
+        FROM errands e
+        JOIN errand_track_points t
+          ON t.errandId = e.id
+         AND t.riderId = e.riderId
+         AND t.recordedAt BETWEEN e.deliveredAt - INTERVAL 10 MINUTE AND e.deliveredAt + INTERVAL 2 MINUTE
+        WHERE e.id IN (${Prisma.join(chunk)})
+          AND e.deliveredAt IS NOT NULL
+          AND e.deliveryLatitude IS NOT NULL
+          AND e.deliveryLongitude IS NOT NULL
+        GROUP BY e.id`;
+      for (const row of rows) {
+        if (row.nearestMeters !== null) nearest.set(row.errandId, Math.max(0, Number(row.nearestMeters)));
+      }
+    }
+    return nearest;
+  },
+
+  // The delivery promise, written once. Only while this rider still holds the
+  // errand in transit and nothing has been promised yet, so a later recompute,
+  // a race between two recomputes, or a stale request can never move it.
+  freezeEtaPromise(id: string, riderId: number, promisedAt: Date, promisedHighAt: Date) {
+    return prisma.errand.updateMany({
+      where: { id, riderId, status: "IN_TRANSIT", etaPromisedAt: null },
+      data: { etaPromisedAt: promisedAt, etaPromisedHighAt: promisedHighAt },
     });
   },
 
@@ -518,7 +630,7 @@ export const errandRepository = {
   findReachedRiderBetween(start: Date, end: Date) {
     return prisma.errand.findMany({
       where: { riderId: { not: null }, assignedAt: { gte: start, lt: end } },
-      select: { riderId: true, status: true },
+      select: { riderId: true, status: true, assignedAt: true },
     });
   },
 
@@ -526,7 +638,13 @@ export const errandRepository = {
   // because callers pass scalar foreign keys directly (customerId, riderId), matching the
   // original inline handlers this was migrated from.
   create(data: Prisma.ErrandUncheckedCreateInput) {
-    return prisma.errand.create({ data, include: ERRAND_INCLUDE });
+    // The reference number is taken in the same transaction as the row, and
+    // carries the id's last 5 characters, so the id is minted before the write
+    // rather than by Prisma's @default(uuid()). See lib/errandReference.ts.
+    return withErrandReference(
+      (tx, ref) => tx.errand.create({ data: { ...data, ...ref }, include: ERRAND_INCLUDE }),
+      data.id,
+    );
   },
 
   update(id: string, data: Prisma.ErrandUncheckedUpdateInput) {

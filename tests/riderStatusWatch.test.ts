@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { state, emitToRole, emit, createNotification, presenceUpdate, closeSession } = vi.hoisted(() => ({
+const { state, emitToRole, emit, createNotification, presenceUpdate, closeSession, findManyUsers, countActive } = vi.hoisted(() => ({
   state: {
     riders: [{ id: 1, firstName: "Renen", lastName: "Cadungog" }],
     availability: new Map<number, any>(),
@@ -12,6 +12,8 @@ const { state, emitToRole, emit, createNotification, presenceUpdate, closeSessio
   createNotification: vi.fn(async () => ({})),
   presenceUpdate: vi.fn(async () => ({})),
   closeSession: vi.fn(async () => ({})),
+  findManyUsers: vi.fn(async (_args?: any) => [{ id: 50 }, { id: 51 }]),
+  countActive: vi.fn(async () => [] as any[]),
 }));
 
 vi.mock("../src/lib/eventPublisher.js", () => ({ eventPublisher: { emitToRole, emit } }));
@@ -20,10 +22,11 @@ vi.mock("../src/repositories/userRepository.js", () => ({
   userRepository: { findAllRiders: vi.fn(async () => state.riders) },
 }));
 vi.mock("../src/repositories/errandRepository.js", () => ({
-  errandRepository: { countActiveByRider: vi.fn(async () => []) },
+  errandRepository: { countActiveByRider: countActive },
+  dispatchLogRepository: { findLatestByErrandId: vi.fn(async () => null) },
 }));
 vi.mock("../src/repositories/notificationRepository.js", () => ({
-  notificationRepository: { create: createNotification },
+  notificationRepository: { create: createNotification, findUnreadByRef: vi.fn(async () => null) },
 }));
 vi.mock("../src/repositories/riderLoginSessionRepository.js", () => ({
   riderLoginSessionRepository: { findAllOpen: vi.fn(async () => state.openSessions), close: closeSession },
@@ -33,7 +36,7 @@ vi.mock("../src/services/riderBeaconService.js", () => ({
 }));
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
-    user: { findMany: vi.fn(async () => [{ id: 50 }, { id: 51 }]) },
+    user: { findMany: findManyUsers },
     riderPresence: { findMany: vi.fn(async () => state.onDutyRows), updateMany: presenceUpdate },
   },
 }));
@@ -56,6 +59,10 @@ beforeEach(() => {
   emitToRole.mockClear();
   emit.mockClear();
   createNotification.mockClear();
+  findManyUsers.mockReset();
+  findManyUsers.mockImplementation(async () => [{ id: 50 }, { id: 51 }]);
+  countActive.mockReset();
+  countActive.mockImplementation(async () => []);
   presenceUpdate.mockClear();
   closeSession.mockClear();
   state.onDutyRows = [];
@@ -74,6 +81,9 @@ describe("checkRiderStatuses", () => {
     await checkRiderStatuses(T0);
     state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
     await checkRiderStatuses(T0 + 20_000);
+    expect(alerts()).toHaveLength(0);
+    expect(createNotification).not.toHaveBeenCalled();
+    await checkRiderStatuses(T0 + 50_000);
     await new Promise((r) => setImmediate(r));
 
     expect(changes().map((c) => c[0])).toEqual(["DISPATCHER", "OWNER"]);
@@ -87,6 +97,7 @@ describe("checkRiderStatuses", () => {
     await checkRiderStatuses(T0);
     state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
     await checkRiderStatuses(T0 + 1_000);
+    await checkRiderStatuses(T0 + 31_000);
     for (const minutes of [2, 5, 10, 15, 30, 60]) {
       await checkRiderStatuses(T0 + 1_000 + minutes * 60_000);
     }
@@ -109,10 +120,89 @@ describe("checkRiderStatuses", () => {
       await checkRiderStatuses(T0 + i * 60_000);
       state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
       await checkRiderStatuses(T0 + i * 60_000 + 20_000);
+      await checkRiderStatuses(T0 + i * 60_000 + 50_000);
     }
     await new Promise((r) => setImmediate(r));
-    expect(alerts()).toHaveLength(2 + 1); // live alert each time after the seed pass
-    expect(createNotification).toHaveBeenCalledTimes(2); // once, for the two dispatchers
+    expect(alerts()).toHaveLength(1); // toasts share the bell's ten-minute cooldown
+    // One loss row and one "back online" row, each for the two dispatchers.
+    const types = createNotification.mock.calls.map((c: any[]) => c[0].type);
+    expect(types).toEqual(["RIDER_SIGNAL_LOST", "RIDER_SIGNAL_LOST", "RIDER_SIGNAL_RESTORED", "RIDER_SIGNAL_RESTORED"]);
+  });
+
+  it("tells owners only when the lost rider has errands on hand", async () => {
+    findManyUsers.mockImplementation(async ({ where }: any) => (where.role === "OWNER" ? [{ id: 90 }] : [{ id: 50 }]));
+    countActive.mockResolvedValue([{ riderId: 1, _count: { _all: 2 } }]);
+    state.availability = new Map([[1, as("AVAILABLE_ONLINE", "online")]]);
+    await checkRiderStatuses(T0);
+    state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
+    await checkRiderStatuses(T0 + 1_000);
+    await checkRiderStatuses(T0 + 31_000);
+    await new Promise((r) => setImmediate(r));
+
+    const rows = createNotification.mock.calls.map((c: any[]) => c[0]);
+    expect(rows.map((r) => r.userId).sort()).toEqual([50, 90]);
+    expect(rows[0]).toMatchObject({ type: "RIDER_SIGNAL_LOST", priority: "HIGH", refKey: "rider:1" });
+  });
+
+  it("escalates to Critical once at the 15-minute reminder when errands are on hand", async () => {
+    findManyUsers.mockImplementation(async ({ where }: any) => (where.role === "OWNER" ? [{ id: 90 }] : [{ id: 50 }]));
+    countActive.mockResolvedValue([{ riderId: 1, _count: { _all: 1 } }]);
+    state.availability = new Map([[1, as("AVAILABLE_ONLINE", "online")]]);
+    await checkRiderStatuses(T0);
+    state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
+    await checkRiderStatuses(T0 + 1_000);
+    await checkRiderStatuses(T0 + 31_000);
+    for (const minutes of [5, 15, 30]) {
+      await checkRiderStatuses(T0 + 1_000 + minutes * 60_000);
+    }
+    await new Promise((r) => setImmediate(r));
+
+    const critical = createNotification.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((r) => r.type === "RIDER_SIGNAL_LOST_PERSISTING");
+    expect(critical).toHaveLength(2); // the dispatcher and the owner, once
+    expect(critical[0].priority).toBe("CRITICAL");
+  });
+
+  it("does not escalate a lost rider with nothing on hand", async () => {
+    state.availability = new Map([[1, as("AVAILABLE_ONLINE", "online")]]);
+    await checkRiderStatuses(T0);
+    state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
+    await checkRiderStatuses(T0 + 1_000);
+    await checkRiderStatuses(T0 + 31_000);
+    for (const minutes of [5, 15, 30]) {
+      await checkRiderStatuses(T0 + 1_000 + minutes * 60_000);
+    }
+    await new Promise((r) => setImmediate(r));
+    const types = createNotification.mock.calls.map((c: any[]) => c[0].type);
+    expect(types).not.toContain("RIDER_SIGNAL_LOST_PERSISTING");
+  });
+
+  it("keeps brief interruptions quiet, including restoration, and resets the confirmation window", async () => {
+    state.availability = new Map([[1, as("AVAILABLE_ONLINE", "online")]]);
+    await checkRiderStatuses(T0);
+    for (const offset of [1_000, 40_000]) {
+      state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
+      await checkRiderStatuses(T0 + offset);
+      await checkRiderStatuses(T0 + offset + 20_000);
+      state.availability = new Map([[1, as("AVAILABLE_ONLINE", "online")]]);
+      await checkRiderStatuses(T0 + offset + 25_000);
+    }
+    await new Promise((r) => setImmediate(r));
+    expect(alerts()).toHaveLength(0);
+    expect(createNotification).not.toHaveBeenCalled();
+    expect(changes().length).toBeGreaterThan(0);
+  });
+
+  it("allows another confirmed outage after the cooldown", async () => {
+    for (const offset of [0, 11 * 60_000]) {
+      state.availability = new Map([[1, as("AVAILABLE_ONLINE", "online")]]);
+      await checkRiderStatuses(T0 + offset);
+      state.availability = new Map([[1, as("AVAILABLE_SIGNAL_LOST", "signal_lost")]]);
+      await checkRiderStatuses(T0 + offset + 1_000);
+      await checkRiderStatuses(T0 + offset + 31_000);
+    }
+    expect(alerts()).toHaveLength(2);
   });
 });
 

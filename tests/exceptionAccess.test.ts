@@ -63,13 +63,15 @@ describe("reaching the exception surfaces", () => {
 
   it("guards the queue with a role check, not authentication alone", () => {
     // requireRole and the limiters are anonymous closures, so the guard is
-    // asserted by shape: auth + role + limiter + controller.
-    expect(chainFor(errandRoutes, "get", "/exceptions")).toHaveLength(4);
+    // asserted by shape: auth + role + access group + limiter + controller.
+    expect(chainFor(errandRoutes, "get", "/exceptions")).toHaveLength(5);
+    expect(chainFor(errandRoutes, "get", "/exceptions")).toContain("requirePermissionGuard");
   });
 
   it("guards the owner's period report the same way", () => {
     expect(chainFor(reportRoutes, "get", "/exceptions")[0]).toBe("authenticateToken");
-    expect(chainFor(reportRoutes, "get", "/exceptions")).toHaveLength(4);
+    expect(chainFor(reportRoutes, "get", "/exceptions")).toHaveLength(5);
+    expect(chainFor(reportRoutes, "get", "/exceptions")).toContain("requirePermissionGuard");
   });
 
   it("declares /exceptions before /:id so the queue is not read as an errand id", () => {

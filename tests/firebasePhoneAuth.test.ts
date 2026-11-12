@@ -36,6 +36,8 @@ vi.mock("../src/services/accountAuditService.js", () => ({
 vi.mock("../src/repositories/emailVerificationRepository.js", () => ({
   emailVerificationRepository: {
     findLatestConsumedForPhone,
+    // registerCustomer checks emailVerified claims against this; no code here.
+    findLatestForEmail: vi.fn().mockResolvedValue(null),
   },
 }));
 

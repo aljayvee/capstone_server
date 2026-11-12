@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HANDLING_AMOUNT_THRESHOLD } from "../services/patterns/pricingStrategy.js";
+import { MAX_ADDITIONAL_STORES_CEILING } from "../lib/storeLimitBounds.js";
 
 /**
  * The owner's rate card, as submitted.
@@ -15,7 +16,7 @@ export const updateRateConfigSchema = z
     baseFee: z.coerce.number().nonnegative(),
     perKmRate: z.coerce.number().nonnegative(),
     multiStoreFeePerStore: z.coerce.number().nonnegative(),
-    maxAdditionalStores: z.coerce.number().int().nonnegative(),
+    maxAdditionalStores: z.coerce.number().int().nonnegative().max(MAX_ADDITIONAL_STORES_CEILING),
     groceryFeeThreshold: z.coerce.number().nonnegative(),
     groceryFeePercent: z.coerce.number().min(0).max(100),
     groceryFeeFlat: z.coerce.number().nonnegative(),

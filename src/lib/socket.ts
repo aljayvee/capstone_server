@@ -6,6 +6,7 @@ import * as riderPresenceStore from "./riderPresenceStore.js";
 import * as userPresenceStore from "./userPresenceStore.js";
 import { prisma } from "./prisma.js";
 import { errandRepository } from "../repositories/errandRepository.js";
+import { isRevoked } from "./blocklistCache.js";
 import type { TokenPayload } from "../middleware/auth.js";
 
 // Filtered by role as well as id: login logs hold customers and staff, whose ids
@@ -32,20 +33,47 @@ async function syncUserPresenceToDb(userId: number, role: string, isOnline: bool
 // socket.ts is already the concrete Socket.IO implementation; eventPublisher
 // exists to decouple *other* modules (services) from it, not this one.
 
+/**
+ * True when an Origin names the host the request was sent to.
+ *
+ * React Native's Android WebSocket (okhttp) adds a default
+ * `Origin: https://<api host>` to every upgrade; its HTTP requests send none.
+ * Without this, both mobile apps handshake over long-polling, have every
+ * WebSocket upgrade refused, and stay on polling for the whole session: one
+ * request held open for pingInterval (25 s) after another, which is the 25 s
+ * p99 origin response time Cloudflare reports. Accepting it opens nothing: a
+ * browser only sends this Origin from a page on the API's own host, and socket
+ * identity comes from the handshake token, never from cookies.
+ */
+export function isSameOrigin(origin: string, host: string | undefined): boolean {
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 // Constructed standalone (no httpServer yet) so this module has no dependency on
 // index.ts/app bootstrap — route files can import `io` directly without a circular
 // import. index.ts calls `io.attach(httpServer)` once the HTTP server exists.
 export const io = new Server({
-  cors: {
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman)
-      if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) {
-        return callback(null, origin);
-      }
-      return callback(new Error("CORS policy violation: Origin not allowed"));
-    },
-    credentials: true,
+  // A delegate rather than a plain options object so the origin check can see
+  // the request's own Host. engine.io runs this as middleware on WebSocket
+  // upgrades as well as polling requests, and a refusal there is answered with
+  // a bare "400 Bad request" that the client never surfaces.
+  cors: (req, callback) => {
+    callback(null, {
+      origin: (origin, done) => {
+        // Allow requests with no origin (mobile app HTTP, curl, Postman)
+        if (!origin) return done(null, true);
+        if (ALLOWED_ORIGINS.includes(origin) || isSameOrigin(origin, req.headers.host)) {
+          return done(null, origin);
+        }
+        return done(new Error("CORS policy violation: Origin not allowed"));
+      },
+      credentials: true,
+    });
   },
   // 20s by default. On a congested mobile link a heartbeat can queue behind
   // other traffic for longer than that, and each false timeout costs a full
@@ -124,24 +152,35 @@ export async function canSubscribeToErrand(
 // existing unauthenticated socket connections (dispatcher/owner tracking and
 // chat views, none of which send a token today) keep working unchanged. Only
 // verified RIDER connections get registered in the presence store below.
-io.use((socket: Socket & { data: AuthenticatedSocketData }, next) => {
-  const token = socket.handshake.auth?.token;
-  if (typeof token === "string" && token) {
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-      if (!err && decoded) {
-        const payload = decoded as TokenPayload;
-        const role = String(payload.role || "").toUpperCase();
-        socket.data.userId = payload.id;
-        socket.data.role = role;
-        if (role === "RIDER") {
-          socket.data.riderId = payload.id;
-        }
-      }
-      next();
+//
+// The token passes the same tests authenticateToken applies over REST: a
+// signed-out (blocklisted) token, or a signed token that is not a session token
+// (a `purpose` claim, no role or id), connects as anonymous instead of joining
+// that account's rooms (Codex security scan, 2026-11-02). A blocklist lookup
+// that fails also connects anonymous: closed, not open.
+export async function identifySocketToken(token: unknown): Promise<{ userId: number; role: string } | null> {
+  if (typeof token !== "string" || !token) return null;
+  if (await isRevoked(token).catch(() => true)) return null;
+  return new Promise((resolve) => {
+    jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }, (err, decoded) => {
+      const claims = decoded as (Partial<TokenPayload> & { purpose?: string }) | undefined;
+      if (err || !claims || claims.purpose || !claims.role || !claims.id) return resolve(null);
+      resolve({ userId: claims.id, role: String(claims.role).toUpperCase() });
     });
-    return;
-  }
-  next();
+  });
+}
+
+io.use((socket: Socket & { data: AuthenticatedSocketData }, next) => {
+  void identifySocketToken(socket.handshake.auth?.token).then((identity) => {
+    if (identity) {
+      socket.data.userId = identity.userId;
+      socket.data.role = identity.role;
+      if (identity.role === "RIDER") {
+        socket.data.riderId = identity.userId;
+      }
+    }
+    next();
+  });
 });
 
 io.on("connection", (socket: Socket & { data: AuthenticatedSocketData }) => {
@@ -242,4 +281,29 @@ export function notifySessionRevoked(
 ): void {
   const room = String(role || "").toUpperCase() === "CUSTOMER" ? rooms.customer(userId) : rooms.user(userId);
   io.to(room).emit("session:revoked", payload);
+}
+
+/**
+ * Tells staff accounts their access group or overrides changed, so an open
+ * portal refetches GET /account/permissions instead of waiting for a reload.
+ * Staff only: `user:<id>` never holds a customer (see `rooms`). Nothing is
+ * revoked; the next request is already checked against the new access.
+ */
+export function notifyPermissionsChanged(userIds: number[]): void {
+  if (userIds.length === 0) return;
+  io.to(userIds.map((id) => rooms.user(id))).emit("permissions:changed", {});
+}
+
+/**
+ * Closes every live connection one account holds, after a security action
+ * (suspension, deactivation, a role change). A socket's identity is fixed at
+ * the handshake and never re-checked, so revoking the account's sessions left a
+ * suspended dispatcher receiving the fleet's live positions until they closed
+ * the tab (Codex security scan, 2026-11-02). Waits a moment first so a
+ * session:revoked notice sent just before can reach the client. A client that
+ * signs in again connects again with its new token.
+ */
+export function disconnectAccount(userId: number, role?: string): void {
+  const room = String(role || "").toUpperCase() === "CUSTOMER" ? rooms.customer(userId) : rooms.user(userId);
+  setTimeout(() => io.in(room).disconnectSockets(true), 1_000).unref();
 }

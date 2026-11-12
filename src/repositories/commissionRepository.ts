@@ -55,6 +55,15 @@ export const commissionRepository = {
     });
   },
 
+  // The rows sumByRiderBetween adds up, dated, so a period breakdown can split
+  // the same payouts by day without a second definition of the window.
+  findBetween(start: Date, end: Date) {
+    return prisma.riderCommission.findMany({
+      where: { computedAt: { gte: start, lt: end } },
+      select: { riderId: true, riderShare: true, computedAt: true },
+    });
+  },
+
   totalsForRider(riderId: number, start: Date, end: Date) {
     return prisma.riderCommission.aggregate({
       where: { riderId, computedAt: { gte: start, lt: end } },

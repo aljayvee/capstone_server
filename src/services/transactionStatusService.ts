@@ -6,6 +6,8 @@ import { customerTransactionRepository } from "../repositories/customerTransacti
 import { hasPaymentLedger } from "./patterns/paymentModes.js";
 import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { deriveTransactionStatus } from "./patterns/transactionStatus.js";
+import { settlementBalance } from "./patterns/settlementBalance.js";
+import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 
 /**
@@ -30,11 +32,23 @@ export async function syncTransactionStatus(errandId: string): Promise<void> {
       })
     : null;
   const settlement = await settlementRepository.findByErrandId(errandId);
+  const adjustments = settlement
+    ? await prisma.settlementAdjustment.findMany({
+        where: { settlementId: settlement.id },
+        select: { kind: true, amount: true, voidedAt: true },
+      })
+    : [];
+  const balance = settlement ? settlementBalance(settlement.variance, adjustments) : null;
 
   const status = deriveTransactionStatus({
     errandStatus: String(errand.status),
     ledger,
-    settlement: settlement ? { status: settlement.status } : null,
+    settlement: settlement
+      ? {
+          status: settlement.status,
+          customerCoveredShort: !!balance && balance.short > 0 && balance.customerPaid >= balance.short - 0.005,
+        }
+      : null,
   });
   await customerTransactionRepository.updateStatusByErrandId(errandId, status);
 }

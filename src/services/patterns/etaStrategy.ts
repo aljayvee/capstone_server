@@ -21,6 +21,8 @@ export interface EtaStopInput {
   dwellP50Seconds: number;
   dwellP80Seconds: number;
   dwellSampleCount: number;
+  /** Active catalogue category with configured dwell defaults (not an unknown map pin). */
+  hasDwellBaseline?: boolean;
 }
 
 export interface EtaInput {
@@ -28,6 +30,7 @@ export interface EtaInput {
   // breadcrumb has arrived, in which case the route is measured from the first
   // outstanding stop instead.
   origin: GeoPoint | null;
+  originSpeedMps?: number | null;
   stops: EtaStopInput[];
   destination: GeoPoint | null;
   now: Date;
@@ -95,14 +98,38 @@ export class DwellAwareEtaStrategy implements EtaStrategy {
     const route = await routingProvider.route([start, ...waypoints, destination]);
     if (!route) return null;
 
+    let travelSeconds = route.durationSeconds;
+    // When en route to store(s), calibrate the store-bound leg travel time by rider speed:
+    if (
+      waypoints.length > 0 &&
+      route.legs.length > 0 &&
+      typeof input.originSpeedMps === "number" &&
+      Number.isFinite(input.originSpeedMps) &&
+      input.originSpeedMps >= 2.0
+    ) {
+      const effectiveSpeedMps = Math.min(16.7, Math.max(2.0, input.originSpeedMps));
+      const activeLeg = route.legs[0];
+      const speedAwareLegDuration = Math.round(activeLeg.distanceMeters / effectiveSpeedMps);
+      const delta = speedAwareLegDuration - activeLeg.durationSeconds;
+      travelSeconds = Math.max(10, route.durationSeconds + delta);
+    }
+
     let dwellLowSeconds = 0;
     let dwellHighSeconds = 0;
     let lowConfidence = false;
+    let baselineUsed = false;
 
     for (const stop of remainingStops) {
       dwellLowSeconds += remainingDwellSeconds(stop, stop.dwellP50Seconds, now);
       dwellHighSeconds += remainingDwellSeconds(stop, stop.dwellP80Seconds, now);
-      if (stop.dwellSampleCount < MIN_CONFIDENT_SAMPLES) lowConfidence = true;
+      // Permit seeded defaults in a new zone without inventing observations.
+      // Operators may disable this policy while calibrating their catalogue.
+      const baseline = process.env.ETA_ALLOW_ZERO_SAMPLE_BASELINE !== 'false' &&
+        stop.hasDwellBaseline === true && stop.dwellSampleCount === 0 &&
+        Number.isFinite(stop.dwellP50Seconds) && stop.dwellP50Seconds > 0 &&
+        Number.isFinite(stop.dwellP80Seconds) && stop.dwellP80Seconds >= stop.dwellP50Seconds;
+      if (baseline) baselineUsed = true;
+      else if (stop.dwellSampleCount < MIN_CONFIDENT_SAMPLES) lowConfidence = true;
     }
 
     // Widen the upper bound when the numbers underneath are shaky — either the
@@ -111,11 +138,11 @@ export class DwellAwareEtaStrategy implements EtaStrategy {
     // only, never the low end: the promise gets more cautious, not vaguer in
     // both directions.
     const degraded = route.degraded || lowConfidence;
-    const paddedDwellHigh = degraded ? dwellHighSeconds * LOW_CONFIDENCE_MULTIPLIER : dwellHighSeconds;
-    const paddedTravel = route.degraded ? route.durationSeconds * LOW_CONFIDENCE_MULTIPLIER : route.durationSeconds;
+    const paddedDwellHigh = degraded || baselineUsed ? dwellHighSeconds * LOW_CONFIDENCE_MULTIPLIER : dwellHighSeconds;
+    const paddedTravel = route.degraded ? travelSeconds * LOW_CONFIDENCE_MULTIPLIER : travelSeconds;
 
     const base = now.getTime();
-    const lowSeconds = route.durationSeconds + dwellLowSeconds + HANDOFF_SECONDS;
+    const lowSeconds = travelSeconds + dwellLowSeconds + HANDOFF_SECONDS;
     const highSeconds = paddedTravel + paddedDwellHigh + HANDOFF_SECONDS;
 
     return {
@@ -124,7 +151,7 @@ export class DwellAwareEtaStrategy implements EtaStrategy {
       // the low (it cannot today, but the invariant is worth enforcing here
       // rather than discovering it in the customer's UI).
       etaHighAt: new Date(base + Math.max(lowSeconds, highSeconds) * 1000),
-      travelSeconds: Math.round(route.durationSeconds),
+      travelSeconds: Math.round(travelSeconds),
       dwellLowSeconds: Math.round(dwellLowSeconds),
       dwellHighSeconds: Math.round(paddedDwellHigh),
       remainingStopCount: remainingStops.length,

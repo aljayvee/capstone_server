@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { normalizeUsername, normalizeEmail } from "../../lib/identity.js";
 import type { CustomerCreateData } from "../../repositories/customerRepository.js";
+import { currentPublicOrigin } from "../../lib/publicOrigin.js";
+import { customerPhotoUrl } from "../../lib/customerPhotoLink.js";
 
 export interface CustomerFactoryInput {
   username: string;
@@ -72,14 +74,36 @@ type CustomerWithInformation = {
     phoneVerified?: boolean;
     phoneVerifiedAt?: Date | null;
     avatar: string | null;
+    updatedAt?: Date;
   } | null;
+  // customerRepository leaves photoData out (the photo is served by its own
+  // link); other callers may still pass it.
   profilePhoto?: {
-    photoData: string;
+    photoData?: string;
     mimeType: string;
     fileSize: number;
     fileName?: string | null;
+    updatedAt?: Date;
   } | null;
 };
+
+/**
+ * The customer's photo as the app should load it. With a request in scope, a
+ * signed link (GET /api/customers/:id/photo) instead of the photo itself, so
+ * profile, login and refresh responses stay a few hundred bytes on a slow
+ * connection. Google photo addresses pass through. Outside a request there is
+ * no origin to link to, so the stored photo goes inline as it always did.
+ */
+function customerAvatar(customer: CustomerWithInformation): string | null {
+  const { id, information, profilePhoto } = customer;
+  const origin = currentPublicOrigin();
+  const legacyInline = information?.avatar?.startsWith("data:") ? information : null;
+
+  if (origin && profilePhoto?.updatedAt) return customerPhotoUrl(origin, id, profilePhoto.updatedAt.getTime());
+  if (profilePhoto?.photoData) return profilePhoto.photoData;
+  if (origin && legacyInline?.updatedAt) return customerPhotoUrl(origin, id, legacyInline.updatedAt.getTime());
+  return information?.avatar ?? null;
+}
 
 // Collapses the nested CustomerAccount+CustomerInformation Prisma result into the flat
 // shape (firstName/lastName/phone at the top level) that callers already expect —
@@ -101,6 +125,6 @@ export function flattenCustomerAccount<T extends CustomerWithInformation>(custom
     birthdate: information?.birthdate ? information.birthdate.toISOString().split("T")[0] : null,
     phone: information?.phone ?? "",
     phoneVerified: (customer as any).phoneVerified || information?.phoneVerified || false,
-    avatar: profilePhoto?.photoData ?? information?.avatar ?? null,
+    avatar: customerAvatar(customer),
   };
 }

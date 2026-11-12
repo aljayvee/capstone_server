@@ -11,6 +11,7 @@ import { summarisePaymentPlan } from "./patterns/paymentLedger.js";
 import { validateTransferReceipt } from "./patterns/transferValidation.js";
 import { ServiceError } from "./ServiceError.js";
 import * as errandService from "./errandService.js";
+import { notifyStaffAboutErrand } from "./notificationService.js";
 import { switchToCashOnDelivery } from "./paymentSelectionService.js";
 import { holdScan, findScan, type ReceiptScan } from "../lib/pendingReceiptScans.js";
 import { formatItemLabel } from "./patterns/itemLabel.js";
@@ -43,11 +44,11 @@ function stripDataUri(imageData: string): string {
   return imageData.replace(/^data:image\/[a-z]+;base64,/, "");
 }
 
-async function assertRidersOwnErrand(errandId: string, riderId: number) {
+export async function assertRidersOwnErrand(errandId: string, riderId: number) {
   const errand = await errandRepository.findByIdBasic(errandId);
   if (!errand) throw new ServiceError(404, "Errand not found");
   if (errand.riderId !== riderId) {
-    throw new ServiceError(403, "Access denied: you can only add proof to errands assigned to you.");
+    throw new ServiceError(403, "Access denied: you can only update errands assigned to you.");
   }
   return errand;
 }
@@ -160,6 +161,12 @@ export async function uploadProofImage(
     );
 
     // Dispatch is told while it is happening, not found in a report later.
+    void notifyStaffAboutErrand("UNVERIFIED_PURCHASE", errandId, (errand) => ({
+      title: `Purchase with no receipt: ₱${input.declaredTotal!.toFixed(2)}`,
+      body: `${errand}: the rider declared ₱${input.declaredTotal!.toFixed(2)} at a shop with no receipt${
+        input.riderNote?.trim() ? `. Note: ${input.riderNote.trim()}` : "."
+      }`,
+    }), { onceKey: `image:${declared.id}` });
     eventPublisher.emitToErrand(errandId, "errand:unverified_purchase", {
       errandId,
       imageId: declared.id,
@@ -500,6 +507,9 @@ async function saveScan(scan: ReceiptScan, confirmedTotal: number, riderNote?: s
         },
       },
     },
+    select: {
+      id: true,
+    },
   });
   return image.id;
 }
@@ -633,6 +643,10 @@ async function applyConfirmedTotal(
       logger.info(
         `Errand ${errandId}: rider ${riderId} confirmed ${confirmedTotal} against an OCR reading of ${extracted} (gap ${gap.toFixed(2)}).`
       );
+      void notifyStaffAboutErrand("RECEIPT_MISMATCH", errandId, (errand) => ({
+        title: `Receipt does not match: ₱${gap.toFixed(2)} apart`,
+        body: `${errand}: the rider confirmed ₱${confirmedTotal.toFixed(2)}, the receipt reads ₱${extracted.toFixed(2)}. Check the photo.`,
+      }), { onceKey: `image:${imageId}:${confirmedTotal}` });
       eventPublisher.emitToErrand(errandId, "errand:receipt_mismatch", {
         errandId,
         imageId,

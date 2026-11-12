@@ -36,7 +36,7 @@ export async function getGoAccessHtmlReportHandler(req: AuthenticatedRequest, re
     }
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+      const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as TokenPayload;
       if (decoded.role !== "SYSADMIN") {
         return res.status(403).send("<h1>403 Forbidden: SysAdmin privileges required</h1>");
       }

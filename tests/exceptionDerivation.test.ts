@@ -408,7 +408,7 @@ describe("goods held for an overage the customer never approved", () => {
     const overage = found.find((e) => e.kind === "OVERAGE_PENDING");
 
     expect(overage?.amountAtRisk).toBe(200);
-    expect(overage?.detail).toContain("Goods held");
+    expect(overage?.detail).toContain("the rider is holding the items");
   });
 
   it("ages from when the hold was raised, not when the errand was placed", () => {
@@ -516,7 +516,7 @@ describe("a mode that captures no payment at all", () => {
 
       const found = exceptionsFor(ghost).find((e) => e.kind === "UNPAID_BALANCE");
       expect(found?.amountAtRisk).toBe(1120);
-      expect(found?.detail).toContain("captures no payment");
+      expect(found?.detail).toContain("does not record payments made this way");
     }
   );
 
@@ -547,7 +547,7 @@ describe("cancelled after the goods were bought", () => {
     );
     const raised = found.find((e) => e.kind === "CANCELLED_AFTER_PURCHASE");
     expect(raised).toMatchObject({ amountAtRisk: 176, occurredAt: T("2026-08-25T01:40:00Z") });
-    expect(raised?.detail).toContain("1 receipt on file");
+    expect(raised?.detail).toContain("1 receipt saved");
   });
 
   it("raises it from the receipts alone when the purchase was never marked", () => {

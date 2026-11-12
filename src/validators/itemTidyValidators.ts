@@ -2,14 +2,14 @@ import { z } from "zod";
 
 // One Review screen's flagged lines. Twenty is GEMMA_BATCH_SIZE in the
 // sidecar, so a request is one model call, never several queued behind each
-// other. 120 matches the item name limit: a line too long to save is not worth
-// tidying.
+// other. A sentence can include several products and notes; each extracted
+// product still has the existing 120-character name limit.
 export const itemTidyBodySchema = z.object({
   lines: z
     .array(
       z.object({
         id: z.string().trim().min(1, "Each line needs an id.").max(40, "Line id must be at most 40 characters."),
-        text: z.string().trim().min(1, "Each line needs text.").max(120, "Item text must be at most 120 characters."),
+        text: z.string().trim().min(1, "Each line needs text.").max(500, "Item text must be at most 500 characters."),
       })
     )
     .min(1, "Send at least one line.")

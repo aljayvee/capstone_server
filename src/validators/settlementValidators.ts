@@ -26,3 +26,13 @@ export const submitSettlementSchema = z.object({
 });
 
 export type SubmitSettlementInput = z.infer<typeof submitSettlementSchema>;
+
+/** Money recorded against a short handover after the fact (Help Desk "Record payment"). */
+export const recordSettlementAdjustmentSchema = z.object({
+  kind: z.enum(["RIDER_PAID_BACK", "CUSTOMER_PAID_GCASH", "WRITTEN_OFF"]),
+  amount: z.coerce.number().positive("Enter an amount above zero.").max(1_000_000),
+  reference: z.string().trim().max(40, "Keep the reference under 40 characters.").nullish(),
+  note: z.string().trim().max(300, "Keep the note under 300 characters.").nullish(),
+});
+
+export type RecordSettlementAdjustmentInput = z.infer<typeof recordSettlementAdjustmentSchema>;

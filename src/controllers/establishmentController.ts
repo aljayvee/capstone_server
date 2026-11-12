@@ -3,21 +3,11 @@ import type { AuthenticatedRequest } from "../middleware/auth.js";
 import { parseOrThrow } from "../validators/validate.js";
 import { establishmentSearchSchema, popularEstablishmentsSchema } from "../validators/placeValidators.js";
 import { popularEstablishments, searchEstablishments } from "../services/establishmentService.js";
-import type { Request } from "express";
+import { publicOrigin } from "../lib/publicOrigin.js";
 
-/**
- * This API's own address as the phone reached it, for the owner's storefront
- * photo addresses (GET /api/places/:id/photo). HTTPS anywhere but a local
- * machine: Android refuses a plain-HTTP image.
- */
-export function publicOrigin(req: Request): string | null {
-  const host = req.headers?.host;
-  if (!host) return null;
-  const local = /^(localhost|127\.|10\.|192\.168\.)/.test(host);
-  const forwarded = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
-  const proto = local ? forwarded || req.protocol || "http" : "https";
-  return `${proto}://${host}`;
-}
+// Moved to lib/publicOrigin.ts, which customer photo links share; re-exported
+// so existing importers keep working.
+export { publicOrigin };
 
 /**
  * The customer app's "Location" store picker. Without `q`, the shops nearest

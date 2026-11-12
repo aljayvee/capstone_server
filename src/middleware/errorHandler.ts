@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { ServiceError } from "../services/ServiceError.js";
 import { logger } from "../lib/logger.js";
+import { logRefusal } from "../lib/authzLog.js";
 
 // Centralized catch-all for errors forwarded via asyncHandler/next(err).
 // ServiceError carries its own HTTP status; anything else is an unexpected
@@ -17,6 +18,10 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
 
   if (isServiceError) {
     const serviceErr = err as ServiceError;
+    // Refusals are the trail an id-guessing or password-guessing probe leaves.
+    if (serviceErr.status === 401 || serviceErr.status === 403) {
+      logRefusal(req, serviceErr.status, serviceErr.message);
+    }
     return res.status(serviceErr.status).json({
       error: serviceErr.message,
       ...(serviceErr.details !== undefined ? { details: serviceErr.details } : {}),

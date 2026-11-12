@@ -51,8 +51,10 @@ describe("store category image route authorization", () => {
 
   it.each([["put"], ["delete"]])("keeps %s /:id/image owner-only", (method) => {
     // requireRole is an anonymous closure, so it is asserted structurally: a
-    // guarded write carries exactly one handler more than an open read.
-    expect(chainFor(method, "/:id/image")).toHaveLength(4);
+    // guarded write carries one handler more than an open read, plus the
+    // access-group guard (merchants.manage).
+    expect(chainFor(method, "/:id/image")).toHaveLength(5);
+    expect(chainFor(method, "/:id/image")).toContain("requirePermissionGuard");
   });
 
   it("registers every route behind authentication", () => {

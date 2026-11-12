@@ -1,4 +1,5 @@
-import { Response } from "express";
+import { Request, Response } from "express";
+import { isValidCustomerPhotoSignature } from "../lib/customerPhotoLink.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { parseOrThrow } from "../validators/validate.js";
 import { customerProfileUpdateSchema } from "../validators/customerValidators.js";
@@ -40,6 +41,37 @@ export const getCustomerProfile = asyncHandler<AuthenticatedRequest>(async (req,
 
   const customer = await customerService.getProfile(customerId);
   res.json(customer);
+});
+
+/**
+ * GET /api/customers/:id/photo?v=&sig= - the customer's profile photo behind a
+ * signed link from their own profile response. No sign-in: the app's image
+ * loader sends no Authorization header. The signature is the access check;
+ * every refusal is the same 404 so a probe learns nothing.
+ */
+export const getCustomerPhoto = asyncHandler(async (req: Request, res: Response) => {
+  const customerId = Number(req.params.id);
+  const version = Number(req.query.v);
+  const notFound = () => res.status(404).json({ error: "Photo not found" });
+  if (!Number.isSafeInteger(customerId) || !Number.isSafeInteger(version)) return notFound();
+  if (!isValidCustomerPhotoSignature(customerId, version, req.query.sig)) return notFound();
+
+  const etag = `"cust-photo-${customerId}-${version}"`;
+  // Readable from the portal's own origin too: helmet's default is same-origin.
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  // The link changes whenever the photo does, so it never needs re-checking.
+  // Private: a personal photo has no business in a shared cache.
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.setHeader("ETag", etag);
+  if (req.headers["if-none-match"] === etag) return res.status(304).end();
+
+  const photo = await customerService.getLinkedPhoto(customerId, version);
+  if (!photo) {
+    res.removeHeader("Cache-Control");
+    res.removeHeader("ETag");
+    return notFound();
+  }
+  res.type(photo.mimeType).send(photo.body);
 });
 
 export const updateCustomerProfile = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {

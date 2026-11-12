@@ -49,6 +49,16 @@ export const resolveExceptionSchema = z.object({
   // The exposure as the reviewer saw it. Frozen on the row because the figures
   // behind a derived exception can move afterwards.
   amountAtRisk: z.coerce.number().nonnegative().max(1_000_000).default(0),
+
+  // CASH_VARIANCE on a short only: what happened to the money. NOT_PAID_YET
+  // records the decision alone and leaves the whole short owed.
+  cashOutcome: z
+    .object({
+      kind: z.enum(["RIDER_PAID_BACK", "CUSTOMER_PAID_GCASH", "WRITTEN_OFF", "NOT_PAID_YET"]),
+      amount: z.coerce.number().nonnegative().max(1_000_000).optional(),
+      reference: z.string().trim().max(40, "Keep the reference under 40 characters.").nullish(),
+    })
+    .nullish(),
 });
 
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;

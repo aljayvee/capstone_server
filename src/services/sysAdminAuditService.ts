@@ -1,5 +1,8 @@
 import { prisma } from "../lib/prisma.js";
+import { referenceKey } from "../lib/errandReference.js";
 import { ServiceError } from "./ServiceError.js";
+import { reportPrintLogRepository } from "../repositories/reportPrintLogRepository.js";
+import { REPORT_NAMES, type ReportType } from "./pdf/reportPdfService.js";
 
 // 1. Auth & Session Audit
 export interface ListAuthAuditFilters {
@@ -402,6 +405,7 @@ export async function listSystemActivityLogs(filters: ListSystemActivityFilters 
     const term = filters.search.trim();
     where.OR = [
       { id: { contains: term } },
+      { referenceNo: { contains: term } },
       { category: { contains: term } },
       { pickupAddress: { contains: term } },
       { deliveryAddress: { contains: term } },
@@ -414,6 +418,7 @@ export async function listSystemActivityLogs(filters: ListSystemActivityFilters 
       where,
       select: {
         id: true,
+        referenceNo: true,
         category: true,
         status: true,
         createdAt: true,
@@ -449,7 +454,9 @@ export async function listSystemActivityLogs(filters: ListSystemActivityFilters 
 
     return {
       errandId: e.id,
-      referenceCode: `#SGO-${e.id.slice(0, 8).toUpperCase()}`,
+      // The number every other screen shows. The key alone until the backfill
+      // has numbered an older row.
+      referenceCode: e.referenceNo ?? referenceKey(e.id),
       category: e.category,
       status: e.status,
       dispatcher: dispatcherName,
@@ -462,6 +469,48 @@ export async function listSystemActivityLogs(filters: ListSystemActivityFilters 
 
   return {
     activities,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+// 5. Report Print Log (who sent which Owner report to the print screen)
+export interface ListReportPrintFilters {
+  reportType?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export async function listReportPrintLogs(filters: ListReportPrintFilters = {}) {
+  const page = Math.max(1, filters.page || 1);
+  const limit = Math.min(100, Math.max(1, filters.limit || 25));
+
+  const { rows, total } = await reportPrintLogRepository.list({
+    reportType: filters.reportType && filters.reportType !== "ALL" ? filters.reportType : undefined,
+    search: filters.search,
+    skip: (page - 1) * limit,
+    take: limit,
+  });
+
+  return {
+    logs: rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      printedByName: r.printedByName,
+      role: r.role,
+      reportType: r.reportType,
+      reportName: REPORT_NAMES[r.reportType as ReportType] ?? r.reportType,
+      period: r.period,
+      coverageLabel: r.coverageLabel,
+      rangeStart: r.rangeStart,
+      rangeEnd: r.rangeEnd,
+      ipAddress: r.ipAddress,
+      userAgent: r.userAgent,
+      createdAt: r.createdAt,
+    })),
     total,
     page,
     limit,

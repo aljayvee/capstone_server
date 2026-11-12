@@ -128,10 +128,11 @@ export async function verifyRegistrationOtp(email: string, code: string): Promis
 //
 // There is no SMS gateway in this project: no provider package in
 // package.json, no credentials in server/.env. The function below generates a
-// real code and stores it correctly, then writes it to the SERVER CONSOLE
-// instead of sending it. The log line reads "sent", which is why this looks
-// functional from the outside — it is not. It returns success, so any caller
-// will happily tell a user a text message is on the way.
+// real code and stores it correctly, then sends it nowhere. The log line used
+// to print the code; it no longer does, because anyone who can read server
+// logs (the SysAdmin log viewer included) could then verify any number. It
+// returns success, so any caller will happily tell a user a text message is on
+// the way.
 //
 // The CustomerApp no longer calls these: registration is email-only (see
 // RegisterScreen.tsx's verificationChannel). The routes stay mounted so this
@@ -151,8 +152,8 @@ export async function sendRegistrationPhoneOtp(phone: string): Promise<void> {
   const expiresAt = new Date(Date.now() + CODE_EXPIRY_MINUTES * 60 * 1000);
 
   await emailVerificationRepository.create({ customerId: null, phone: cleanPhone, codeHash, expiresAt });
-  // NOT SENT — printed locally. See the block comment above before relying on this.
-  logger.warn(`[PHONE OTP STUB — NO SMS SENT] Code for ${cleanPhone} is ${code} (read it from this log)`);
+  // NOT SENT. See the block comment above before relying on this.
+  logger.warn(`[PHONE OTP STUB — NO SMS SENT] A code was stored for a number ending ${cleanPhone.slice(-4)}`);
 }
 
 export async function verifyRegistrationPhoneOtp(phone: string, code: string): Promise<void> {

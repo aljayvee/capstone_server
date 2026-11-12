@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 
 // ─── Per-Portal Maintenance State ────────────────────────────────────────────
 export type PortalKey = "owner" | "dispatcher" | "rider" | "customer";
-export type MaintenanceType = "SCHEDULED" | "EMERGENCY" | "UPGRADE" | "SECURITY";
+export type MaintenanceType = "SCHEDULED" | "EMERGENCY" | "UPGRADE" | "SECURITY" | "ADVISORY" | "LIVE_NOTICE";
 
 export interface PortalMaintenanceConfig {
   portal: PortalKey;
@@ -27,6 +27,7 @@ export interface PortalMaintenanceConfig {
   message: string;
   supportContact?: string;
   customColor?: string;
+  footnote?: string;
   activatedAt?: string | null;
   updatedAt: string;
 }
@@ -36,6 +37,8 @@ export const DEFAULT_MAINTENANCE_HEADERS: Record<MaintenanceType, string> = {
   EMERGENCY: "Emergency System Maintenance",
   UPGRADE: "Database & Infrastructure Upgrade",
   SECURITY: "Security Protocol Enforcement",
+  ADVISORY: "Heads up: we edit in production",
+  LIVE_NOTICE: "Heads up: we edit in production",
 };
 
 export const DEFAULT_MAINTENANCE_MESSAGES: Record<MaintenanceType, string> = {
@@ -43,6 +46,13 @@ export const DEFAULT_MAINTENANCE_MESSAGES: Record<MaintenanceType, string> = {
   EMERGENCY: "We are addressing an unexpected operational issue. System services are temporarily paused while our engineers resolve it.",
   UPGRADE: "System data structures and infrastructure components are being upgraded for enhanced performance.",
   SECURITY: "System access is temporarily restricted to enforce critical administrative security protocols.",
+  ADVISORY: "If a button moves, a colour changes, or something looks different from five minutes ago, that's us. Your ride is still safe. Our code is just getting a glow-up in public.",
+  LIVE_NOTICE: "If a button moves, a colour changes, or something looks different from five minutes ago, that's us. Your ride is still safe. Our code is just getting a glow-up in public.",
+};
+
+export const DEFAULT_MAINTENANCE_FOOTNOTES: Partial<Record<MaintenanceType, string>> = {
+  ADVISORY: "Please enjoy the construction cones.",
+  LIVE_NOTICE: "Please enjoy the construction cones.",
 };
 
 export const DEFAULT_SUPPORT_CONTACT = "support@sugo-express.org | IT Operations Desk";
@@ -58,6 +68,7 @@ function createDefaultPortalConfig(portal: PortalKey): PortalMaintenanceConfig {
     message: DEFAULT_MAINTENANCE_MESSAGES.SCHEDULED,
     supportContact: DEFAULT_SUPPORT_CONTACT,
     customColor: "",
+    footnote: "",
     activatedAt: null,
     updatedAt: new Date().toISOString(),
   };
@@ -78,6 +89,10 @@ let serverErrorSimulated = false;
 // Off until a sysadmin turns it on.
 let dispatcherAiSuggestionsEnabled = false;
 
+// Whether the Kuya Sugo AI Chat Companion button and drawer are visible in the Owner Portal.
+// On by default; sysadmin can turn it off anytime.
+let kuyaSugoEnabled = true;
+
 async function loadMaintenanceState(): Promise<void> {
   try {
     const raw = await fs.readFile(CONFIG_FILE_PATH, "utf-8");
@@ -97,6 +112,9 @@ async function loadMaintenanceState(): Promise<void> {
     if (typeof parsed.dispatcherAiSuggestionsEnabled === "boolean") {
       dispatcherAiSuggestionsEnabled = parsed.dispatcherAiSuggestionsEnabled;
     }
+    if (typeof parsed.kuyaSugoEnabled === "boolean") {
+      kuyaSugoEnabled = parsed.kuyaSugoEnabled;
+    }
     logger.info("[DevOpsService] Loaded persistent maintenance config from disk.");
   } catch (err: any) {
     if (err?.code !== "ENOENT") {
@@ -110,7 +128,7 @@ async function saveMaintenanceState(): Promise<void> {
     await fs.mkdir(path.dirname(CONFIG_FILE_PATH), { recursive: true });
     await fs.writeFile(
       CONFIG_FILE_PATH,
-      JSON.stringify({ ...maintenanceState, serverErrorSimulated, dispatcherAiSuggestionsEnabled }, null, 2),
+      JSON.stringify({ ...maintenanceState, serverErrorSimulated, dispatcherAiSuggestionsEnabled, kuyaSugoEnabled }, null, 2),
       "utf-8"
     );
   } catch (err) {
@@ -155,8 +173,33 @@ export async function setDispatcherAiSuggestionsEnabled(
   return { enabled };
 }
 
+export function getKuyaSugoEnabled(): boolean {
+  return kuyaSugoEnabled;
+}
+
+export async function setKuyaSugoEnabled(
+  enabled: boolean,
+  operatorUsername?: string
+): Promise<{ enabled: boolean }> {
+  kuyaSugoEnabled = enabled;
+  await saveMaintenanceState();
+  logger.info(
+    `[DevOpsService] Kuya Sugo Owner Copilot set to ${enabled} by ${operatorUsername || "SysAdmin"}`
+  );
+  return { enabled };
+}
+
+let initMaintenancePromise: Promise<void> | null = null;
+
+export async function ensureMaintenanceLoaded(): Promise<void> {
+  if (!initMaintenancePromise) {
+    initMaintenancePromise = loadMaintenanceState();
+  }
+  return initMaintenancePromise;
+}
+
 // Initial load on startup
-loadMaintenanceState();
+initMaintenancePromise = loadMaintenanceState();
 
 
 export interface SystemTelemetry {
@@ -202,9 +245,11 @@ export interface SystemTelemetry {
   maintenance: Record<PortalKey, PortalMaintenanceConfig>;
   serverErrorSimulated: boolean;
   dispatcherAiSuggestionsEnabled: boolean;
+  kuyaSugoEnabled: boolean;
 }
 
 export async function getSystemTelemetry(): Promise<SystemTelemetry> {
+  await ensureMaintenanceLoaded();
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
@@ -293,6 +338,7 @@ export async function getSystemTelemetry(): Promise<SystemTelemetry> {
     maintenance: { ...maintenanceState },
     serverErrorSimulated: getServerErrorStatus(),
     dispatcherAiSuggestionsEnabled: getDispatcherAiSuggestionsEnabled(),
+    kuyaSugoEnabled: getKuyaSugoEnabled(),
   };
 }
 
@@ -305,17 +351,28 @@ export async function toggleMaintenanceMode(
     message?: string;
     supportContact?: string;
     customColor?: string;
+    footnote?: string;
   },
   operatorUsername?: string
 ): Promise<PortalMaintenanceConfig> {
+  await ensureMaintenanceLoaded();
   const current = maintenanceState[portal] || createDefaultPortalConfig(portal);
   const nowIso = new Date().toISOString();
 
   const type = options?.maintenanceType || current.maintenanceType || "SCHEDULED";
-  const header = options?.header?.trim() || current.header || DEFAULT_MAINTENANCE_HEADERS[type];
-  const message = options?.message?.trim() || current.message || DEFAULT_MAINTENANCE_MESSAGES[type];
+  const typeChanged = options?.maintenanceType !== undefined && options.maintenanceType !== current.maintenanceType;
+  const isHeaderDefaultOfAnotherType = Object.entries(DEFAULT_MAINTENANCE_HEADERS).some(
+    ([otherType, defaultHeader]) => otherType !== type && current.header === defaultHeader
+  );
+  const isMessageDefaultOfAnotherType = Object.entries(DEFAULT_MAINTENANCE_MESSAGES).some(
+    ([otherType, defaultMessage]) => otherType !== type && current.message === defaultMessage
+  );
+
+  const header = options?.header?.trim() || (typeChanged || isHeaderDefaultOfAnotherType ? DEFAULT_MAINTENANCE_HEADERS[type] : (current.header || DEFAULT_MAINTENANCE_HEADERS[type]));
+  const message = options?.message?.trim() || (typeChanged || isMessageDefaultOfAnotherType ? DEFAULT_MAINTENANCE_MESSAGES[type] : (current.message || DEFAULT_MAINTENANCE_MESSAGES[type]));
   const supportContact = options?.supportContact !== undefined ? options.supportContact.trim() : (current.supportContact || DEFAULT_SUPPORT_CONTACT);
   const customColor = options?.customColor !== undefined ? options.customColor.trim() : current.customColor;
+  const footnote = options?.footnote !== undefined ? options.footnote.trim() : (typeChanged || !current.footnote ? (DEFAULT_MAINTENANCE_FOOTNOTES[type] || "") : current.footnote);
 
   maintenanceState[portal] = {
     portal,
@@ -325,6 +382,7 @@ export async function toggleMaintenanceMode(
     message,
     supportContact,
     customColor,
+    footnote,
     activatedAt: active ? (current.isActive && current.activatedAt ? current.activatedAt : nowIso) : null,
     updatedAt: nowIso,
   };
@@ -340,18 +398,21 @@ export async function toggleMaintenanceMode(
 
   // 2. Automated Telegram Alert Notification & Incident Log
   try {
+    const isAdvisory = type === "ADVISORY" || type === "LIVE_NOTICE";
     const statusWord = active ? "ACTIVATED" : "DEACTIVATED";
-    const emoji = active ? "⚠️" : "✅";
+    const emoji = isAdvisory ? (active ? "🚧" : "✨") : (active ? "⚠️" : "✅");
+    const modeLabel = isAdvisory ? "Live Polish Notice (Non-Blocking)" : "Maintenance Mode";
     await sysAdminAlertService.sendTelegramAlert({
       alertType: "SERVICE_RESTART",
-      severity: active ? "HIGH" : "LOW",
-      title: `${emoji} [${portal.toUpperCase()}] Maintenance Mode ${statusWord}`,
+      severity: active ? (isAdvisory ? "LOW" : "HIGH") : "LOW",
+      title: `${emoji} [${portal.toUpperCase()}] ${modeLabel} ${statusWord}`,
       message: `System maintenance governance was modified by <b>${operatorUsername || "Administrator"}</b>.\n\n` +
         `• <b>Portal:</b> ${portal.toUpperCase()}\n` +
         `• <b>State:</b> ${statusWord}\n` +
         `• <b>Type:</b> ${type}\n` +
         `• <b>Header:</b> ${header}\n` +
         `• <b>Notice:</b> ${message}\n` +
+        (footnote ? `• <b>Footnote:</b> ${footnote}\n` : "") +
         (supportContact ? `• <b>Contact:</b> ${supportContact}\n` : "") +
         `• <b>Timestamp:</b> ${nowIso}`,
       metadata: {
@@ -359,6 +420,7 @@ export async function toggleMaintenanceMode(
         active,
         maintenanceType: type,
         header,
+        footnote,
         operator: operatorUsername,
         timestamp: nowIso,
       },
@@ -369,7 +431,7 @@ export async function toggleMaintenanceMode(
 
   // 3. Automated FCM & Expo Mobile Push Notification Broadcast
   if (active && (portal === "customer" || portal === "rider")) {
-    void dispatchMaintenancePushNotification(portal, header, message, type);
+    void dispatchMaintenancePushNotification(portal, header, message, type, footnote);
   }
 
   return maintenanceState[portal];
@@ -379,7 +441,8 @@ async function dispatchMaintenancePushNotification(
   portal: PortalKey,
   header: string,
   message: string,
-  maintenanceType: MaintenanceType
+  maintenanceType: MaintenanceType,
+  footnote?: string
 ): Promise<void> {
   try {
     let tokens: (string | null)[] = [];
@@ -413,19 +476,21 @@ async function dispatchMaintenancePushNotification(
       return;
     }
 
+    const isAdvisory = maintenanceType === "ADVISORY" || maintenanceType === "LIVE_NOTICE";
     logger.info(`[DevOpsService] Broadcasting maintenance push notification to ${tokens.length} devices for portal '${portal}'...`);
     void broadcastPushNotification(tokens, {
-      title: header || "System Under Maintenance",
-      body: message || "Scheduled system maintenance in progress. Services will resume shortly.",
-      urgent: true,
+      title: header || (isAdvisory ? "Heads up: we edit in production" : "System Under Maintenance"),
+      body: message || (isAdvisory ? "Our code is getting a glow-up in public. Your errands remain completely safe." : "Scheduled system maintenance in progress. Services will resume shortly."),
+      urgent: !isAdvisory,
       channelId: "default",
       data: {
-        type: "MAINTENANCE_NOTICE",
+        type: isAdvisory ? "LIVE_ADVISORY_NOTICE" : "MAINTENANCE_NOTICE",
         portal,
         active: "true",
         maintenanceType,
         header,
         message,
+        footnote: footnote || "",
       },
     });
   } catch (pushErr) {

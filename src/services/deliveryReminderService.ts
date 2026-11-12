@@ -1,6 +1,5 @@
 import { errandRepository } from "../repositories/errandRepository.js";
 import { customerRepository } from "../repositories/customerRepository.js";
-import { notificationRepository } from "../repositories/notificationRepository.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import * as riderPositionStore from "../lib/riderPositionStore.js";
@@ -129,12 +128,8 @@ export async function notifyOnTheWay(errandId: string, options: { together?: num
       ? `${riderName} ${bought} and is heading to you. About ${minutes} min away.`
       : `${riderName} ${bought} and is heading to you.`;
 
-  const record = await notificationRepository.create({
-    customerId: customer.id,
-    type: "RIDER_ON_THE_WAY",
-    title,
-    body,
-  });
+  // The row is linked to the errand and emitted by the repository, once.
+  await notificationService.deliverToCustomer(customer.id, "RIDER_ON_THE_WAY", { title, body }, errandId);
   void sendPushNotification(customer.expoPushToken, {
     title,
     body,
@@ -142,13 +137,6 @@ export async function notifyOnTheWay(errandId: string, options: { together?: num
     tag: tagFor(errandId),
     urgent: true,
     data: { errandId, type: "RIDER_ON_THE_WAY" },
-  });
-  eventPublisher.emitToCustomer(customer.id, "notification:new", {
-    id: record.id,
-    type: "RIDER_ON_THE_WAY",
-    title,
-    body,
-    errandId,
   });
 }
 
@@ -168,12 +156,7 @@ export async function notifyDeliveryHeld(errandId: string): Promise<void> {
   const title = "Your orders will arrive together";
   const body = `${riderName} has your order and is shopping for your other one first, so both arrive in one trip.`;
 
-  const record = await notificationRepository.create({
-    customerId: customer.id,
-    type: "DELIVERY_HELD",
-    title,
-    body,
-  });
+  await notificationService.deliverToCustomer(customer.id, "DELIVERY_HELD", { title, body }, errandId);
   void sendPushNotification(customer.expoPushToken, {
     title,
     body,
@@ -181,13 +164,6 @@ export async function notifyDeliveryHeld(errandId: string): Promise<void> {
     tag: tagFor(errandId),
     urgent: true,
     data: { errandId, type: "DELIVERY_HELD" },
-  });
-  eventPublisher.emitToCustomer(customer.id, "notification:new", {
-    id: record.id,
-    type: "DELIVERY_HELD",
-    title,
-    body,
-    errandId,
   });
 }
 
@@ -224,11 +200,15 @@ export async function onDeliveryEta(
     urgent: true,
     data: { errandId: errand.id, type: "RIDER_ETA_REMINDER" },
   });
+  // Not saved, so it has no id: `ephemeral` tells the app to ring, not list it.
   eventPublisher.emitToCustomer(parties.customer.id, "notification:new", {
     type: "RIDER_ETA_REMINDER",
     title,
     body,
     errandId: errand.id,
+    category: "DELIVERY",
+    needsYou: false,
+    ephemeral: true,
   });
 }
 
@@ -282,12 +262,7 @@ export async function onRiderPosition(
     distanceKm: km,
     notificationId: record.id,
   });
-  eventPublisher.emitToCustomer(parties.customer.id, "notification:new", {
-    id: record.id,
-    type: "RIDER_NEARBY",
-    title: record.title,
-    body: record.body,
-  });
+  // notification:new already went out with the row (notificationRepository).
 }
 
 /**
