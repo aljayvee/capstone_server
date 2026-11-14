@@ -47,6 +47,9 @@ Training_Data_*/
 /backups/
 /config/app-releases.json
 /config/maintenance.json
+# Written at every start and clean stop (lib/processState.ts).
+/config/process-state.json
+/config/process-state.json.*.tmp
 # Release APKs served from public/downloads (appReleaseService.ts), 100+ MB
 # each, over GitHub's file size limit.
 /public/downloads/

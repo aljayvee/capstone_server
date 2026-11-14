@@ -2,13 +2,18 @@ import cron from "node-cron";
 import { sysAdminBackupService } from "../services/sysAdminBackupService.js";
 import { sysAdminAlertService } from "../services/sysAdminAlertService.js";
 import { logger } from "../lib/logger.js";
+import { offsiteBackupService } from "../services/offsiteBackupService.js";
+import { backupRestoreCheckService } from "../services/backupRestoreCheckService.js";
 
 /**
- * Schedules automated nightly compressed database backups at 02:00 AM Asia/Manila (18:00 UTC).
+ * Schedules automated nightly compressed database backups at 02:00 AM Asia/Manila.
+ *
+ * Until 2026-11-15 this was "0 18 * * *" read as UTC, but the server runs with
+ * TZ=Asia/Manila, so it fired at 6 PM Manila, in the dinner rush. The zone is
+ * now explicit so the hour no longer depends on the process environment.
  */
 export function scheduleNightlyBackupJob() {
-  // 02:00 AM Asia/Manila corresponds to 18:00 UTC (Manila is UTC+8)
-  cron.schedule("0 18 * * *", async () => {
+  cron.schedule("0 2 * * *", async () => {
     logger.info("[NightlyBackup] Starting automated 02:00 AM database backup job...");
 
     try {
@@ -43,5 +48,16 @@ export function scheduleNightlyBackupJob() {
         })
         .catch(() => {});
     }
-  });
+  }, { timezone: "Asia/Manila" });
+
+  // Monthly restore test, 03:00 on the 1st (after the 02:00 backup and its upload).
+  cron.schedule("0 3 1 * *", () => {
+    void backupRestoreCheckService.run("SCHEDULED");
+  }, { timezone: "Asia/Manila" });
+
+  // Off-site freshness, hourly: no verified copy in 26 hours means last night's
+  // upload failed or never ran.
+  cron.schedule("17 * * * *", () => {
+    void offsiteBackupService.checkFreshness();
+  }, { timezone: "Asia/Manila" });
 }

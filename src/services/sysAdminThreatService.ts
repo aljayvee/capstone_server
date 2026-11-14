@@ -244,6 +244,9 @@ export const sysAdminThreatService = {
           alertType: "CRITICAL_INTRUSION",
           severity: (record.severity as any) || "HIGH",
           title: `IP Blacklisted: ${normalizedIp}`,
+          // One key for every IP: the title varies per IP, and bans arrive in
+          // bursts (769 recorded by 2026-11-15) that would flood the chat.
+          repeatKey: "CRITICAL_INTRUSION",
           message: `Intrusion threat neutralized. IP ${normalizedIp} has been banned. Reason: ${params.reason}. Ban Type: ${params.banType || "AUTOMATIC"}.`,
           metadata: {
             ip: normalizedIp,

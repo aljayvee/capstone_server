@@ -27,6 +27,15 @@ import { sysAdminThreatService } from "./services/sysAdminThreatService.js";
 import apiRoutes from "./routes/index.js";
 import { TRUSTED_PROXIES } from "./lib/trustedProxies.js";
 import { rememberPublicOrigin } from "./lib/publicOrigin.js";
+import { checkReadiness } from "./lib/readiness.js";
+import { installExitRecorder, recordProcessStart, type PreviousExit } from "./lib/processState.js";
+import { scheduleHealthWatchJob } from "./jobs/healthWatch.js";
+import { sysAdminAlertService } from "./services/sysAdminAlertService.js";
+import { sysAdminIncidentService } from "./services/sysAdminIncidentService.js";
+
+// First, before anything can crash: did the last process stop cleanly?
+const previousExit = recordProcessStart();
+installExitRecorder();
 
 const app = express();
 
@@ -134,6 +143,15 @@ app.get("/api/health", (req, res) => {
   }
 });
 
+// Readiness probe for outside uptime monitors. Unlike /api/health above (the
+// process answers; deploy scripts depend on it), this answers 503 when the
+// database does not, so an outage that breaks every order is not "online".
+app.get("/api/health/ready", async (_req, res) => {
+  const result = await checkReadiness();
+  res.set("Cache-Control", "no-store");
+  res.status(result.status === "ready" ? 200 : 503).json(result);
+});
+
 // SSE Stream for real-time health updates
 app.get("/api/health/stream", (req, res) => {
   res.writeHead(200, {
@@ -175,6 +193,7 @@ scheduleRiderShiftJobs();
 scheduleCategoryRetrainingJob();
 scheduleRiderWatchReconcileJob();
 scheduleOfferExpiryJob();
+scheduleHealthWatchJob();
 startRiderChatWatch();
 
 // Start HTTP Server (which includes Express and Socket.IO)
@@ -186,6 +205,16 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
     logger.error("Failed to initialize SysAdmin threat engine:", err);
   });
 
+  if (previousExit.kind === "unexpected") {
+    logger.error(
+      `[ProcessState] Previous process (pid ${previousExit.previousPid}) stopped without a clean shutdown.` +
+        (previousExit.lastError ? ` Last error: ${previousExit.lastError}` : "")
+    );
+  }
+  if (previousExit.kind === "unexpected") {
+    void reportUnexpectedRestart(previousExit);
+  }
+
   // Staff first-login verification cannot complete without outbound mail, so a
   // missing SMTP config is worth saying out loud at boot rather than letting it
   // surface as a mysterious 503 the first time someone new signs in.
@@ -195,3 +224,47 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
     );
   }
 });
+
+/**
+ * Alert (once per crash window) and record the incident (every time: a crash
+ * loop joins the one already open). PM2 has restarted the API by now, so the
+ * incident starts as MONITORING: running again, report pending.
+ */
+async function reportUnexpectedRestart(previousExit: Extract<PreviousExit, { kind: "unexpected" }>): Promise<void> {
+  let alertId: number | null = null;
+  if (previousExit.shouldAlert) {
+    const held = previousExit.heldBackCrashes;
+    ({ alertId } = await sysAdminAlertService
+      .sendAlert({
+        alertType: "BACKEND_CRASH",
+        severity: "HIGH",
+        title: "Backend restarted unexpectedly",
+        message:
+          "The API stopped without a clean shutdown and PM2 started it again. " +
+          (previousExit.lastError
+            ? `Last error: ${previousExit.lastError}`
+            : "No error was recorded, which usually means it was killed (out of memory, or kill -9).") +
+          (held > 0 ? `\n\n${held} more unexpected restart${held === 1 ? " was" : "s were"} held back before this one.` : "") +
+          "\n\nCheck SysAdmin, DevOps, Logs (PM2 Backend Stderr).",
+        metadata: {
+          previousPid: previousExit.previousPid,
+          previousStartedAt: previousExit.previousStartedAt,
+          heldBackCrashes: held,
+        },
+        bypassRepeatLimit: true,
+      })
+      .catch(() => ({ alertId: null })));
+  }
+  const restartedAt = new Date();
+  await sysAdminIncidentService.openAutomatic({
+    sourceKey: "BACKEND_CRASH",
+    title: "Backend restarted unexpectedly",
+    severity: "HIGH",
+    startedAt: restartedAt,
+    recoveredAt: restartedAt,
+    impact:
+      "Requests failed for the seconds the API was down, and live connections (dispatch, rider tracking) had to reconnect." +
+      (previousExit.lastError ? ` Last error: ${previousExit.lastError}` : ""),
+    alertId,
+  });
+}

@@ -14,10 +14,11 @@ import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
 import zlib from "zlib";
+import { offsiteBackupService } from "./offsiteBackupService.js";
 
 const execAsync = promisify(exec);
 
-const BACKUP_DIR = path.resolve(process.cwd(), "backups");
+export const BACKUP_DIR = path.resolve(process.cwd(), "backups");
 const RETENTION_DAYS = 7;
 
 function formatBytes(bytes: number | bigint): string {
@@ -64,8 +65,12 @@ export const sysAdminBackupService = {
     // 1. Linux VPS: Execute native mysqldump piped through gzip
     if (os.platform() === "linux") {
       try {
-        const cmd = `mysqldump -u root errand_system_db | gzip > "${targetFilePath}"`;
-        await execAsync(cmd);
+        // --single-transaction: one consistent snapshot with no table locks, so
+        // orders keep saving while it runs (the default --lock-tables blocks writes).
+        // bash -o pipefail: under plain sh a mysqldump that dies halfway still
+        // ends in gzip's exit 0, and a truncated file was recorded as COMPLETED.
+        const cmd = `mysqldump -u root --single-transaction --quick --routines errand_system_db | gzip > "${targetFilePath}"`;
+        await execAsync(`bash -o pipefail -c '${cmd}'`);
         const stat = await fs.stat(targetFilePath);
         if (stat.size > 0) {
           finalSizeBytes = stat.size;
@@ -122,6 +127,13 @@ export const sysAdminBackupService = {
       logger.error("[BackupService] Error during retention pruning:", err);
     });
 
+    // 5. Encrypted off-site copy, in the background so callers do not wait on
+    //    the upload. Never throws; failures are recorded on the row and alerted.
+    //    Only real dumps: the structured fallback is a stats note, not a backup.
+    if (os.platform() === "linux" && fileName.startsWith("db_backup_")) {
+      void offsiteBackupService.uploadRecordedBackup(record.id);
+    }
+
     return {
       id: record.id,
       fileName: record.fileName,
@@ -145,6 +157,9 @@ export const sysAdminBackupService = {
       status: string;
       createdBy?: string | null;
       createdAt: string;
+      offsiteStatus: string | null;
+      offsiteAt: string | null;
+      offsiteError: string | null;
     }>
   > {
     const list = await prisma.databaseBackup.findMany({
@@ -165,6 +180,9 @@ export const sysAdminBackupService = {
       status: b.status,
       createdBy: b.createdBy ? `@${b.createdBy.nickname || b.createdBy.username}` : "Automated Cron",
       createdAt: b.createdAt.toISOString(),
+      offsiteStatus: b.offsiteStatus,
+      offsiteAt: b.offsiteAt?.toISOString() ?? null,
+      offsiteError: b.offsiteError,
     }));
   },
 

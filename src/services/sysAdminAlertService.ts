@@ -13,6 +13,9 @@ export type AlertType =
   | "SERVICE_RESTART"
   | "DB_DISCONNECT"
   | "DISK_WARNING"
+  | "BACKEND_CRASH"
+  | "SERVICE_RECOVERED"
+  | "BACKUP_FAILURE"
   | "TEST_ALERT";
 
 export interface AlertPayload {
@@ -21,6 +24,33 @@ export interface AlertPayload {
   title: string;
   message: string;
   metadata?: Record<string, any>;
+  /**
+   * Alerts sharing a key reach Telegram at most once per REPEAT_WINDOW_MS; the
+   * rest are recorded as SUPPRESSED (reason "repeat_limit") and counted in the
+   * next one that goes out. Default: type + title, so only identical alerts
+   * collapse. Pass a wider key when the title varies (one per banned IP).
+   */
+  repeatKey?: string;
+  /** State changes (down, recovered) and manual tests must never be held back. */
+  bypassRepeatLimit?: boolean;
+}
+
+export const REPEAT_WINDOW_MS = 30 * 60 * 1000;
+const REPEAT_KEYS_MAX = 500;
+
+/** In memory: the API runs as one process, and a restart forgetting it only costs one extra message. */
+const recentlySent = new Map<string, { at: number; heldBack: number }>();
+
+/** Test hook: the window is module state. */
+export function resetAlertRepeatLimit(): void {
+  recentlySent.clear();
+}
+
+function pruneRepeatKeys(now: number): void {
+  if (recentlySent.size <= REPEAT_KEYS_MAX) return;
+  for (const [key, entry] of recentlySent) {
+    if (now - entry.at >= REPEAT_WINDOW_MS) recentlySent.delete(key);
+  }
 }
 
 export const sysAdminAlertService = {
@@ -73,16 +103,62 @@ export const sysAdminAlertService = {
    * Sends an emergency notification via Telegram and logs to database.
    */
   async sendTelegramAlert(payload: AlertPayload): Promise<boolean> {
+    // Not `this`: callers sometimes pass the method around detached.
+    return (await sysAdminAlertService.sendAlert(payload)).sent;
+  },
+
+  /**
+   * sendTelegramAlert plus the id of the recorded row, so an incident can link
+   * it. alertId is null when the row could not be written (database down).
+   */
+  async sendAlert(payload: AlertPayload): Promise<{ sent: boolean; alertId: number | null }> {
     const {
       alertType,
       severity = "HIGH",
       title,
-      message,
       metadata = {},
     } = payload;
+    let { message } = payload;
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
     const chatId = process.env.TELEGRAM_ALERT_CHAT_ID?.trim();
+
+    const repeatKey = payload.repeatKey ?? `${alertType}:${title}`;
+    const now = Date.now();
+    const recent = recentlySent.get(repeatKey);
+
+    // Held back: still recorded, so the SysAdmin history stays complete.
+    if (
+      botToken &&
+      chatId &&
+      !payload.bypassRepeatLimit &&
+      recent &&
+      now - recent.at < REPEAT_WINDOW_MS
+    ) {
+      recent.heldBack += 1;
+      logger.info(
+        `[AlertService] Telegram alert held back (repeat limit, ${recent.heldBack} since last sent): [${alertType}] ${title}`
+      );
+      const heldBackId = await recordAlert({
+        alertType,
+        severity,
+        title,
+        message,
+        status: "SUPPRESSED",
+        metadata: { ...metadata, suppressedReason: "repeat_limit" },
+      });
+      return { sent: false, alertId: heldBackId };
+    }
+
+    if (recent && recent.heldBack > 0) {
+      const since = new Date(recent.at).toLocaleTimeString("en-US", {
+        timeZone: "Asia/Manila",
+        timeStyle: "short",
+      });
+      message +=
+        `\n\n${recent.heldBack} similar alert${recent.heldBack === 1 ? " was" : "s were"} ` +
+        `held back since ${since} PHT. See SysAdmin, DevOps, Telegram Alerts.`;
+    }
 
     const timestamp = new Date().toLocaleString("en-US", {
       timeZone: "Asia/Manila",
@@ -106,12 +182,14 @@ export const sysAdminAlertService = {
         : "");
 
     let status = "SENT";
+    let recordedMetadata: Record<string, any> = metadata;
 
     if (!botToken || !chatId) {
       logger.warn(
         `[AlertService] Telegram alert suppressed (not configured): [${alertType}] ${title}`
       );
       status = "SUPPRESSED";
+      recordedMetadata = { ...metadata, suppressedReason: "not_configured" };
     } else {
       try {
         const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -137,24 +215,16 @@ export const sysAdminAlertService = {
       }
     }
 
-    // Persist alert audit entry
-    try {
-      await prisma.sysAdminAlert.create({
-        data: {
-          alertType,
-          severity,
-          title,
-          message,
-          channel: "TELEGRAM",
-          status,
-          metadata,
-        },
-      });
-    } catch (dbErr) {
-      logger.error("[AlertService] Failed to record alert audit record in DB:", dbErr);
+    // A failed send leaves the window closed, so the next alert tries again.
+    if (status === "SENT") {
+      recentlySent.set(repeatKey, { at: now, heldBack: 0 });
+      pruneRepeatKeys(now);
     }
 
-    return status === "SENT";
+    // Persist alert audit entry
+    const alertId = await recordAlert({ alertType, severity, title, message, status, metadata: recordedMetadata });
+
+    return { sent: status === "SENT", alertId };
   },
 
   /**
@@ -173,6 +243,7 @@ export const sysAdminAlertService = {
       severity: "LOW",
       title: "Diagnostic IT Test Alert",
       message: `Test notification triggered by administrator @${adminUsername} via SysAdmin Console.`,
+      bypassRepeatLimit: true,
       metadata: {
         triggeredBy: adminUsername,
         vpsHost: "Contabo VPS (109.123.239.182)",
@@ -186,6 +257,30 @@ export const sysAdminAlertService = {
     }
   },
 };
+
+/**
+ * Never throws: an alert about the database being down must not fail because
+ * the database is down. Telegram has already been tried by the time this runs.
+ */
+async function recordAlert(row: {
+  alertType: AlertType;
+  severity: string;
+  title: string;
+  message: string;
+  status: string;
+  metadata: Record<string, any>;
+}): Promise<number | null> {
+  try {
+    const created = await prisma.sysAdminAlert.create({
+      data: { ...row, channel: "TELEGRAM" },
+      select: { id: true },
+    });
+    return created.id;
+  } catch (dbErr) {
+    logger.error("[AlertService] Failed to record alert audit record in DB:", dbErr);
+    return null;
+  }
+}
 
 function escapeHtml(str: string): string {
   return str

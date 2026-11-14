@@ -80,6 +80,13 @@ import {
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { verificationLimiter, readLimiter } from "../middleware/rateLimiters.js";
 import {
+  listIncidentsHandler,
+  getIncidentHandler,
+  createIncidentHandler,
+  updateIncidentHandler,
+} from "../controllers/sysAdminIncidentController.js";
+import { getOffsiteStatusHandler, startRestoreCheckHandler } from "../controllers/backupOffsiteController.js";
+import {
   sysAdminLoginLimiter,
   sysAdminBackupLimiter,
   sysAdminMaintenanceLimiter,
@@ -151,10 +158,18 @@ router.post("/sysadmin/it-admins", authenticateToken, requireRole("SYSADMIN"), s
 router.post("/sysadmin/devops/services/:service/restart", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, verifyStepUpPassword, restartServiceHandler);
 router.get("/sysadmin/devops/backups", authenticateToken, requireRole("SYSADMIN"), readLimiter, listBackupsHandler);
 router.get("/sysadmin/devops/backups/:id/download", authenticateToken, requireRole("SYSADMIN"), downloadBackupHandler);
+// Off-site copies in R2 and restore tests (2026-11-15).
+router.get("/sysadmin/devops/backups/offsite", authenticateToken, requireRole("SYSADMIN"), readLimiter, getOffsiteStatusHandler);
+router.post("/sysadmin/devops/backups/restore-check", authenticateToken, requireRole("SYSADMIN"), sysAdminBackupLimiter, verifyStepUpPassword, startRestoreCheckHandler);
 router.delete("/sysadmin/devops/backups/:id", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, verifyStepUpPassword, deleteBackupHandler);
 router.get("/sysadmin/devops/logs", authenticateToken, requireRole("SYSADMIN"), readLimiter, getLogsHandler);
 router.get("/sysadmin/devops/alerts/status", authenticateToken, requireRole("SYSADMIN"), readLimiter, getAlertStatusHandler);
 router.post("/sysadmin/devops/alerts/test", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, sendTestAlertHandler);
+// Incident records (2026-11-15): opened by the health watch or by hand; resolving needs cause and fix.
+router.get("/sysadmin/devops/incidents", authenticateToken, requireRole("SYSADMIN"), readLimiter, listIncidentsHandler);
+router.get("/sysadmin/devops/incidents/:id", authenticateToken, requireRole("SYSADMIN"), readLimiter, getIncidentHandler);
+router.post("/sysadmin/devops/incidents", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, createIncidentHandler);
+router.patch("/sysadmin/devops/incidents/:id", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, updateIncidentHandler);
 router.post("/sysadmin/devops/server-error", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleServerErrorHandler);
 router.post("/sysadmin/devops/dispatcher-ai-suggestions", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleDispatcherAiSuggestionsHandler);
 router.post("/sysadmin/devops/kuya-sugo", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, toggleKuyaSugoHandler);

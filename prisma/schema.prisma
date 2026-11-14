@@ -54,6 +54,11 @@ model User {
   phoneVerifiedAt  DateTime?
   profileCompleted Boolean   @default(true)
 
+  // Legal consent audit trail (Philippine RA 10173 / RA 8792 compliance).
+  // Populated once a rider affirmatively accepts the current Terms of Use.
+  termsAcceptedAt      DateTime?
+  termsAcceptedVersion String?   @db.VarChar(32)
+
   expoPushToken String?
 
   errandsAsRider                Errand[]                 @relation("RiderErrands")
@@ -1235,35 +1240,99 @@ model WhitelistedIp {
 // 12g. Database Backup Inventory Table
 // Stores metadata of compressed database backups generated manually or via nightly cron.
 model DatabaseBackup {
-  id            Int       @id @default(autoincrement())
-  fileName      String    @unique @db.VarChar(255)
-  fileSizeBytes BigInt    @default(0)
-  filePath      String    @db.VarChar(500)
-  backupType    String    @default("AUTOMATED") @db.VarChar(50) // "AUTOMATED" | "MANUAL"
-  status        String    @default("COMPLETED") @db.VarChar(50) // "COMPLETED" | "FAILED"
-  createdById   Int?
-  createdBy     SysAdmin? @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt     DateTime  @default(now())
+  id               Int       @id @default(autoincrement())
+  fileName         String    @unique @db.VarChar(255)
+  fileSizeBytes    BigInt    @default(0)
+  filePath         String    @db.VarChar(500)
+  backupType       String    @default("AUTOMATED") @db.VarChar(50) // "AUTOMATED" | "MANUAL"
+  status           String    @default("COMPLETED") @db.VarChar(50) // "COMPLETED" | "FAILED"
+  createdById      Int?
+  createdBy        SysAdmin? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime  @default(now())
+  // Encrypted off-site copy in Cloudflare R2 (2026-11-15, offsiteBackupService).
+  offsiteStatus    String?   @db.VarChar(20) // "UPLOADED" | "FAILED" | "SKIPPED"; null = not attempted
+  offsitePath      String?   @db.VarChar(500) // object key inside the bucket, e.g. daily/<file>.gpg
+  offsiteSizeBytes BigInt?
+  offsiteAt        DateTime?
+  offsiteError     String?   @db.Text
 
   @@index([createdAt])
+  @@index([offsiteStatus, createdAt])
   @@map("tbl_database_backups")
+}
+
+// 12g-2. Backup Restore Checks (2026-11-15)
+// Each row is one end-to-end proof that the latest off-site copy can be
+// downloaded, decrypted and loaded into a throwaway database. Monthly, or on
+// demand from SysAdmin. See backupRestoreCheckService.
+model BackupRestoreCheck {
+  id             Int       @id @default(autoincrement())
+  trigger        String    @db.VarChar(20) // "SCHEDULED" | "MANUAL"
+  status         String    @default("RUNNING") @db.VarChar(20) // "RUNNING" | "PASSED" | "FAILED"
+  backupFile     String?   @db.VarChar(255) // the off-site object that was restored
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  durationMs     Int?
+  tablesRestored Int?
+  rowsRestored   BigInt?
+  details        Json? // per-step timings and key-table row counts
+  error          String?   @db.Text
+  triggeredBy    String?   @db.VarChar(100)
+
+  @@index([startedAt])
+  @@map("tbl_backup_restore_checks")
 }
 
 // 12h. SysAdmin Emergency Alert Audit Table
 // Logs emergency alerts dispatched via Telegram or other automated notification webhooks.
 model SysAdminAlert {
-  id        Int      @id @default(autoincrement())
-  alertType String   @db.VarChar(50) // "CRITICAL_INTRUSION", "SERVICE_RESTART", "DB_DISCONNECT", "DISK_WARNING"
-  severity  String   @default("HIGH") @db.VarChar(20)
-  title     String   @db.VarChar(255)
-  message   String   @db.Text
-  channel   String   @default("TELEGRAM") @db.VarChar(50)
-  status    String   @default("SENT") @db.VarChar(50)
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id         Int               @id @default(autoincrement())
+  alertType  String            @db.VarChar(50) // "CRITICAL_INTRUSION", "SERVICE_RESTART", "DB_DISCONNECT", "DISK_WARNING"
+  severity   String            @default("HIGH") @db.VarChar(20)
+  title      String            @db.VarChar(255)
+  message    String            @db.Text
+  channel    String            @default("TELEGRAM") @db.VarChar(50)
+  status     String            @default("SENT") @db.VarChar(50)
+  metadata   Json?
+  createdAt  DateTime          @default(now())
+  // The incident this alert belongs to, when it is part of one (2026-11-15).
+  incidentId Int?
+  incident   SysAdminIncident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
+  @@index([incidentId])
   @@map("tbl_sysadmin_alerts")
+}
+
+// 12i. SysAdmin Incident Record (2026-11-15)
+// One row per outage or failure: when it started, when service came back, and
+// the short report (impact, cause, fix, prevention). Opened automatically by
+// the health watch (sourceKey set) or by an admin. RESOLVED requires cause and
+// fix (sysAdminIncidentService), so every closed incident carries its report.
+model SysAdminIncident {
+  id          Int             @id @default(autoincrement())
+  title       String          @db.VarChar(255)
+  severity    String          @default("HIGH") @db.VarChar(20) // LOW | MEDIUM | HIGH | CRITICAL
+  status      String          @default("OPEN") @db.VarChar(20) // OPEN | MONITORING | RESOLVED
+  // "DB_DOWN", "DISK", "BACKEND_CRASH" for automatic incidents; null when opened by hand.
+  sourceKey   String?         @db.VarChar(50)
+  startedAt   DateTime
+  detectedAt  DateTime        @default(now())
+  recoveredAt DateTime? // service working again
+  resolvedAt  DateTime? // report finished and closed by a person
+  impact      String?         @db.Text
+  cause       String?         @db.Text
+  fix         String?         @db.Text
+  prevention  String?         @db.Text
+  openedBy    String?         @db.VarChar(100) // sysadmin username; null when automatic
+  resolvedBy  String?         @db.VarChar(100)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  alerts      SysAdminAlert[]
+
+  @@index([status, startedAt])
+  @@index([sourceKey, status])
+  @@map("tbl_sysadmin_incidents")
 }
 
 // 13. Payment Selection Table (3NF: dispatcher-prompted, customer-confirmed
