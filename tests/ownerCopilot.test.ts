@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { copilotChatSchema } from "../src/validators/ownerCopilotValidators.js";
 import {
   executeSalesPulse,
@@ -304,6 +304,23 @@ describe("Owner AI Copilot ('Kuya Sugo') Backend Service & Tools", () => {
   });
 
   describe("chatWithOwnerCopilot Deterministic Grounding & Anti-AI-Slop Invariants", () => {
+    // The Gemini path only runs when a key resolves (env, or the gitignored
+    // ml/.env). Without one the service answers from the DB and never calls
+    // fetch, so these tests passed on machines with ml/.env and failed in CI
+    // (red since 2bbdc2b). A fake key makes them test the same path everywhere;
+    // fetch is mocked in every test, so it never reaches Google.
+    let savedKeys: { gemini?: string; gemma?: string };
+    beforeEach(() => {
+      savedKeys = { gemini: process.env.GEMINI_API_KEY, gemma: process.env.GEMMA_API_KEY };
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+    });
+    afterEach(() => {
+      for (const [name, value] of [["GEMINI_API_KEY", savedKeys.gemini], ["GEMMA_API_KEY", savedKeys.gemma]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+
     it("should process chat and sanitize any em dashes in reply", async () => {
       // Mock fetch to simulate Gemini tool calling loop cleanly in unit tests
       const originalFetch = global.fetch;
