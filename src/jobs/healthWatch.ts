@@ -13,6 +13,12 @@
 import cron from "node-cron";
 import { statfs } from "node:fs/promises";
 import { checkReadiness } from "../lib/readiness.js";
+import {
+  checkFirebaseHeartbeat,
+  checkFirebaseRules,
+  type FirebaseCheck,
+  type RulesCheck,
+} from "../lib/firebaseHealth.js";
 import { logger } from "../lib/logger.js";
 import { sysAdminAlertService, type AlertPayload } from "../services/sysAdminAlertService.js";
 import {
@@ -46,10 +52,15 @@ export interface HealthWatchDeps {
     open: (input: AutomaticIncidentInput) => Promise<unknown>;
     recover: (input: RecoverIncidentInput) => Promise<unknown>;
   };
+  /** Realtime Database heartbeat and rules drift (lib/firebaseHealth.ts); both never throw. */
+  checkFirebase?: () => Promise<FirebaseCheck>;
+  checkFirebaseRules?: () => Promise<RulesCheck>;
   now?: () => number;
 }
 
 const DB_DOWN_IMPACT = "Orders, sign-ins and dispatch failed while the database did not answer.";
+const FIREBASE_DOWN_IMPACT =
+  "Live rider tracking, dispatcher and customer chat, and location sharing stop updating. Orders still save through the API.";
 
 /** Same arithmetic as `df`: space reserved for root counts as neither used nor free. */
 export async function readDiskUsage(path: string = process.cwd()): Promise<DiskUsage> {
@@ -231,7 +242,105 @@ export function createHealthWatch(deps: HealthWatchDeps) {
     });
   }
 
-  return { tickDatabase, tickDisk };
+  let fbFailures = 0;
+  let fbFirstFailureAt: number | null = null;
+  let fbDownAlerted = false;
+
+  async function tickFirebase(): Promise<void> {
+    if (!deps.checkFirebase) return;
+    const result = await deps.checkFirebase();
+    if (result.status === "not_configured") return;
+
+    if (result.status === "failed") {
+      fbFailures += 1;
+      if (fbFirstFailureAt === null) fbFirstFailureAt = now();
+      if (fbFailures === DB_FAILURES_BEFORE_ALERT && !fbDownAlerted) {
+        fbDownAlerted = true;
+        const { alertId } = await send({
+          alertType: "FIREBASE_DOWN",
+          severity: "HIGH",
+          title: "Realtime Database not answering",
+          message:
+            `Firebase has failed ${DB_FAILURES_BEFORE_ALERT} checks in a row, one a minute (last: ${result.error}). ` +
+            `${FIREBASE_DOWN_IMPACT} Check status.firebase.google.com and the Firebase console (usage, billing, service account).`,
+          metadata: { consecutiveFailures: fbFailures, lastError: result.error },
+          bypassRepeatLimit: true,
+        });
+        await incidents?.open({
+          sourceKey: "FIREBASE",
+          title: "Realtime Database not answering",
+          severity: "HIGH",
+          startedAt: new Date(fbFirstFailureAt),
+          detectedAt: new Date(now()),
+          impact: FIREBASE_DOWN_IMPACT,
+          alertId,
+        });
+      }
+      return;
+    }
+
+    if (fbDownAlerted && fbFirstFailureAt !== null) {
+      const { alertId } = await send({
+        alertType: "SERVICE_RECOVERED",
+        severity: "LOW",
+        title: "Realtime Database answering again",
+        message: `Firebase is back after about ${formatDuration(now() - fbFirstFailureAt)} (${fbFailures} failed checks). Tracking and chat resume on their own.`,
+        metadata: { failedChecks: fbFailures, recoveredAt: new Date(now()).toISOString() },
+        bypassRepeatLimit: true,
+      });
+      await incidents?.recover({ sourceKey: "FIREBASE", recoveredAt: new Date(now()), alertId });
+    }
+    fbFailures = 0;
+    fbFirstFailureAt = null;
+    fbDownAlerted = false;
+  }
+
+  /** "unknown" until the first answer: a boot onto drifted rules alerts once, then only on change. */
+  let rulesState: "unknown" | "same" | "different" = "unknown";
+  let rulesChanged = "";
+
+  async function tickFirebaseRules(): Promise<void> {
+    if (!deps.checkFirebaseRules) return;
+    const result = await deps.checkFirebaseRules();
+    if (result.status === "not_configured") return;
+    if (result.status === "failed") {
+      logger.warn("[HealthWatch] Could not compare Firebase rules:", result.error);
+      return;
+    }
+
+    if (result.status === "different") {
+      const keys = result.changedKeys.join(", ");
+      if (rulesState !== "different" || keys !== rulesChanged) {
+        await send({
+          alertType: "FIREBASE_RULES_CHANGED",
+          severity: "MEDIUM",
+          title: "Firebase rules differ from the reviewed copy",
+          message:
+            `The live Realtime Database rules no longer match firebase/database.rules.json (changed: ${keys}). ` +
+            "A Console edit to these rules once stopped tracking and chat for every client with no error anywhere. " +
+            "If the change was intended, put it in the file and commit it; if not, publish the file again.",
+          metadata: { changedKeys: result.changedKeys },
+        });
+      }
+      rulesState = "different";
+      rulesChanged = keys;
+      return;
+    }
+
+    if (rulesState === "different") {
+      await send({
+        alertType: "SERVICE_RECOVERED",
+        severity: "LOW",
+        title: "Firebase rules match the reviewed copy again",
+        message: "The live Realtime Database rules equal firebase/database.rules.json again.",
+        bypassRepeatLimit: true,
+      });
+    }
+    rulesState = "same";
+    rulesChanged = "";
+  }
+
+  return { tickDatabase, tickDisk, tickFirebase, tickFirebaseRules };
 }
 
 export function scheduleHealthWatchJob(): void {
@@ -243,11 +352,21 @@ export function scheduleHealthWatchJob(): void {
       open: (input) => sysAdminIncidentService.openAutomatic(input),
       recover: (input) => sysAdminIncidentService.recoverAutomatic(input),
     },
+    checkFirebase: () => checkFirebaseHeartbeat(),
+    checkFirebaseRules: () => checkFirebaseRules(),
   });
 
   cron.schedule("* * * * *", () => {
     watch.tickDatabase().catch((err) => logger.error("[HealthWatch] Database tick failed:", err));
   });
+  // Second 30 of every minute, so it does not share an instant with the database check.
+  cron.schedule("30 * * * * *", () => {
+    watch.tickFirebase().catch((err) => logger.error("[HealthWatch] Firebase tick failed:", err));
+  });
+  cron.schedule("*/15 * * * *", () => {
+    watch.tickFirebaseRules().catch((err) => logger.error("[HealthWatch] Firebase rules tick failed:", err));
+  });
+  watch.tickFirebaseRules().catch((err) => logger.error("[HealthWatch] Firebase rules tick failed:", err));
   cron.schedule("*/15 * * * *", () => {
     watch.tickDisk().catch((err) => logger.error("[HealthWatch] Disk tick failed:", err));
   });

@@ -206,3 +206,97 @@ describe("health watch: disk", () => {
     expect(u.usedPct).toBeLessThanOrEqual(100);
   });
 });
+
+describe("health watch: Firebase", () => {
+  type FB = import("../src/lib/firebaseHealth.js").FirebaseCheck;
+  type RC = import("../src/lib/firebaseHealth.js").RulesCheck;
+
+  function fbSetup() {
+    let fb: FB = { status: "ok", latencyMs: 40 };
+    let rules: RC = { status: "same" };
+    let clock = Date.parse("2026-11-15T00:00:00Z");
+    const sent: AlertPayload[] = [];
+    const incidentCalls: [string, Record<string, any>][] = [];
+    const watch = createHealthWatch({
+      checkDatabase: async () => true,
+      readDisk: async () => disk(25),
+      sendAlert: async (p) => (sent.push(p), { alertId: 200 + sent.length }),
+      incidents: {
+        open: async (i) => incidentCalls.push(["open", i]),
+        recover: async (i) => incidentCalls.push(["recover", i]),
+      },
+      checkFirebase: async () => fb,
+      checkFirebaseRules: async () => rules,
+      now: () => clock,
+    });
+    return {
+      watch,
+      sent,
+      incidentCalls,
+      setFb: (v: FB) => (fb = v),
+      setRules: (v: RC) => (rules = v),
+      advanceMinutes: (m: number) => (clock += m * 60000),
+    };
+  }
+  const down: FB = { status: "failed", latencyMs: 5000, error: "write: no answer within 5000 ms" };
+
+  it("alerts once after three misses, opens an incident, and recovers it", async () => {
+    const t = fbSetup();
+    t.setFb(down);
+    for (let i = 0; i < 6; i++) {
+      await t.watch.tickFirebase();
+      t.advanceMinutes(1);
+    }
+    expect(t.sent.map((a) => [a.alertType, a.severity])).toEqual([["FIREBASE_DOWN", "HIGH"]]);
+    expect(t.sent[0].message).toContain("no answer within 5000 ms");
+    expect(t.incidentCalls).toEqual([["open", expect.objectContaining({ sourceKey: "FIREBASE", alertId: 201 })]]);
+
+    t.setFb({ status: "ok", latencyMs: 30 });
+    await t.watch.tickFirebase();
+    expect(t.sent.at(-1)).toMatchObject({ alertType: "SERVICE_RECOVERED", title: "Realtime Database answering again" });
+    expect(t.sent.at(-1)!.message).toContain("about 6 min");
+    expect(t.incidentCalls.at(-1)).toEqual(["recover", expect.objectContaining({ sourceKey: "FIREBASE", alertId: 202 })]);
+  });
+
+  it("ignores a short blip and a server with no Firebase configured", async () => {
+    const t = fbSetup();
+    t.setFb(down);
+    await t.watch.tickFirebase();
+    await t.watch.tickFirebase();
+    t.setFb({ status: "ok", latencyMs: 30 });
+    await t.watch.tickFirebase();
+    t.setFb({ status: "not_configured" });
+    for (let i = 0; i < 5; i++) await t.watch.tickFirebase();
+    expect(t.sent).toEqual([]);
+  });
+
+  it("alerts on rules drift once per distinct change, and when it is undone", async () => {
+    const t = fbSetup();
+    await t.watch.tickFirebaseRules(); // same at boot: quiet
+    t.setRules({ status: "different", changedKeys: ["chats"] });
+    await t.watch.tickFirebaseRules();
+    await t.watch.tickFirebaseRules(); // unchanged drift: quiet
+    t.setRules({ status: "different", changedKeys: ["chats", "riders"] });
+    await t.watch.tickFirebaseRules(); // drift grew: alert again
+    t.setRules({ status: "failed", error: "network" });
+    await t.watch.tickFirebaseRules(); // a failed comparison says nothing
+    t.setRules({ status: "same" });
+    await t.watch.tickFirebaseRules();
+
+    expect(t.sent.map((a) => [a.alertType, a.severity])).toEqual([
+      ["FIREBASE_RULES_CHANGED", "MEDIUM"],
+      ["FIREBASE_RULES_CHANGED", "MEDIUM"],
+      ["SERVICE_RECOVERED", "LOW"],
+    ]);
+    expect(t.sent[1].message).toContain("changed: chats, riders");
+    // Drift is a warning, not an outage: no incident.
+    expect(t.incidentCalls).toEqual([]);
+  });
+
+  it("alerts at boot when the rules already differ", async () => {
+    const t = fbSetup();
+    t.setRules({ status: "different", changedKeys: [".read"] });
+    await t.watch.tickFirebaseRules();
+    expect(t.sent.map((a) => a.alertType)).toEqual(["FIREBASE_RULES_CHANGED"]);
+  });
+});

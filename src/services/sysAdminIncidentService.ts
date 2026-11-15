@@ -21,7 +21,7 @@ export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
 export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
 
 /** Automatic incidents, one active per key at a time. */
-export type IncidentSourceKey = "DB_DOWN" | "DISK" | "BACKEND_CRASH" | "BACKUP";
+export type IncidentSourceKey = "DB_DOWN" | "DISK" | "BACKEND_CRASH" | "BACKUP" | "FIREBASE";
 
 export const INCIDENT_PAGE_SIZE = 20;
 const TIMELINE_ALERTS_MAX = 50;

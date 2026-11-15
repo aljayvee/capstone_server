@@ -16,6 +16,8 @@ export type AlertType =
   | "BACKEND_CRASH"
   | "SERVICE_RECOVERED"
   | "BACKUP_FAILURE"
+  | "FIREBASE_DOWN"
+  | "FIREBASE_RULES_CHANGED"
   | "TEST_ALERT";
 
 export interface AlertPayload {
