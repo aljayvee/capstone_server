@@ -100,6 +100,13 @@ import {
 import { getOffsiteStatusHandler, startRestoreCheckHandler } from "../controllers/backupOffsiteController.js";
 import { getIntegrationReportHandler } from "../controllers/integrationCheckController.js";
 import {
+  getAuditTimelineHandler,
+  getAuditEventHandler,
+  getAuditInsightsHandler,
+  exportAuditTimelineHandler,
+  getRiderActivityHandler,
+} from "../controllers/auditTimelineController.js";
+import {
   sysAdminLoginLimiter,
   sysAdminBackupLimiter,
   sysAdminMaintenanceLimiter,
@@ -155,6 +162,12 @@ router.get("/sysadmin/audit/modifications", authenticateToken, requireRole("SYSA
 router.get("/sysadmin/audit/security", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getSecurityAuditLogs);
 router.get("/sysadmin/audit/system-activity", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getSystemActivityLogs);
 router.get("/sysadmin/audit/report-prints", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getReportPrintLogs);
+// Activity timeline over every log table, entry detail, insights, full CSV export, rider days (2026-11-15).
+router.get("/sysadmin/audit/timeline", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getAuditTimelineHandler);
+router.get("/sysadmin/audit/timeline/export", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), sysAdminMutationLimiter, exportAuditTimelineHandler);
+router.get("/sysadmin/audit/timeline/:source/:id", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getAuditEventHandler);
+router.get("/sysadmin/audit/insights", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getAuditInsightsHandler);
+router.get("/sysadmin/audit/riders", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getRiderActivityHandler);
 
 // ── GoAccess Web Traffic Monitoring ──────────────────────────────────────────
 router.get("/sysadmin/traffic/summary", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("traffic.view"), readLimiter, getTrafficSummaryHandler);
