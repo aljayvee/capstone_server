@@ -206,3 +206,19 @@ export async function snap(point: GeoPoint, hint?: OriginHint): Promise<GeoPoint
 export function configuredProviderNames(): RoutingProviderName[] {
   return providers.filter((provider) => provider.isConfigured()).map((provider) => provider.name);
 }
+
+/**
+ * The chain as it is actually running, for the SysAdmin integration check.
+ * `ignoredNames` are entries in ROUTING_PROVIDER_ORDER that match no provider:
+ * buildChain drops them without a word, so a typo there is otherwise invisible.
+ */
+export function routingProviderHealth() {
+  return {
+    ignoredNames: ROUTING_PROVIDER_ORDER.filter((name) => !(name in REGISTRY)),
+    providers: providers.map((provider) => ({
+      name: provider.name,
+      configured: provider.isConfigured(),
+      ...breakers.get(provider.name)!.snapshot(),
+    })),
+  };
+}

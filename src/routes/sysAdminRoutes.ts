@@ -86,6 +86,7 @@ import {
   updateIncidentHandler,
 } from "../controllers/sysAdminIncidentController.js";
 import { getOffsiteStatusHandler, startRestoreCheckHandler } from "../controllers/backupOffsiteController.js";
+import { getIntegrationReportHandler } from "../controllers/integrationCheckController.js";
 import {
   sysAdminLoginLimiter,
   sysAdminBackupLimiter,
@@ -164,6 +165,7 @@ router.post("/sysadmin/devops/backups/restore-check", authenticateToken, require
 router.delete("/sysadmin/devops/backups/:id", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, verifyStepUpPassword, deleteBackupHandler);
 router.get("/sysadmin/devops/logs", authenticateToken, requireRole("SYSADMIN"), readLimiter, getLogsHandler);
 router.get("/sysadmin/devops/alerts/status", authenticateToken, requireRole("SYSADMIN"), readLimiter, getAlertStatusHandler);
+router.get("/sysadmin/devops/integrations", authenticateToken, requireRole("SYSADMIN"), readLimiter, getIntegrationReportHandler);
 router.post("/sysadmin/devops/alerts/test", authenticateToken, requireRole("SYSADMIN"), sysAdminMutationLimiter, sendTestAlertHandler);
 // Incident records (2026-11-15): opened by the health watch or by hand; resolving needs cause and fix.
 router.get("/sysadmin/devops/incidents", authenticateToken, requireRole("SYSADMIN"), readLimiter, listIncidentsHandler);

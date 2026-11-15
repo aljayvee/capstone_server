@@ -41,7 +41,7 @@ export interface CopilotChatResponse {
  * 2. process.env.GEMMA_API_KEY
  * 3. ml/.env file (development & container fallback)
  */
-function resolveGeminiApiKey(): string | null {
+export function resolveGeminiApiKey(): string | null {
   if (process.env.GEMINI_API_KEY?.trim()) return process.env.GEMINI_API_KEY.trim();
   if (process.env.GEMMA_API_KEY?.trim()) return process.env.GEMMA_API_KEY.trim();
 

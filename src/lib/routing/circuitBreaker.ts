@@ -12,8 +12,20 @@ const OPEN_DURATION_MS = 60 * 1000;
 export class CircuitBreaker {
   private consecutiveFailures = 0;
   private openedAt: number | null = null;
+  private lastSuccessAt: number | null = null;
+  private lastFailureAt: number | null = null;
 
   constructor(private readonly label: string) {}
+
+  /** Read-only view for the SysAdmin integration check. */
+  snapshot(): { open: boolean; consecutiveFailures: number; lastSuccessAt: number | null; lastFailureAt: number | null } {
+    return {
+      open: this.openedAt !== null && Date.now() - this.openedAt < OPEN_DURATION_MS,
+      consecutiveFailures: this.consecutiveFailures,
+      lastSuccessAt: this.lastSuccessAt,
+      lastFailureAt: this.lastFailureAt,
+    };
+  }
 
   // False while the breaker is open and the cool-off has not elapsed. The first
   // call after the cool-off is allowed through as a probe (half-open).
@@ -33,10 +45,12 @@ export class CircuitBreaker {
     }
     this.consecutiveFailures = 0;
     this.openedAt = null;
+    this.lastSuccessAt = Date.now();
   }
 
   recordFailure(): void {
     this.consecutiveFailures += 1;
+    this.lastFailureAt = Date.now();
     if (this.consecutiveFailures >= FAILURE_THRESHOLD && this.openedAt === null) {
       this.openedAt = Date.now();
       logger.error(

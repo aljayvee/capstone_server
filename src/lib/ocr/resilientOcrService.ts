@@ -47,3 +47,12 @@ export async function readText(imageBase64: string): Promise<OcrResult | null> {
 export function configuredEngines(): string[] {
   return providers.filter((provider) => provider.isConfigured()).map((provider) => provider.name);
 }
+
+/** Each engine's recent outcomes, for the SysAdmin integration check (Vision is billed per call, so it is not probed). */
+export function ocrEngineHealth() {
+  return providers.map((provider) => ({
+    name: provider.name,
+    configured: provider.isConfigured(),
+    ...breakers.get(provider.name)!.snapshot(),
+  }));
+}

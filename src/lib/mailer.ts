@@ -58,3 +58,13 @@ export async function sendEmail(to: string, subject: string, text: string, html?
 export function isEmailConfigured(): boolean {
   return getTransporter() !== null;
 }
+
+// Connects and logs in to the SMTP relay without sending anything, for the
+// SysAdmin integration check. Null when SMTP is not configured; throws with the
+// relay's answer when the connection or the login fails.
+export async function verifyEmailTransport(): Promise<{ host: string } | null> {
+  const client = getTransporter();
+  if (!client) return null;
+  await client.verify();
+  return { host: process.env.SMTP_HOST || "" };
+}
