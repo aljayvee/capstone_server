@@ -3,8 +3,10 @@ import { prisma } from "../src/lib/prisma.js";
 // retired here is also a name the portal refuses to re-create. Keeping the two
 // lists in one module is what stops them drifting apart.
 import { RETIRED_CATEGORY_NAMES } from "../src/lib/blockedCategoryNames.js";
+import { guardSeed } from "../src/lib/seedGuard.js";
 
 async function seedPlaces() {
+  guardSeed("places");
   console.log("🌱 Seeding verified merchant categories and pre-recorded Tacurong places...");
 
   // 1. Ensure Standard Merchant Categories Exist

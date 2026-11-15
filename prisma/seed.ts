@@ -14,6 +14,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { RETIRED_CATEGORY_NAMES } from "../src/lib/blockedCategoryNames.js";
 import { seedPassword } from "../src/lib/seedPassword.js";
+import { guardSeed } from "../src/lib/seedGuard.js";
 
 const prisma = new PrismaClient();
 
@@ -30,6 +31,7 @@ async function chunkedCreateMany<T>(
 }
 
 async function main() {
+  guardSeed("demo");
   console.log("=========================================================");
   console.log("🌱 STARTING 500-RECORD HIGH-FIDELITY DATABASE SEEDER (SUGO) 🌱");
   console.log("=========================================================\n");

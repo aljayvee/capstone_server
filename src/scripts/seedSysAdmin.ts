@@ -1,10 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { sysAdminPasswordPolicy } from "../validators/sysAdminValidators.js";
+import { guardSeed } from "../lib/seedGuard.js";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  guardSeed("sysadmin");
   console.log("🌱 Seeding System Administrator IT account...");
 
   const username = "sysadminit";

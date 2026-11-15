@@ -1,10 +1,12 @@
 import { PrismaClient, RoleType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedPassword } from "./lib/seedPassword.js";
+import { guardSeed } from "./lib/seedGuard.js";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  guardSeed("users");
   console.log("🌱 Seeding database with core accounts...");
 
   // 2. User Accounts (Owner only)
