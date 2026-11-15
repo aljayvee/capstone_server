@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma.js";
 import { logRefusal } from "../lib/authzLog.js";
 import type { AuthenticatedRequest } from "./auth.js";
+import { clientIpKey } from "./rateLimiters.js";
 
 const isDev = process.env.NODE_ENV === "development" || !process.env.NODE_ENV;
 
@@ -31,7 +32,7 @@ export const sysAdminLoginLimiter = rateLimit({
 export const sysAdminBackupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: isDev ? 30 : 3,
-  keyGenerator: (req: any) => (req.user?.id ? `sysadmin_backup_${req.user.id}` : (req.ip || "127.0.0.1")),
+  keyGenerator: (req: any) => (req.user?.id ? `sysadmin_backup_${req.user.id}` : clientIpKey(req)),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -47,7 +48,7 @@ export const sysAdminBackupLimiter = rateLimit({
 export const sysAdminMaintenanceLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
   max: isDev ? 50 : 10,
-  keyGenerator: (req: any) => (req.user?.id ? `sysadmin_maint_${req.user.id}` : (req.ip || "127.0.0.1")),
+  keyGenerator: (req: any) => (req.user?.id ? `sysadmin_maint_${req.user.id}` : clientIpKey(req)),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -63,7 +64,7 @@ export const sysAdminMaintenanceLimiter = rateLimit({
 export const sysAdminMutationLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: isDev ? 150 : 30,
-  keyGenerator: (req: any) => (req.user?.id ? `sysadmin_mut_${req.user.id}` : (req.ip || "127.0.0.1")),
+  keyGenerator: (req: any) => (req.user?.id ? `sysadmin_mut_${req.user.id}` : clientIpKey(req)),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
