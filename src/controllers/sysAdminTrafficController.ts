@@ -4,6 +4,7 @@ import { getTrafficSummary, getGoAccessHtmlReport } from "../services/sysAdminTr
 import { ServiceError } from "../services/ServiceError.js";
 import { JWT_SECRET } from "../config/env.js";
 import { isRevoked } from "../lib/blocklistCache.js";
+import { getEffectiveSysAdminPermissions } from "../lib/sysAdminPermissionCache.js";
 import type { AuthenticatedRequest, TokenPayload } from "../middleware/auth.js";
 
 export async function getTrafficSummaryHandler(req: AuthenticatedRequest, res: Response) {
@@ -35,13 +36,23 @@ export async function getGoAccessHtmlReportHandler(req: AuthenticatedRequest, re
       return res.status(401).send("<h1>401 Unauthorized: Token has been revoked</h1>");
     }
 
+    let adminId = 0;
     try {
-      const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as TokenPayload;
-      if (decoded.role !== "SYSADMIN") {
+      const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as Partial<TokenPayload> & { purpose?: string };
+      if (decoded.purpose) {
+        return res.status(401).send("<h1>401 Unauthorized: Invalid session token</h1>");
+      }
+      if (decoded.role !== "SYSADMIN" || !decoded.id) {
         return res.status(403).send("<h1>403 Forbidden: SysAdmin privileges required</h1>");
       }
+      adminId = decoded.id;
     } catch {
       return res.status(401).send("<h1>401 Unauthorized: Invalid or expired token</h1>");
+    }
+
+    const effective = await getEffectiveSysAdminPermissions(adminId);
+    if (!effective?.permissions.includes("traffic.view")) {
+      return res.status(403).send("<h1>403 Forbidden: Access group does not include Web Traffic</h1>");
     }
 
     const html = await getGoAccessHtmlReport();

@@ -1328,6 +1328,34 @@ export async function assignRider(
   // else would be worse than telling them the rider is full.
   const candidates: number[] = riderId ? [riderId] : [];
 
+  // A rider who pressed Decline on this errand is never offered it again by the
+  // server (2026-11-14). Read from the decline log rather than trusted from the
+  // caller: declineErrand used to pass only the latest decliner, so A declined,
+  // B got it, B declined, and it went straight back to A. A lapse (EXPIRED) is
+  // not a refusal and stays eligible. A rider the dispatcher names is their
+  // decision and is not filtered here.
+  // A failed read is logged, not thrown: an errand with no rider is worse than
+  // one re-offered to an earlier decliner, and declineErrand still passes the
+  // rider who has just declined.
+  let ridersWhoDeclined = 0;
+  if (!riderId) {
+    try {
+      const declined = new Set(
+        (await riderOfferDeclineRepository.findForErrand(errandId))
+          .filter((row) => row.kind === "DECLINED")
+          .map((row) => row.riderId)
+      );
+      ridersWhoDeclined = declined.size;
+      excludedRiderIds = [...new Set([...excludedRiderIds, ...declined])];
+    } catch (declineReadErr) {
+      logger.error(`Could not read the declines on errand ${errandId}; dispatching without them:`, declineReadErr);
+    }
+  }
+  const declinedNote =
+    ridersWhoDeclined > 0
+      ? ` ${ridersWhoDeclined} rider${ridersWhoDeclined === 1 ? " has" : "s have"} already declined this errand.`
+      : "";
+
   // Dual-zone isolation (2026-11-09): the errand's zone comes from its
   // coordinates, and automatic dispatch offers it only to riders whose fresh fix
   // is in that same zone (dispatchZone.ts). A Banga rider never receives a
@@ -1483,8 +1511,10 @@ export async function assignRider(
         throw new ServiceError(
           404,
           reasons.length > 0
-            ? `No rider can take this errand right now. ${reasons.join("; ")}.`
-            : "No riders are set up on this account yet."
+            ? `No rider can take this errand right now. ${reasons.join("; ")}.${declinedNote}`
+            : ridersWhoDeclined > 0
+              ? `No other rider can take this errand right now.${declinedNote}`
+              : "No riders are set up on this account yet."
         );
       }
 
@@ -1603,14 +1633,14 @@ export async function assignRider(
     throw new ServiceError(
       404,
       errandZone
-        ? `No rider is currently available in the ${serviceZoneName(errandZone)} service area.${elsewhere}`
+        ? `No rider is currently available in the ${serviceZoneName(errandZone)} service area.${elsewhere}${declinedNote}`
         : "This errand's stores and drop-off are outside every service area, so no rider can be matched to it."
     );
   }
   if (orderedCandidates.length === 0) {
     throw new ServiceError(
       404,
-      `No available riders. All riders are offline, at capacity (${MAX_ACTIVE_ERRANDS_PER_RIDER} errands), or have declined.`
+      `No available riders. All riders are offline, at capacity (${MAX_ACTIVE_ERRANDS_PER_RIDER} errands), or have declined.${declinedNote}`
     );
   }
 
@@ -1688,6 +1718,51 @@ export async function assignRider(
   return errandWithNames;
 }
 
+/**
+ * After this many declines or lapses on one errand, the server stops offering it
+ * to the next rider and hands it to a dispatcher (user, 2026-11-14: "Cap at 3
+ * declines"). Counted from rider_offer_declines, so it survives a restart.
+ */
+export const AUTO_REASSIGN_DECLINE_CAP = 3;
+
+/** Why a declined errand went to a dispatcher instead of the next rider. */
+export type RiderDeclinedStopReason = "CAP_REACHED" | "NO_RIDER" | "OFFER_TOO_OLD";
+
+/**
+ * `errand:rider_declined`, to dispatchers and owners only: the portal shows a
+ * notice when the server re-offered the errand, and an alert dialog with
+ * Re-assign when it did not. Role rooms, not publishToErrand, because that also
+ * reaches the customer, who has no business with which rider turned them down.
+ */
+function announceRiderDeclined(event: {
+  errandWithNames: { id: string; referenceNo?: string | null };
+  riderId: number;
+  kind: RiderDeclineKindValue;
+  reason?: string;
+  attempts: number;
+  outcome: "REASSIGNED" | "NEEDS_DISPATCHER";
+  nextRiderName?: string | null;
+  why?: RiderDeclinedStopReason;
+}): void {
+  void (async () => {
+    const payload = {
+      errandId: event.errandWithNames.id,
+      referenceNo: event.errandWithNames.referenceNo ?? null,
+      riderId: event.riderId,
+      riderName: await notificationService.riderName(event.riderId),
+      kind: event.kind,
+      reason: event.reason?.trim() || null,
+      attempts: event.attempts,
+      cap: AUTO_REASSIGN_DECLINE_CAP,
+      outcome: event.outcome,
+      nextRiderName: event.nextRiderName ?? null,
+      why: event.why ?? null,
+    };
+    eventPublisher.emitToRole("DISPATCHER", "errand:rider_declined", payload);
+    eventPublisher.emitToRole("OWNER", "errand:rider_declined", payload);
+  })().catch((err) => logger.error(`Could not announce the decline on errand ${event.errandWithNames.id}:`, err));
+}
+
 // Rider declines or times out (45s): un-assigns the rider, updates customer tracking
 // with smooth status ("Finding the best rider for your delivery..."), and silently
 // re-routes to the next nearest eligible rider.
@@ -1721,11 +1796,13 @@ export async function declineErrand(
   // not take it. The rider app sends OFFER_EXPIRED_REASON when its own countdown
   // runs out, which is a lapse, not a refusal. A failed write is logged, not
   // thrown: the offer is already released and must still go to the next rider.
+  const kind: RiderDeclineKindValue =
+    options.kind ?? (reason?.trim() === OFFER_EXPIRED_REASON ? "EXPIRED" : "DECLINED");
   try {
     await riderOfferDeclineRepository.create({
       riderId,
       errandId,
-      kind: options.kind ?? (reason?.trim() === OFFER_EXPIRED_REASON ? "EXPIRED" : "DECLINED"),
+      kind,
       reason: reason?.trim().slice(0, 500) || null,
       offeredAt: errand.assignedAt ?? null,
     });
@@ -1746,11 +1823,26 @@ export async function declineErrand(
     statusText: "Finding the best rider for your delivery...",
   });
 
+  // How many riders this errand has gone through, declines and lapses alike,
+  // this one included. At AUTO_REASSIGN_DECLINE_CAP the server stops re-offering
+  // and a dispatcher decides; every later decline goes to them too, so they stay
+  // in control once they have stepped in. A failed read counts this decline only.
+  let attempts = 1;
+  try {
+    attempts = Math.max(1, (await riderOfferDeclineRepository.findForErrand(errandId)).length);
+  } catch (countErr) {
+    logger.error(`Could not count the declines on errand ${errandId}:`, countErr);
+  }
+  const capReached = attempts >= AUTO_REASSIGN_DECLINE_CAP;
+  const declinedBy = { errandWithNames, riderId, kind, reason, attempts };
+
   // Attempt silent auto-reassignment to next nearest eligible rider, unless the
-  // caller wants a person to decide (an expired offer too old to send on).
-  if (options.reassign !== false) {
+  // caller wants a person to decide (an expired offer too old to send on) or the
+  // errand has already been turned down AUTO_REASSIGN_DECLINE_CAP times.
+  if (options.reassign !== false && !capReached) {
     try {
       const reassigned = await assignRider(errandId, undefined, [riderId]);
+      announceRiderDeclined({ ...declinedBy, outcome: "REASSIGNED", nextRiderName: reassigned.riderName ?? null });
       void (async () => {
         const [label, name] = await Promise.all([
           notificationService.errandLabel(errandId),
@@ -1770,17 +1862,25 @@ export async function declineErrand(
       // Falls through to the dispatcher alert below.
     }
   }
+  const why: RiderDeclinedStopReason =
+    options.reassign === false ? "OFFER_TOO_OLD" : capReached ? "CAP_REACHED" : "NO_RIDER";
+  announceRiderDeclined({ ...declinedBy, outcome: "NEEDS_DISPATCHER", why });
+
   // Alert dispatcher only if all eligible riders decline or are out of radius
   publishToErrand("errand:all_riders_declined", errandWithNames, {
     errandId,
     reason: reason || "All eligible riders declined or timed out",
   });
+  const stopSentence =
+    why === "CAP_REACHED"
+      ? `${attempts} riders declined or did not answer, so it was not offered again`
+      : reason || "All eligible riders declined or timed out";
   void (async () => {
     await notificationService.notifyStaff(
       "ALL_RIDERS_DECLINED",
       {
         title: "No rider took an errand",
-        body: `${await notificationService.errandLabel(errandId)} has no rider. ${reason || "All eligible riders declined or timed out"}. Assign one by hand.`,
+        body: `${await notificationService.errandLabel(errandId)} has no rider. ${stopSentence}. Assign one by hand.`,
       },
       { errandId }
     );

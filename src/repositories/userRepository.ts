@@ -113,4 +113,14 @@ export const userRepository = {
   updatePushToken(id: number, expoPushToken: string) {
     return prisma.user.update({ where: { id }, data: { expoPushToken } });
   },
+
+  recordTermsAcceptance(id: number, version: string, acceptedAt = new Date()) {
+    return prisma.user.update({
+      where: { id },
+      data: {
+        termsAcceptedAt: acceptedAt,
+        termsAcceptedVersion: version,
+      },
+    });
+  },
 };

@@ -104,6 +104,7 @@ interface AuthenticatedSocketData {
 export const rooms = {
   role: (role: string) => `role:${role.toUpperCase()}`,
   user: (userId: number) => `user:${userId}`,
+  sysadmin: (adminId: number) => `sysadmin:${adminId}`,
   rider: (riderId: number) => `rider:${riderId}`,
   customer: (customerId: number) => `customer:${customerId}`,
   errand: (errandId: string) => `errand:${errandId}`,
@@ -112,11 +113,13 @@ export const rooms = {
 /**
  * The rooms one signed-in socket joins. A customer: its customer room and its
  * role room, never `user:<id>`, which belongs to the staff member or rider
- * with the same number. Everyone else: `user:<id>`, a rider's own room, and
- * the role room.
+ * with the same number. A SysAdmin joins `sysadmin:<id>` and `role:SYSADMIN`
+ * so `tbl_sys_admin` IDs never collide with `users` IDs. Everyone else:
+ * `user:<id>`, a rider's own room, and the role room.
  */
 export function identityRooms(userId: number, role: string | undefined): string[] {
   if (role === "CUSTOMER") return [rooms.customer(userId), rooms.role(role)];
+  if (role === "SYSADMIN") return [rooms.sysadmin(userId), rooms.role("SYSADMIN")];
   const joined = [rooms.user(userId)];
   if (role === "RIDER") joined.push(rooms.rider(userId));
   if (role) joined.push(rooms.role(role));
@@ -274,12 +277,19 @@ function emitToStaff(event: string, payload: unknown): void {
  * Signs one account's sockets out. `role` picks the room: without it, revoking
  * staff member 9's session would have signed customer 9 out as well.
  */
+function accountRoomForRole(userId: number, role?: string): string {
+  const normalized = String(role || "").toUpperCase();
+  if (normalized === "CUSTOMER") return rooms.customer(userId);
+  if (normalized === "SYSADMIN") return rooms.sysadmin(userId);
+  return rooms.user(userId);
+}
+
 export function notifySessionRevoked(
   userId: number,
   payload: { reason: string; newDevice?: unknown },
   role?: string
 ): void {
-  const room = String(role || "").toUpperCase() === "CUSTOMER" ? rooms.customer(userId) : rooms.user(userId);
+  const room = accountRoomForRole(userId, role);
   io.to(room).emit("session:revoked", payload);
 }
 
@@ -295,6 +305,17 @@ export function notifyPermissionsChanged(userIds: number[]): void {
 }
 
 /**
+ * Notifies affected IT Administrator sessions (`sysadmin:<id>`) that their
+ * PMA access group, permission overrides, or status changed so open SysAdmin
+ * consoles immediately refetch `/api/sysadmin/pma/me`.
+ */
+export function notifySysAdminPermissionsChanged(adminIds: readonly number[]): void {
+  const uniqueIds = Array.from(new Set(adminIds.filter((id) => Number.isInteger(id) && id > 0)));
+  if (uniqueIds.length === 0) return;
+  io.to(uniqueIds.map((id) => rooms.sysadmin(id))).emit("sysadmin:permissions_changed", {});
+}
+
+/**
  * Closes every live connection one account holds, after a security action
  * (suspension, deactivation, a role change). A socket's identity is fixed at
  * the handshake and never re-checked, so revoking the account's sessions left a
@@ -304,6 +325,6 @@ export function notifyPermissionsChanged(userIds: number[]): void {
  * signs in again connects again with its new token.
  */
 export function disconnectAccount(userId: number, role?: string): void {
-  const room = String(role || "").toUpperCase() === "CUSTOMER" ? rooms.customer(userId) : rooms.user(userId);
+  const room = accountRoomForRole(userId, role);
   setTimeout(() => io.in(room).disconnectSockets(true), 1_000).unref();
 }

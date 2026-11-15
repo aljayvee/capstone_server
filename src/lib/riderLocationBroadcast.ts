@@ -46,6 +46,8 @@ export interface RiderLocationEvent {
   heading: number | null;
   accuracyMeters: number | null;
   speedMps: number | null;
+  /** True when Android reports the fix came from a mock location provider. */
+  mocked?: boolean;
   /** Device clock at the fix, epoch ms. The same basis RTDB's `updatedAt` uses. */
   recordedAt: number;
   source: RiderLocationSource;
@@ -57,6 +59,7 @@ export interface RiderFix {
   headingDeg?: number | null;
   accuracyMeters?: number | null;
   speedMps?: number | null;
+  mocked?: boolean;
   recordedAt: number;
 }
 
@@ -193,6 +196,7 @@ export function broadcastRiderLocation(riderId: number, fix: RiderFix, source: R
       heading: Number.isFinite(fix.headingDeg) ? (fix.headingDeg as number) : null,
       accuracyMeters: Number.isFinite(fix.accuracyMeters) ? (fix.accuracyMeters as number) : null,
       speedMps: Number.isFinite(fix.speedMps) ? (fix.speedMps as number) : null,
+      ...(fix.mocked ? { mocked: true } : {}),
       recordedAt: normaliseRecordedAt(fix.recordedAt, now),
       source,
     };
@@ -240,7 +244,8 @@ function toEvent(riderId: number, position: riderPositionStore.RiderPosition): R
     longitude: position.point.longitude,
     heading: position.headingDeg,
     accuracyMeters: position.accuracyMeters,
-    speedMps: null,
+    speedMps: position.speedMps ?? null,
+    ...(position.mocked ? { mocked: true } : {}),
     recordedAt: position.recordedAt,
     source: "beacon",
   };
@@ -276,6 +281,7 @@ export function registerRiderLocationChannel(): void {
         headingDeg: isNumber(p.heading) ? p.heading : null,
         accuracyMeters: isNumber(p.accuracyMeters) ? p.accuracyMeters : null,
         speedMps: isNumber(p.speedMps) ? p.speedMps : null,
+        mocked: p.mocked === true,
         recordedAt,
       };
 
@@ -286,6 +292,7 @@ export function registerRiderLocationChannel(): void {
         recordedAt,
         accuracyMeters: fix.accuracyMeters ?? null,
         headingDeg: fix.headingDeg ?? null,
+        ...(fix.mocked ? { mocked: true } : {}),
       });
       broadcastRiderLocation(riderId, fix, "socket");
     });

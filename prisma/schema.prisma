@@ -1135,13 +1135,20 @@ model SysAdmin {
   twoFactorCodeHash  String?   @db.VarChar(255)
   twoFactorExpiresAt DateTime?
 
-  // Relations
-  trustedDevices  SysAdminTrustedDevice[]
-  passwordHistory SysAdminPasswordHistory[]
-  blockedIps      BlockedIp[]
-  whitelistedIps  WhitelistedIp[]
-  backups         DatabaseBackup[]
+  // Permission Management & Access (PMA): NULL resolves to the Read-Only
+  // Monitoring baseline for secondary IT Admins (Main SysAdmin retains full access).
+  accessGroupId Int?
+  accessGroup   SysAdminAccessGroup? @relation(fields: [accessGroupId], references: [id], onDelete: Restrict)
 
+  // Relations
+  trustedDevices      SysAdminTrustedDevice[]
+  passwordHistory     SysAdminPasswordHistory[]
+  permissionOverrides SysAdminPermissionOverride[]
+  blockedIps          BlockedIp[]
+  whitelistedIps      WhitelistedIp[]
+  backups             DatabaseBackup[]
+
+  @@index([accessGroupId])
   @@map("tbl_sys_admin")
 }
 
@@ -2191,4 +2198,64 @@ model ProcessedOcrImage {
 
   @@index([sha256Hash])
   @@map("processed_ocr_images")
+}
+
+// 21. SysAdmin Permission Management & Access (PMA)
+model SysAdminAccessGroup {
+  id                 Int                           @id @default(autoincrement())
+  name               String                        @unique @db.VarChar(60)
+  description        String?                       @db.VarChar(255)
+  version            Int                           @default(1)
+  createdByActorRole String?                       @db.VarChar(20)
+  createdByActorId   Int?
+  updatedByActorRole String?                       @db.VarChar(20)
+  updatedByActorId   Int?
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+  permissions        SysAdminAccessGroupPermission[]
+  members            SysAdmin[]
+
+  @@map("sysadmin_access_groups")
+}
+
+model SysAdminAccessGroupPermission {
+  groupId       Int
+  permissionKey String              @db.VarChar(64)
+  group         SysAdminAccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, permissionKey])
+  @@map("sysadmin_access_group_permissions")
+}
+
+model SysAdminPermissionOverride {
+  sysAdminId         Int
+  permissionKey      String           @db.VarChar(64)
+  effect             PermissionEffect
+  createdByActorRole String?          @db.VarChar(20)
+  createdByActorId   Int?
+  createdAt          DateTime         @default(now())
+  sysAdmin           SysAdmin         @relation(fields: [sysAdminId], references: [id], onDelete: Cascade)
+
+  @@id([sysAdminId, permissionKey])
+  @@map("sysadmin_permission_overrides")
+}
+
+model SysAdminPmaAuditLog {
+  id             Int      @id @default(autoincrement())
+  action         String   @db.VarChar(48)
+  sysAdminId     Int?
+  targetUsername String?  @db.VarChar(100)
+  groupId        Int?
+  groupName      String?  @db.VarChar(60)
+  actorRole      String   @db.VarChar(20)
+  actorId        Int
+  actorUsername  String   @db.VarChar(100)
+  fieldModified  String   @db.VarChar(64)
+  oldValue       String?  @db.Text
+  newValue       String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sysAdminId])
+  @@map("sysadmin_pma_audit_logs")
 }

@@ -18,6 +18,17 @@ export const riderOfferDeclineRepository = {
     return prisma.riderOfferDecline.create({ data });
   },
 
+  // Every decline and lapse on one errand, oldest first. assignRider reads it to
+  // keep riders who declined off that errand, and declineErrand counts it to know
+  // when to stop re-offering and hand the errand to a dispatcher.
+  findForErrand(errandId: string) {
+    return prisma.riderOfferDecline.findMany({
+      where: { errandId },
+      select: { riderId: true, kind: true, declinedAt: true },
+      orderBy: { declinedAt: "asc" },
+    });
+  },
+
   // Declines per rider and kind in a range, for the Rider Performance report.
   countByRiderBetween(start: Date, end: Date) {
     return prisma.riderOfferDecline.groupBy({

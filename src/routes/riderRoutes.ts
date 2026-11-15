@@ -9,6 +9,7 @@ import {
   deleteRiderPhoto,
   recordBeacon,
   notifyRiderChat,
+  acceptRiderTerms,
 } from "../controllers/riderController.js";
 import { authenticateToken, requireRole, requirePermission } from "../middleware/auth.js";
 import { readLimiter, userApiLimiter, trackingLimiter } from "../middleware/rateLimiters.js";
@@ -28,6 +29,9 @@ router.get("/profile/:riderId", authenticateToken, readLimiter, getRiderProfile)
 
 // POST /api/riders/push-token - Rider registers/updates their Expo push token
 router.post("/push-token", authenticateToken, requireRole(["RIDER"]), userApiLimiter, registerPushToken);
+
+// POST /api/riders/accept-terms - Rider records explicit Terms of Use acceptance
+router.post("/accept-terms", authenticateToken, requireRole(["RIDER"]), userApiLimiter, acceptRiderTerms);
 
 // POST /api/riders/:riderId/notify-chat - Dispatcher sends push notification to rider
 router.post("/:riderId/notify-chat", authenticateToken, requireRole(["OWNER", "DISPATCHER"]), userApiLimiter, notifyRiderChat);

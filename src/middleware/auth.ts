@@ -7,6 +7,9 @@ import { JWT_SECRET } from "../config/env.js";
 import { getPermission, scopeOfRole, type PermissionScope } from "../lib/permissions.js";
 import { getEffectivePermissions } from "../lib/permissionCache.js";
 import { isMainOwner } from "../lib/mainOwner.js";
+import { getSysAdminPermission } from "../lib/sysAdminPermissions.js";
+import { getEffectiveSysAdminPermissions } from "../lib/sysAdminPermissionCache.js";
+import { isMainSysAdmin } from "../lib/mainSysAdmin.js";
 
 export interface TokenPayload {
   id: number;
@@ -175,6 +178,58 @@ export async function requireMainOwner(req: AuthenticatedRequest, res: Response,
     });
   } catch (error) {
     logger.error("Main Owner check failed:", error);
+    return res.status(503).json({ error: "Your access could not be checked right now. Try again in a moment." });
+  }
+}
+
+/**
+ * SysAdmin PMA permission guard. Validates permission keys at boot so typos
+ * fail fast, and fails closed (503) if the database/cache cannot be read.
+ */
+export function requireSysAdminPermission(key: string) {
+  const permission = getSysAdminPermission(key);
+  if (!permission) {
+    throw new Error(`requireSysAdminPermission: unknown permission key "${key}"`);
+  }
+
+  return async function requireSysAdminPermissionGuard(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ) {
+    if (!req.user || String(req.user.role ?? "").toUpperCase() !== "SYSADMIN") {
+      logRefusal(req, 403, `non-sysadmin caller at ${key}`);
+      return res.status(403).json({ error: "SysAdmin role required." });
+    }
+    try {
+      const effective = await getEffectiveSysAdminPermissions(req.user.id);
+      if (effective?.permissions.includes(key)) return next();
+      logRefusal(req, 403, `sysadmin access group lacks ${key}`);
+      return res.status(403).json({
+        error: `Your access group does not include ${permission.label}.`,
+        code: "PERMISSION_DENIED",
+        permission: key,
+      });
+    } catch (error) {
+      logger.error(`SysAdmin permission check for ${key} failed:`, error);
+      return res.status(503).json({ error: "Your access could not be checked right now. Try again in a moment." });
+    }
+  };
+}
+
+/**
+ * Root SysAdmin guard (lowest id in tbl_sys_admin). Use after requireRole("SYSADMIN").
+ */
+export async function requireMainSysAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (await isMainSysAdmin(req.user?.id, req.user?.role)) return next();
+    logRefusal(req, 403, "not the Main SysAdmin");
+    return res.status(403).json({
+      error: "Only the Main SysAdmin or Main Owner can manage IT Admin access.",
+      code: "MAIN_SYSADMIN_ONLY",
+    });
+  } catch (error) {
+    logger.error("Main SysAdmin check failed:", error);
     return res.status(503).json({ error: "Your access could not be checked right now. Try again in a moment." });
   }
 }

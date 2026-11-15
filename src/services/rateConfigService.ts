@@ -1,5 +1,6 @@
 import { rateConfigRepository, type RateConfigInput } from "../repositories/rateConfigRepository.js";
 import { getCachedRateConfig, invalidateRateConfigCache } from "../lib/rateConfigCache.js";
+import { RATE_CONFIG_BOUNDS, type RateConfigBounds } from "../lib/rateConfigBounds.js";
 import {
   BASE_FEE_DISTANCE_KM,
   HANDLING_AMOUNT_THRESHOLD,
@@ -28,12 +29,15 @@ export interface PricingRules {
   handlingItemUnitsThreshold: number;
   /** Basket value at or above which a handling fee applies regardless of size. */
   handlingAmountThreshold: number;
+  /** Company and national-policy numeric bounds enforced on rate edits. */
+  bounds: RateConfigBounds;
 }
 
 export const PRICING_RULES: PricingRules = {
   baseFeeDistanceKm: BASE_FEE_DISTANCE_KM,
   handlingItemUnitsThreshold: HANDLING_ITEM_UNITS_THRESHOLD,
   handlingAmountThreshold: HANDLING_AMOUNT_THRESHOLD,
+  bounds: RATE_CONFIG_BOUNDS,
 };
 
 export async function getRateConfig() {

@@ -4,6 +4,7 @@ import * as sessionService from "./sessionService.js";
 import * as userPresenceStore from "../lib/userPresenceStore.js";
 import * as riderPresenceStore from "../lib/riderPresenceStore.js";
 import { disconnectAccount, notifySessionRevoked } from "../lib/socket.js";
+import { getMainOwnerId, isMainOwner } from "../lib/mainOwner.js";
 import type { RoleType } from "@prisma/client";
 
 export interface MonitoredAccount {
@@ -18,6 +19,7 @@ export interface MonitoredAccount {
   role: "OWNER" | "DISPATCHER" | "RIDER" | "CUSTOMER";
   status: string;
   isOnline: boolean;
+  isMainOwner?: boolean;
   activeSessionsCount: number;
   emailVerified: boolean;
   createdAt: Date;
@@ -95,6 +97,7 @@ export async function listMonitoredAccounts(filters: ListAccountsFilters = {}) {
     const sessionCountMap = new Map<number, number>(
       staffSessions.map((s) => [s.subjectId, s._count.id])
     );
+    const mainOwnerId = await getMainOwnerId();
 
     for (const u of staffUsers) {
       const isUserOnline =
@@ -114,6 +117,7 @@ export async function listMonitoredAccounts(filters: ListAccountsFilters = {}) {
         role: u.role as "OWNER" | "DISPATCHER" | "RIDER",
         status: u.status,
         isOnline: isUserOnline,
+        isMainOwner: u.role === "OWNER" && u.id === mainOwnerId,
         activeSessionsCount: sessionCountMap.get(u.id) || 0,
         emailVerified: u.emailVerified,
         createdAt: u.createdAt,
@@ -235,6 +239,9 @@ export async function listMonitoredAccounts(filters: ListAccountsFilters = {}) {
 
 export async function getAccountSessions(role: string, accountId: number) {
   const normRole = role.toUpperCase();
+  if (!["OWNER", "DISPATCHER", "RIDER", "CUSTOMER"].includes(normRole)) {
+    throw new ServiceError(400, "Invalid monitored account role.");
+  }
   const subjectType: sessionService.SubjectType = normRole === "CUSTOMER" ? "CUSTOMER" : "USER";
 
   const sessions = await prisma.userSession.findMany({
@@ -301,6 +308,9 @@ export async function updateAccountStatus(
   reason?: string
 ) {
   const normRole = role.toUpperCase();
+  if (!["OWNER", "DISPATCHER", "RIDER", "CUSTOMER"].includes(normRole)) {
+    throw new ServiceError(400, "Invalid monitored account role.");
+  }
   const validStatuses = ["Active", "Suspended", "Inactive", "Locked"];
 
   if (!validStatuses.includes(newStatus)) {
@@ -328,6 +338,17 @@ export async function updateAccountStatus(
   } else {
     const user = await prisma.user.findUnique({ where: { id: accountId } });
     if (!user) throw new ServiceError(404, "Operational staff account not found.");
+
+    // Mutual Root Protection: no SysAdmin (including Main SysAdmin) may suspend,
+    // lock, or deactivate the Main Owner account.
+    if (newStatus !== "Active" && (await isMainOwner(user.id, user.role))) {
+      throw new ServiceError(
+        403,
+        "Root Protection: No System Administrator may suspend, lock, or deactivate the Main Owner account.",
+        { code: "MAIN_OWNER_PROTECTED" }
+      );
+    }
+
     oldStatus = user.status;
 
     await prisma.user.update({

@@ -411,3 +411,35 @@ export async function notifyRiderChatMessage(
   return { success: true };
 }
 
+export async function acceptRiderTerms(userId: number, version: string) {
+  const existingUser = await userRepository.findById(userId);
+  if (!existingUser) {
+    throw new ServiceError(404, "Rider account not found");
+  }
+  if (String(existingUser.role || "").toUpperCase() !== "RIDER") {
+    throw new ServiceError(403, "Only rider accounts can record rider Terms of Use acceptance.");
+  }
+  if (existingUser.status !== "Active") {
+    throw new ServiceError(403, "This account has been deactivated.");
+  }
+
+  // Idempotent: preserve the original acceptance timestamp if the same version
+  // was already accepted (prevents accidental overwrite on retried requests).
+  if (existingUser.termsAcceptedVersion === version && existingUser.termsAcceptedAt) {
+    const sanitizedExisting = withFullName(sanitize(existingUser));
+    return {
+      user: sanitizedExisting,
+      termsAcceptedAt: existingUser.termsAcceptedAt,
+      termsAcceptedVersion: existingUser.termsAcceptedVersion,
+    };
+  }
+
+  const updated = await userRepository.recordTermsAcceptance(userId, version, new Date());
+  const sanitizedUpdated = withFullName(sanitize(updated));
+  return {
+    user: sanitizedUpdated,
+    termsAcceptedAt: updated.termsAcceptedAt,
+    termsAcceptedVersion: updated.termsAcceptedVersion,
+  };
+}
+

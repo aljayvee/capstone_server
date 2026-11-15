@@ -2,20 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoisted with the mocks below: records every emit with the rooms it was
 // addressed to.
-const { emitted, chain, findMany } = vi.hoisted(() => {
+const { emitted, chain, findMany, socketListeners, ioOn } = vi.hoisted(() => {
   const emitted: Array<{ rooms: string[]; event: string; payload: any }> = [];
   const chain = (roomsSoFar: string[]): any => ({
     to: (room: string) => chain([...roomsSoFar, room]),
     emit: (event: string, payload: unknown) => emitted.push({ rooms: roomsSoFar, event, payload }),
   });
-  return { emitted, chain, findMany: vi.fn() };
+  const socketListeners: Record<string, (socket: any) => void> = {};
+  const ioOn = vi.fn((event: string, cb: (socket: any) => void) => {
+    socketListeners[event] = cb;
+  });
+  return { emitted, chain, findMany: vi.fn(), socketListeners, ioOn };
 });
 
 const { recomputeFromLivePosition } = vi.hoisted(() => ({ recomputeFromLivePosition: vi.fn() }));
 vi.mock("../src/services/etaService.js", () => ({ recomputeFromLivePosition }));
 
 vi.mock("../src/lib/socket.js", () => ({
-  io: { volatile: chain([]), on: vi.fn() },
+  io: { volatile: chain([]), on: ioOn },
   rooms: {
     role: (role: string) => `role:${role}`,
     errand: (id: string) => `errand:${id}`,
@@ -26,7 +30,7 @@ vi.mock("../src/lib/socket.js", () => ({
 
 vi.mock("../src/lib/prisma.js", () => ({ prisma: { errand: { findMany, findUnique: vi.fn() } } }));
 
-import { broadcastRiderLocation } from "../src/lib/riderLocationBroadcast.js";
+import { broadcastRiderLocation, registerRiderLocationChannel } from "../src/lib/riderLocationBroadcast.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -128,5 +132,110 @@ describe("broadcastRiderLocation", () => {
     broadcastRiderLocation(riderSeq++, { latitude: NaN, longitude: 124.67, recordedAt: Date.now() }, "socket");
     await flush();
     expect(emitted).toHaveLength(0);
+  });
+
+  it("propagates speedMps and mocked flags on broadcast", async () => {
+    const riderId = riderSeq++;
+    broadcastRiderLocation(
+      riderId,
+      { ...fixAt(0), speedMps: 6.4, mocked: true },
+      "socket"
+    );
+    await flush();
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].payload.speedMps).toBe(6.4);
+    expect(emitted[0].payload.mocked).toBe(true);
+  });
+
+  it("omits mocked when false and sets speedMps to null when omitted", async () => {
+    const riderId = riderSeq++;
+    broadcastRiderLocation(
+      riderId,
+      { ...fixAt(0), mocked: false },
+      "beacon"
+    );
+    await flush();
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].payload.speedMps).toBeNull();
+    expect("mocked" in emitted[0].payload).toBe(false);
+  });
+});
+
+describe("registerRiderLocationChannel", () => {
+  it("propagates speedMps and mocked from inbound rider:location socket events", async () => {
+    const handlers: Record<string, (...args: any[]) => void> = {};
+    const riderId = riderSeq++;
+    const fakeSocket = {
+      data: { userId: 10, role: "RIDER", riderId },
+      on: vi.fn((event: string, cb: (...args: any[]) => void) => {
+        handlers[event] = cb;
+      }),
+    };
+
+    registerRiderLocationChannel();
+    const onConnection = socketListeners.connection;
+    expect(typeof onConnection).toBe("function");
+    onConnection(fakeSocket);
+
+    handlers["rider:location"]({
+      latitude: 6.691,
+      longitude: 124.672,
+      heading: 90,
+      accuracyMeters: 5,
+      speedMps: 8.75,
+      mocked: true,
+      recordedAt: Date.now(),
+    });
+    await flush();
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].payload).toMatchObject({
+      riderId,
+      latitude: 6.691,
+      longitude: 124.672,
+      speedMps: 8.75,
+      mocked: true,
+      source: "socket",
+    });
+
+    // Next non-mocked fix 1.5s later omits mocked and nulls missing speedMps.
+    vi.advanceTimersByTime(1500);
+    handlers["rider:location"]({
+      latitude: 6.692,
+      longitude: 124.673,
+      mocked: false,
+      recordedAt: Date.now(),
+    });
+    await flush();
+
+    expect(emitted).toHaveLength(2);
+    expect(emitted[1].payload.speedMps).toBeNull();
+    expect("mocked" in emitted[1].payload).toBe(false);
+
+    // fleet:snapshot reflects the stored speedMps and mocked state too.
+    const staffHandlers: Record<string, (...args: any[]) => void> = {};
+    onConnection({
+      data: { userId: 1, role: "DISPATCHER" },
+      on: vi.fn((event: string, cb: (...args: any[]) => void) => {
+        staffHandlers[event] = cb;
+      }),
+    });
+    const ack = vi.fn();
+    staffHandlers["fleet:snapshot"](ack);
+    expect(ack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        riders: expect.arrayContaining([
+          expect.objectContaining({
+            riderId,
+            latitude: 6.692,
+            longitude: 124.673,
+            speedMps: null,
+          }),
+        ]),
+      })
+    );
   });
 });

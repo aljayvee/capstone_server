@@ -7,6 +7,7 @@ import { parseOrThrow } from "../validators/validate.js";
 import { pushTokenSchema } from "../validators/pushTokenValidators.js";
 import { riderPhotoUploadSchema } from "../validators/riderPhotoValidators.js";
 import { riderBeaconSchema } from "../validators/riderBeaconValidators.js";
+import { acceptRiderTermsSchema } from "../validators/riderLegalValidators.js";
 import * as riderBeaconService from "../services/riderBeaconService.js";
 
 function parseRiderId(raw: string): number {
@@ -130,5 +131,12 @@ export const notifyRiderChat = asyncHandler<AuthenticatedRequest>(async (req, re
   const senderName = typeof req.body?.senderName === "string" ? req.body.senderName : undefined;
   const result = await userService.notifyRiderChatMessage(riderId, req.user!.id, text, senderName, hasImage);
   res.json(result);
+});
+
+// POST /api/riders/accept-terms - Records the rider's explicit Terms of Use acceptance
+export const acceptRiderTerms = asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const input = parseOrThrow(acceptRiderTermsSchema, req.body);
+  const result = await userService.acceptRiderTerms(req.user!.id, input.version);
+  res.status(200).json({ success: true, ...result });
 });
 

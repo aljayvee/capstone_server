@@ -204,6 +204,9 @@ export async function listAccountModificationLogs(filters: ListModificationAudit
       name = log.customer.information
         ? `${log.customer.information.firstName} ${log.customer.information.lastName}`
         : log.customer.username;
+    } else if (log.role === "SYSADMIN") {
+      username = log.verifiedVia || "SysAdmin PMA";
+      name = "SysAdmin Access Control (PMA)";
     }
 
     return {

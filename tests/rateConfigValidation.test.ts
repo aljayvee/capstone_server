@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { updateRateConfigSchema } from "../src/validators/rateConfigValidators.js";
 import { HANDLING_AMOUNT_THRESHOLD } from "../src/services/patterns/pricingStrategy.js";
+import { RATE_CONFIG_BOUNDS } from "../src/lib/rateConfigBounds.js";
+import { PRICING_RULES } from "../src/services/rateConfigService.js";
 
 /**
  * The rate card is not a set of independent numbers.
@@ -90,16 +92,85 @@ describe("the handling crossover cannot delete the flat tier", () => {
   });
 });
 
-describe("per-field bounds still hold", () => {
+describe("per-field policy bounds hold", () => {
   it("rejects a negative fee", () => {
     expect(parse({ baseFee: -1 }).success).toBe(false);
   });
 
-  it("rejects a percentage above 100", () => {
-    expect(parse({ groceryFeePercent: 101 }).success).toBe(false);
+  it("rejects a percentage above the 30% policy ceiling", () => {
+    expect(parse({ groceryFeePercent: 31 }).success).toBe(false);
   });
 
   it("rejects a fractional store count", () => {
     expect(parse({ maxAdditionalStores: 1.5 }).success).toBe(false);
+  });
+
+  it("rejects predatory below-floor base and per-km rates", () => {
+    expect(parse({ baseFee: 0 }).success).toBe(false);
+    expect(parse({ baseFee: RATE_CONFIG_BOUNDS.baseFee.min - 1 }).success).toBe(false);
+    expect(parse({ perKmRate: 0 }).success).toBe(false);
+    expect(parse({ perKmRate: RATE_CONFIG_BOUNDS.perKmRate.min - 1 }).success).toBe(false);
+  });
+
+  it("rejects million-peso and above-ceiling inputs on every peso field", () => {
+    const pesoFields = [
+      "baseFee",
+      "perKmRate",
+      "multiStoreFeePerStore",
+      "groceryFeeThreshold",
+      "groceryFeeFlat",
+      "nonCodThreshold",
+      "nonCodFeeLow",
+      "nonCodFeeHigh",
+    ] as const;
+
+    for (const field of pesoFields) {
+      const millionResult = parse({ [field]: 1_000_000 });
+      expect(millionResult.success, `expected ${field}=1000000 to fail`).toBe(false);
+
+      const overMaxResult = parse({ [field]: RATE_CONFIG_BOUNDS[field].max + 1 });
+      expect(overMaxResult.success, `expected ${field} over max to fail`).toBe(false);
+    }
+  });
+
+  it("rejects non-finite numbers", () => {
+    expect(parse({ baseFee: Number.POSITIVE_INFINITY }).success).toBe(false);
+    expect(parse({ perKmRate: Number.NaN }).success).toBe(false);
+  });
+
+  it("accepts exact inclusive policy min and max boundaries", () => {
+    expect(
+      parse({
+        baseFee: RATE_CONFIG_BOUNDS.baseFee.min,
+        perKmRate: RATE_CONFIG_BOUNDS.perKmRate.min,
+        multiStoreFeePerStore: RATE_CONFIG_BOUNDS.multiStoreFeePerStore.min,
+        maxAdditionalStores: RATE_CONFIG_BOUNDS.maxAdditionalStores.min,
+        groceryFeeThreshold: RATE_CONFIG_BOUNDS.groceryFeeThreshold.min,
+        groceryFeeFlat: RATE_CONFIG_BOUNDS.groceryFeeFlat.min,
+        groceryFeePercent: RATE_CONFIG_BOUNDS.groceryFeePercent.min,
+        nonCodThreshold: RATE_CONFIG_BOUNDS.nonCodThreshold.min,
+        nonCodFeeLow: RATE_CONFIG_BOUNDS.nonCodFeeLow.min,
+        nonCodFeeHigh: RATE_CONFIG_BOUNDS.nonCodFeeHigh.min,
+      }).success
+    ).toBe(true);
+
+    expect(
+      parse({
+        baseFee: RATE_CONFIG_BOUNDS.baseFee.max,
+        perKmRate: RATE_CONFIG_BOUNDS.perKmRate.max,
+        multiStoreFeePerStore: RATE_CONFIG_BOUNDS.multiStoreFeePerStore.max,
+        maxAdditionalStores: RATE_CONFIG_BOUNDS.maxAdditionalStores.max,
+        groceryFeeThreshold: RATE_CONFIG_BOUNDS.groceryFeeThreshold.max,
+        groceryFeeFlat: RATE_CONFIG_BOUNDS.groceryFeeFlat.max,
+        groceryFeePercent: RATE_CONFIG_BOUNDS.groceryFeePercent.max,
+        nonCodThreshold: RATE_CONFIG_BOUNDS.nonCodThreshold.max,
+        nonCodFeeLow: RATE_CONFIG_BOUNDS.nonCodFeeLow.max,
+        nonCodFeeHigh: RATE_CONFIG_BOUNDS.nonCodFeeHigh.max,
+      }).success
+    ).toBe(true);
+  });
+
+  it("publishes the exact bounds inside PRICING_RULES", () => {
+    expect(PRICING_RULES.bounds).toEqual(RATE_CONFIG_BOUNDS);
   });
 });

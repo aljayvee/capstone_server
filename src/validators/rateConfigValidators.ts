@@ -1,28 +1,65 @@
 import { z } from "zod";
 import { HANDLING_AMOUNT_THRESHOLD } from "../services/patterns/pricingStrategy.js";
-import { MAX_ADDITIONAL_STORES_CEILING } from "../lib/storeLimitBounds.js";
+import { RATE_CONFIG_BOUNDS } from "../lib/rateConfigBounds.js";
+
+function boundedPeso(label: string, bound: { min: number; max: number }) {
+  return z.coerce
+    .number()
+    .finite(`${label} must be a valid number.`)
+    .min(bound.min, `${label} must be at least ₱${bound.min.toLocaleString()}.`)
+    .max(bound.max, `${label} cannot exceed ₱${bound.max.toLocaleString()}.`);
+}
 
 /**
  * The owner's rate card, as submitted.
  *
- * Per-field bounds were all this had, which let any single typo through as long
- * as it was a non-negative number — and a rate card is not a set of independent
- * numbers. Two of the cross-field rules below exist because the relationship
- * they enforce is the whole meaning of the pair: which side of a threshold each
- * fee governs is not something a form can be trusted to get right unaided.
+ * Every rate field is bounded by `RATE_CONFIG_BOUNDS` (preventing ₱0
+ * undercutting on rider-paid base/distance rates and million-peso spikes), and
+ * the two cross-field rules preserve the meaning of threshold pairs.
  */
 export const updateRateConfigSchema = z
   .object({
-    baseFee: z.coerce.number().nonnegative(),
-    perKmRate: z.coerce.number().nonnegative(),
-    multiStoreFeePerStore: z.coerce.number().nonnegative(),
-    maxAdditionalStores: z.coerce.number().int().nonnegative().max(MAX_ADDITIONAL_STORES_CEILING),
-    groceryFeeThreshold: z.coerce.number().nonnegative(),
-    groceryFeePercent: z.coerce.number().min(0).max(100),
-    groceryFeeFlat: z.coerce.number().nonnegative(),
-    nonCodThreshold: z.coerce.number().nonnegative(),
-    nonCodFeeHigh: z.coerce.number().nonnegative(),
-    nonCodFeeLow: z.coerce.number().nonnegative(),
+    baseFee: boundedPeso("Base Delivery Fare", RATE_CONFIG_BOUNDS.baseFee),
+    perKmRate: boundedPeso("Excess Distance Rate", RATE_CONFIG_BOUNDS.perKmRate),
+    multiStoreFeePerStore: boundedPeso(
+      "Multi-Store Stop Fee",
+      RATE_CONFIG_BOUNDS.multiStoreFeePerStore
+    ),
+    maxAdditionalStores: z.coerce
+      .number()
+      .finite("Max Additional Stores must be a valid number.")
+      .int("Max Additional Stores must be a whole number.")
+      .min(
+        RATE_CONFIG_BOUNDS.maxAdditionalStores.min,
+        `Max Additional Stores must be at least ${RATE_CONFIG_BOUNDS.maxAdditionalStores.min}.`
+      )
+      .max(
+        RATE_CONFIG_BOUNDS.maxAdditionalStores.max,
+        `Max Additional Stores cannot exceed ${RATE_CONFIG_BOUNDS.maxAdditionalStores.max}.`
+      ),
+    groceryFeeThreshold: z.coerce
+      .number()
+      .finite("Grocery Order Threshold must be a valid number.")
+      .nonnegative("Grocery Order Threshold cannot be negative.")
+      .max(
+        RATE_CONFIG_BOUNDS.groceryFeeThreshold.max,
+        `Grocery Order Threshold cannot exceed ₱${RATE_CONFIG_BOUNDS.groceryFeeThreshold.max.toLocaleString()}.`
+      ),
+    groceryFeePercent: z.coerce
+      .number()
+      .finite("Grocery Percentage Rate must be a valid number.")
+      .min(
+        RATE_CONFIG_BOUNDS.groceryFeePercent.min,
+        `Grocery Percentage Rate must be at least ${RATE_CONFIG_BOUNDS.groceryFeePercent.min}%.`
+      )
+      .max(
+        RATE_CONFIG_BOUNDS.groceryFeePercent.max,
+        `Grocery Percentage Rate cannot exceed ${RATE_CONFIG_BOUNDS.groceryFeePercent.max}%.`
+      ),
+    groceryFeeFlat: boundedPeso("Grocery Flat Handling Fee", RATE_CONFIG_BOUNDS.groceryFeeFlat),
+    nonCodThreshold: boundedPeso("Non-COD Purchase Threshold", RATE_CONFIG_BOUNDS.nonCodThreshold),
+    nonCodFeeHigh: boundedPeso("Non-COD High Surcharge", RATE_CONFIG_BOUNDS.nonCodFeeHigh),
+    nonCodFeeLow: boundedPeso("Non-COD Low Surcharge", RATE_CONFIG_BOUNDS.nonCodFeeLow),
   })
   // The fee at or above the threshold cannot be the cheaper one.
   //

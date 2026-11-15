@@ -21,6 +21,7 @@ export interface RiderPosition {
   accuracyMeters: number | null;
   headingDeg: number | null;
   speedMps?: number | null;
+  mocked?: boolean;
 }
 
 const positions = new Map<number, RiderPosition>();

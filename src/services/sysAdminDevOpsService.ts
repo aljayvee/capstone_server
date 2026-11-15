@@ -6,6 +6,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { prisma } from "../lib/prisma.js";
 import { ServiceError } from "./ServiceError.js";
+import { getMainSysAdminId } from "../lib/mainSysAdmin.js";
 import { sysAdminPasswordPolicy } from "../validators/sysAdminValidators.js";
 import { logger } from "../lib/logger.js";
 import { sysAdminBackupService } from "./sysAdminBackupService.js";
@@ -581,30 +582,46 @@ export async function restartService(
 }
 
 export async function listItAdministrators() {
-  const admins = await prisma.sysAdmin.findMany({
-    select: {
-      id: true,
-      username: true,
-      firstName: true,
-      middleName: true,
-      lastName: true,
-      nickname: true,
-      email: true,
-      phone: true,
-      role: true,
-      status: true,
-      profileCompleted: true,
-      emailVerified: true,
-      lastLoginAt: true,
-      createdAt: true,
-    },
-    orderBy: { id: "asc" },
-  });
+  const [admins, mainSysAdminId] = await Promise.all([
+    prisma.sysAdmin.findMany({
+      select: {
+        id: true,
+        username: true,
+        firstName: true,
+        middleName: true,
+        lastName: true,
+        nickname: true,
+        email: true,
+        phone: true,
+        role: true,
+        status: true,
+        profileCompleted: true,
+        emailVerified: true,
+        lastLoginAt: true,
+        createdAt: true,
+        accessGroupId: true,
+        accessGroup: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { id: "asc" },
+    }),
+    getMainSysAdminId(),
+  ]);
 
-  return admins.map((a) => ({
-    ...a,
-    name: a.firstName && a.lastName ? `${a.firstName} ${a.lastName}` : a.username,
-  }));
+  return admins.map((a) => {
+    const isMain = a.id === mainSysAdminId;
+    return {
+      ...a,
+      name: a.firstName && a.lastName ? `${a.firstName} ${a.lastName}` : a.username,
+      isMainSysAdmin: isMain,
+      accessGroupId: isMain ? null : a.accessGroupId,
+      accessGroupName: isMain ? null : (a.accessGroup?.name ?? null),
+      baselineName: isMain
+        ? "Main SysAdmin (Full access)"
+        : (a.accessGroup?.name ?? "Read-Only Monitoring (Default)"),
+    };
+  });
 }
 
 export async function createItAdministrator(data: {
@@ -665,8 +682,11 @@ export async function createItAdministrator(data: {
   });
 
   return {
-    message: "IT Administrator account provisioned successfully.",
-    admin: created,
+    message: "IT Administrator account provisioned with Read-Only Monitoring baseline.",
+    admin: {
+      ...created,
+      baselineName: "Read-Only Monitoring (Default)",
+    },
   };
 }
 
