@@ -106,6 +106,7 @@ import {
   exportAuditTimelineHandler,
   getRiderActivityHandler,
 } from "../controllers/auditTimelineController.js";
+import { getLogRetentionHandler, updateLogRetentionHandler, runLogRetentionHandler } from "../controllers/logRetentionController.js";
 import {
   sysAdminLoginLimiter,
   sysAdminBackupLimiter,
@@ -168,6 +169,10 @@ router.get("/sysadmin/audit/timeline/export", authenticateToken, requireRole("SY
 router.get("/sysadmin/audit/timeline/:source/:id", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getAuditEventHandler);
 router.get("/sysadmin/audit/insights", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getAuditInsightsHandler);
 router.get("/sysadmin/audit/riders", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getRiderActivityHandler);
+// Log retention: status for audit viewers; changing or running it needs backup management and the admin password.
+router.get("/sysadmin/audit/retention", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("audit.view"), readLimiter, getLogRetentionHandler);
+router.put("/sysadmin/audit/retention", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("devops.backups.manage"), sysAdminMutationLimiter, verifyStepUpPassword, updateLogRetentionHandler);
+router.post("/sysadmin/audit/retention/run", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("devops.backups.manage"), sysAdminBackupLimiter, verifyStepUpPassword, runLogRetentionHandler);
 
 // ── GoAccess Web Traffic Monitoring ──────────────────────────────────────────
 router.get("/sysadmin/traffic/summary", authenticateToken, requireRole("SYSADMIN"), requireSysAdminPermission("traffic.view"), readLimiter, getTrafficSummaryHandler);

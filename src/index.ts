@@ -30,6 +30,7 @@ import { rememberPublicOrigin } from "./lib/publicOrigin.js";
 import { checkReadiness } from "./lib/readiness.js";
 import { installExitRecorder, recordProcessStart, type PreviousExit } from "./lib/processState.js";
 import { scheduleHealthWatchJob } from "./jobs/healthWatch.js";
+import { scheduleLogRetentionJob } from "./jobs/logRetention.js";
 import { sysAdminAlertService } from "./services/sysAdminAlertService.js";
 import { sysAdminIncidentService } from "./services/sysAdminIncidentService.js";
 
@@ -194,6 +195,7 @@ scheduleCategoryRetrainingJob();
 scheduleRiderWatchReconcileJob();
 scheduleOfferExpiryJob();
 scheduleHealthWatchJob();
+scheduleLogRetentionJob();
 startRiderChatWatch();
 
 // Start HTTP Server (which includes Express and Socket.IO)
