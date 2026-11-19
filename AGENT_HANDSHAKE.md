@@ -1,5 +1,14 @@
 # 🌐 TRI-AGENT COLLABORATION TUNNEL (CLAUDE CODE ◄► OPENAI CODEX ◄► ANTIGRAVITY) - SERVER BACKEND
 
+## 2026-11-19 - Staff cataloguing endpoints (Claude)
+- `src/services/catalogSuggestionService.ts`: `catalogueItem()` (upsert by item + store; category must be an active MerchantCategory; optional verifiedPlaceId must exist; sourceType `STAFF_CATALOGUED`) and `retireCatalogItem()` (marks unavailable, keeps the row). `CatalogInputError` -> 400 `{ error }`.
+- `src/controllers/catalogController.ts`, `src/routes/catalogRoutes.ts`: `POST /api/catalog/items`, `DELETE /api/catalog/items/:id`, DISPATCHER/OWNER only, `userApiLimiter`.
+- `tests/catalogSuggestion.test.ts`: +5 cataloguing tests.
+- **Verification**: `npx tsc --noEmit` exit 0; `catalogSuggestion` + `categoryRename` 18/18 pass. No schema change. Not committed.
+- **DEPLOYED 2026-11-19 ~23:57 (+08; 16:56 on the VPS clock)**: only these 3 src files, uploaded over prod copies proven equal to HEAD (CR stripped); no unbuilt src on prod before. VPS `tsc --noEmit` ok, `npm run build` ok, `pm2 restart capstone-backend` online, `/api/health/ready` 200, `POST /api/catalog/items` signed-out -> 401 (route live). Backup (src + dist): `/root/deploy-backups/server-catalog-20261119-165645`.
+- Prod check: `crawled_merchant_items.itemName/rawStoreName` are `utf8mb4_unicode_ci`, so the `equals` duplicate check is case-insensitive as assumed. 0 rows at deploy. No unique index, so two simultaneous saves can make two rows; the search merge dedupes them case-insensitively.
+- Web half: top of `C:/Capstone_Project_Web/AGENT_HANDSHAKE.md`.
+
 ## 2026-11-12 - Settlement & Transactions Report Updates (Antigravity)
 
 * **Scope**:

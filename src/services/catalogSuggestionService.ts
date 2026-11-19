@@ -193,6 +193,110 @@ async function searchCrawledItems(
   }
 }
 
+export class CatalogInputError extends Error {}
+
+export interface CatalogueItemInput {
+  itemName: unknown;
+  rawStoreName: unknown;
+  categoryName: unknown;
+  verifiedPlaceId?: unknown;
+}
+
+function cleanText(value: unknown, max: number): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
+}
+
+/**
+ * Staff cataloguing (sourceType STAFF_CATALOGUED): a dispatcher or owner saves
+ * an item against a store so the Catalog Helper finds it next time. Nothing else
+ * ever wrote to crawled_merchant_items.
+ *
+ * Saving the same item at the same store again does not add a row: it refreshes
+ * lastSeenAt, brings an item marked unavailable back, and takes the newer
+ * category. The category must be a live MerchantCategory, so a category an owner
+ * adds or renames needs no change here.
+ */
+export async function catalogueItem(
+  input: CatalogueItemInput
+): Promise<{ item: CatalogItemSuggestion; created: boolean }> {
+  const itemName = cleanText(input.itemName, 150);
+  const rawStoreName = cleanText(input.rawStoreName, 150);
+  const categoryName = cleanText(input.categoryName, 80);
+  if (itemName.length < 2) throw new CatalogInputError("Item name must be at least 2 characters.");
+  if (!rawStoreName) throw new CatalogInputError("Pick the store this item is bought at.");
+  if (!categoryName) throw new CatalogInputError("Pick the category of the store.");
+
+  const category = await prisma.merchantCategory.findFirst({
+    where: { name: categoryName, status: "Active" },
+    select: { name: true },
+  });
+  if (!category) throw new CatalogInputError(`"${categoryName}" is not an active category.`);
+
+  let verifiedPlaceId: string | null = null;
+  if (typeof input.verifiedPlaceId === "string" && input.verifiedPlaceId.trim()) {
+    const place = await prisma.verifiedPlace.findUnique({
+      where: { id: input.verifiedPlaceId.trim() },
+      select: { id: true },
+    });
+    if (!place) throw new CatalogInputError("That catalogue place no longer exists.");
+    verifiedPlaceId = place.id;
+  }
+
+  const select = {
+    id: true,
+    itemName: true,
+    rawStoreName: true,
+    categoryName: true,
+    isAvailable: true,
+    verifiedPlaceId: true,
+  } as const;
+
+  // MariaDB's default collation is case-insensitive, so equals matches "pandesal"
+  // to "Pandesal" without a lower() on either side.
+  const existing = await prisma.crawledMerchantItem.findFirst({
+    where: { itemName, rawStoreName },
+    select: { id: true },
+  });
+  if (existing) {
+    const row = await prisma.crawledMerchantItem.update({
+      where: { id: existing.id },
+      data: {
+        categoryName: category.name,
+        isAvailable: true,
+        lastSeenAt: new Date(),
+        ...(verifiedPlaceId ? { verifiedPlaceId } : {}),
+      },
+      select,
+    });
+    return { item: { ...row, source: "crawled" }, created: false };
+  }
+
+  const row = await prisma.crawledMerchantItem.create({
+    data: {
+      itemName,
+      rawStoreName,
+      categoryName: category.name,
+      verifiedPlaceId,
+      sourceType: "STAFF_CATALOGUED",
+    },
+    select,
+  });
+  return { item: { ...row, source: "crawled" }, created: true };
+}
+
+/**
+ * Takes an item out of the Catalog Helper. The row is kept, marked unavailable,
+ * so cataloguing it again brings it back rather than starting over.
+ */
+export async function retireCatalogItem(id: number): Promise<boolean> {
+  if (!Number.isInteger(id) || id <= 0) return false;
+  const result = await prisma.crawledMerchantItem.updateMany({
+    where: { id },
+    data: { isAvailable: false },
+  });
+  return result.count > 0;
+}
+
 /**
  * Lists available menu items associated with a specific verified establishment.
  */

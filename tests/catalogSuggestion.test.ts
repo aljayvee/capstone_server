@@ -8,8 +8,16 @@ vi.mock("../src/lib/logger.js", () => ({
 }));
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
-    crawledMerchantItem: { findMany: vi.fn() },
+    crawledMerchantItem: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
     pabiliDetail: { findMany: vi.fn() },
+    merchantCategory: { findFirst: vi.fn() },
+    verifiedPlace: { findUnique: vi.fn() },
   },
 }));
 vi.mock("../src/lib/category/categoryServiceClient.js", () => ({
@@ -18,7 +26,13 @@ vi.mock("../src/lib/category/categoryServiceClient.js", () => ({
 
 import { prisma } from "../src/lib/prisma.js";
 import { searchCommonItems } from "../src/lib/category/categoryServiceClient.js";
-import { searchCatalogItems, splitStoreCategory } from "../src/services/catalogSuggestionService.js";
+import {
+  CatalogInputError,
+  catalogueItem,
+  retireCatalogItem,
+  searchCatalogItems,
+  splitStoreCategory,
+} from "../src/services/catalogSuggestionService.js";
 
 const db = prisma as unknown as Record<string, { findMany: ReturnType<typeof vi.fn> }>;
 const common = searchCommonItems as unknown as ReturnType<typeof vi.fn>;
@@ -97,5 +111,62 @@ describe("searchCatalogItems", () => {
 
   it("ignores one-letter searches", async () => {
     expect(await searchCatalogItems("a")).toEqual([]);
+  });
+});
+
+describe("staff cataloguing", () => {
+  const crawled = prisma.crawledMerchantItem as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  const category = (prisma as any).merchantCategory.findFirst as ReturnType<typeof vi.fn>;
+  const place = (prisma as any).verifiedPlace.findUnique as ReturnType<typeof vi.fn>;
+  const input = { itemName: "  Pandesal ", rawStoreName: "Julie's Bakeshop", categoryName: "Bakery" };
+
+  beforeEach(() => {
+    category.mockResolvedValue({ name: "Bakery" });
+    place.mockResolvedValue(null);
+    crawled.findFirst.mockResolvedValue(null);
+    crawled.create.mockImplementation(async ({ data }: any) => ({ id: 11, isAvailable: true, verifiedPlaceId: null, ...data }));
+  });
+
+  it("writes a STAFF_CATALOGUED row the helper can then find", async () => {
+    const { item, created } = await catalogueItem(input);
+    expect(created).toBe(true);
+    expect(crawled.create.mock.calls[0][0].data).toMatchObject({
+      itemName: "Pandesal", // trimmed
+      rawStoreName: "Julie's Bakeshop",
+      categoryName: "Bakery",
+      sourceType: "STAFF_CATALOGUED",
+    });
+    expect(item).toMatchObject({ id: 11, source: "crawled" });
+  });
+
+  it("refreshes an existing row instead of adding a duplicate, and revives a retired one", async () => {
+    crawled.findFirst.mockResolvedValue({ id: 5 });
+    crawled.update.mockResolvedValue({ id: 5, itemName: "Pandesal", rawStoreName: "Julie's Bakeshop", categoryName: "Bakery", isAvailable: true, verifiedPlaceId: null });
+    const { created } = await catalogueItem(input);
+    expect(created).toBe(false);
+    expect(crawled.create).not.toHaveBeenCalled();
+    expect(crawled.update.mock.calls[0][0].data).toMatchObject({ isAvailable: true });
+  });
+
+  it("refuses a category an owner has not got active, so owner changes need no code here", async () => {
+    category.mockResolvedValue(null);
+    await expect(catalogueItem({ ...input, categoryName: "Nope" })).rejects.toBeInstanceOf(CatalogInputError);
+    expect(crawled.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a short name, a missing store and a place that does not exist", async () => {
+    await expect(catalogueItem({ ...input, itemName: "a" })).rejects.toBeInstanceOf(CatalogInputError);
+    await expect(catalogueItem({ ...input, rawStoreName: " " })).rejects.toBeInstanceOf(CatalogInputError);
+    await expect(catalogueItem({ ...input, verifiedPlaceId: "gone" })).rejects.toBeInstanceOf(CatalogInputError);
+    await expect(catalogueItem({ ...input, itemName: { $gt: "" } })).rejects.toBeInstanceOf(CatalogInputError);
+  });
+
+  it("retires by marking unavailable, and reports a missing id", async () => {
+    crawled.updateMany.mockResolvedValue({ count: 1 });
+    expect(await retireCatalogItem(5)).toBe(true);
+    expect(crawled.updateMany).toHaveBeenCalledWith({ where: { id: 5 }, data: { isAvailable: false } });
+    crawled.updateMany.mockResolvedValue({ count: 0 });
+    expect(await retireCatalogItem(99)).toBe(false);
+    expect(await retireCatalogItem(NaN)).toBe(false);
   });
 });
