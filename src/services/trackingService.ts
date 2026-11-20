@@ -10,8 +10,10 @@ import * as etaService from "./etaService.js";
 import {
   applyGeofenceTransitions,
   detectStopMismatch,
+  GEOFENCE_RADIUS_METERS,
   type GeofenceTransition,
 } from "./geofenceService.js";
+import { userRepository } from "../repositories/userRepository.js";
 import { ServiceError } from "./ServiceError.js";
 import type { TrackPointInput } from "../validators/trackingValidators.js";
 import { eventPublisher } from "../lib/eventPublisher.js";
@@ -294,4 +296,92 @@ async function mapMatch(
 
 export async function listTrack(errandId: string) {
   return trackPointRepository.listForErrand(errandId);
+}
+
+// The replay draws at most this many fixes. At one fix per 60 s or 100 m that
+// is days of riding; an errand past it has a stuck tracker, not a long route.
+export const REPLAY_POINT_CAP = 5000;
+
+const isoOrNull = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+
+// The errand fields the replay reads; findById's row satisfies it.
+type ReplayErrand = {
+  referenceNo: string | null;
+  status: string;
+  acceptedAt: Date | null;
+  deliveredAt: Date | null;
+  deliveryLatitude: number | null;
+  deliveryLongitude: number | null;
+  routeGeometry: string | null;
+  etaPromisedHighAt: Date | null;
+};
+
+/**
+ * Everything the staff route replay needs in one response: the trail, the
+ * errand's promise and door, the stops with their geofences, and who rode it.
+ *
+ * Additive over the older `{ errandId, points }` shape so a client built for
+ * that keeps working. Access is the controller's job; this assumes the errand
+ * exists and the caller may read it. A caller that already loaded the errand
+ * (for the access check) passes it in to save a second full read.
+ */
+export async function getReplay(errandId: string, loaded?: ReplayErrand | null) {
+  const [rows, errand, pinpoints, nearestToDoor] = await Promise.all([
+    trackPointRepository.listForReplay(errandId, REPLAY_POINT_CAP + 1),
+    loaded ?? errandRepository.findById(errandId),
+    pinpointRepository.findByErrandId(errandId),
+    errandRepository.nearestFixToDoorAtDelivery([errandId]),
+  ]);
+
+  const truncated = rows.length > REPLAY_POINT_CAP;
+  const points = (truncated ? rows.slice(0, REPLAY_POINT_CAP) : rows).map((p) => ({
+    latitude: p.latitude,
+    longitude: p.longitude,
+    accuracyMeters: p.accuracyMeters ?? null,
+    speedMps: p.speedMps ?? null,
+    headingDeg: p.headingDeg ?? null,
+    recordedAt: p.recordedAt.toISOString(),
+    receivedAt: p.receivedAt.toISOString(),
+    isMapMatched: p.isMapMatched,
+    wasOffline: p.wasOffline,
+    riderId: p.riderId,
+  }));
+
+  // A reassigned errand has two riders in its trail. Ordered by first
+  // appearance so the replay can colour them in the order they rode.
+  const riderIds = [...new Set(points.map((p) => p.riderId))];
+  const names = new Map(
+    (await userRepository.findNamesByIds(riderIds)).map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()])
+  );
+  const riders = riderIds.map((id) => ({ id, name: names.get(id) || `Rider ${id}` }));
+
+  return {
+    errandId,
+    points,
+    truncated,
+    errand: {
+      referenceNo: errand?.referenceNo ?? null,
+      status: String(errand?.status ?? ""),
+      acceptedAt: isoOrNull(errand?.acceptedAt),
+      deliveredAt: isoOrNull(errand?.deliveredAt),
+      deliveryLatitude: errand?.deliveryLatitude ?? null,
+      deliveryLongitude: errand?.deliveryLongitude ?? null,
+      routeGeometry: errand?.routeGeometry ?? null,
+      etaPromisedHighAt: isoOrNull(errand?.etaPromisedHighAt),
+    },
+    stops: pinpoints.map((s) => ({
+      id: s.id,
+      storeName: s.storeName,
+      sequence: s.sequence,
+      latitude: s.latitude,
+      longitude: s.longitude,
+      arrivedAt: isoOrNull(s.arrivedAt),
+      departedAt: isoOrNull(s.departedAt),
+      // A pin dropped outside the catalogue has no category; the geofence
+      // falls back to its default for that stop, so the replay draws the same.
+      geofenceRadiusMeters: s.category?.geofenceRadiusMeters ?? GEOFENCE_RADIUS_METERS,
+    })),
+    riders,
+    nearestToDoorMeters: nearestToDoor.get(errandId) ?? null,
+  };
 }

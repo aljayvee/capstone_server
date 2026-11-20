@@ -29,6 +29,30 @@ export const trackPointRepository = {
     });
   },
 
+  // The trail for the staff route replay, oldest first. Selects only what the
+  // replay draws (no id, no clientPointId) and stops at `take`, so a runaway
+  // trail cannot load unbounded rows; the caller asks for one more than it
+  // returns to learn whether it was cut short.
+  listForReplay(errandId: string, take: number) {
+    return prisma.errandTrackPoint.findMany({
+      where: { errandId },
+      orderBy: { recordedAt: "asc" },
+      take,
+      select: {
+        latitude: true,
+        longitude: true,
+        accuracyMeters: true,
+        speedMps: true,
+        headingDeg: true,
+        recordedAt: true,
+        receivedAt: true,
+        isMapMatched: true,
+        wasOffline: true,
+        riderId: true,
+      },
+    });
+  },
+
   // Newest accepted fix for a rider, used to rebuild the in-process position
   // cache after a restart and to sanity-check incoming points against.
   // Scoped to ONE errand, not to the rider's whole history.

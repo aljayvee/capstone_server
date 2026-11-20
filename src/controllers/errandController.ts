@@ -13,6 +13,7 @@ import { tidyItemLines } from "../services/itemTidyService.js";
 import { inferItemCategories } from "../services/categoryInferenceService.js";
 import { occurredAtSchema } from "../validators/trackingValidators.js";
 import { assertCallerPermission } from "../lib/permissionCache.js";
+import { assertDispatcherMayRead, type DispatcherReadableErrand } from "../lib/errandReadAccess.js";
 import {
   proofImageUploadSchema,
   proofImageConfirmSchema,
@@ -63,16 +64,7 @@ export const getErrandById = asyncHandler<AuthenticatedRequest>(async (req, res:
   }
 
   // IDOR check: dispatchers can only see unclaimed (AVAILABLE) errands, or errands they claimed
-  if (callerRole === "DISPATCHER" && callerId) {
-    const latestLog = (errand as any).dispatchLogs?.[0];
-    const isAvailable = String(errand.status).toUpperCase() === "AVAILABLE";
-    if (!isAvailable && latestLog && latestLog.dispatcherId !== callerId) {
-      const claimant = latestLog.dispatcher
-        ? `${latestLog.dispatcher.firstName} ${latestLog.dispatcher.lastName}`.trim()
-        : "another dispatcher";
-      throw new ServiceError(403, `Access denied: This errand is currently assigned to ${claimant}.`);
-    }
-  }
+  assertDispatcherMayRead(errand as DispatcherReadableErrand, { id: callerId, role: callerRole });
 
   res.json(errand);
 });

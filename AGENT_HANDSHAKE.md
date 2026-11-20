@@ -1,5 +1,19 @@
 # 🌐 TRI-AGENT COLLABORATION TUNNEL (CLAUDE CODE ◄► OPENAI CODEX ◄► ANTIGRAVITY) - SERVER BACKEND
 
+## 2026-11-20 - Route replay payload on `GET /api/errands/:id/track` (Claude Code)
+- NEW `src/lib/errandReadAccess.ts`: `assertDispatcherMayRead(errand, caller)`, the dispatcher claim check moved out of `getErrandById` (same rule, same 403 text). `src/controllers/errandController.ts` calls it.
+- `src/controllers/trackingController.ts` `getTrack`: loads the errand (`errandRepository.findById`), **404 "Errand not found" for an unknown id** (was 200 with an empty trail), then the dispatcher check, then `trackingService.getReplay(id, errand)`. Route middleware unchanged.
+- `src/services/trackingService.ts`: `getReplay()` + `REPLAY_POINT_CAP = 5000` (`listTrack` kept). Response keeps `errandId` + `points` (points no longer carry `id` / `clientPointId`) and adds `truncated`, `errand` (referenceNo, status, acceptedAt, deliveredAt, delivery lat/lng, routeGeometry, etaPromisedHighAt), `stops` (radius = category radius ?? `GEOFENCE_RADIUS_METERS`), `riders` (every riderId in the trail, first-seen order), `nearestToDoorMeters`.
+- Repositories: `trackPointRepository.listForReplay(errandId, take)` (select, take 5001), `userRepository.findNamesByIds(ids)`.
+- NEW `tests/trackReplay.test.ts` (8): 404, 403 wording, claimant/AVAILABLE pass, shape without clientPointId, 5001 -> truncated, exactly 5000 not truncated, two riders, no door fix. Removing the access call fails the 403 test (checked).
+- **Verification**: `tsc --noEmit` exit 0; full vitest 184 files / 2322 tests passed. No schema change. Not committed, not deployed.
+- **Server must deploy before the web replay view shows stops** (an older server answers only `{ errandId, points }`). Web half: `C:/Capstone_Project_Web/src/components/route-replay/`.
+- **DEPLOYED 2026-11-20 11:48 (+08)** (Claude, on the user's "Deploy both"). Only these 6 src files (tests not shipped).
+  - The prod copies of the 5 existing files equalled HEAD `99b85c6` (CR stripped), and no prod source was newer than `dist/index.js`. The script guarded on both before copying.
+  - VPS `tsc --noEmit` ok, `npm run build` ok, `pm2 restart capstone-backend` online, `/api/health/ready` 200, `GET /api/errands/x/track` signed-out 401. Error log clean apart from bot probes.
+  - Backup (6 files + dist) and `rollback.sh` (copies back, no deletion): `/root/deploy-backups/server-replay-20261120-114821`. Web deployed after, at 11:53. Not committed.
+
+
 ## 2026-11-19 - Staff cataloguing endpoints (Claude)
 - `src/services/catalogSuggestionService.ts`: `catalogueItem()` (upsert by item + store; category must be an active MerchantCategory; optional verifiedPlaceId must exist; sourceType `STAFF_CATALOGUED`) and `retireCatalogItem()` (marks unavailable, keeps the row). `CatalogInputError` -> 400 `{ error }`.
 - `src/controllers/catalogController.ts`, `src/routes/catalogRoutes.ts`: `POST /api/catalog/items`, `DELETE /api/catalog/items/:id`, DISPATCHER/OWNER only, `userApiLimiter`.

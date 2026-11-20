@@ -93,6 +93,16 @@ export const userRepository = {
     });
   },
 
+  // Names only, for labelling whose fixes are in a trail. Track points carry
+  // staff ids (users table), never customer ids, so no role filter is needed.
+  findNamesByIds(ids: number[]) {
+    if (ids.length === 0) return Promise.resolve([]);
+    return prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+  },
+
   create(data: Prisma.UserCreateInput) {
     return prisma.user.create({ data });
   },
